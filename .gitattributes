@@ -1,0 +1,11 @@
+# Normalize text line endings to LF in the repository, regardless of
+# contributor's platform or `core.autocrlf` setting. Working-tree files
+# on all platforms check out with LF — no more CRLF/LF noise in
+# `git status` from Windows clients.
+* text=auto eol=lf
+
+# Exception: conformance fixtures that intentionally test a specific
+# line-ending behaviour (§ 3.2 of spec.md) must land on disk byte-for-byte
+# as authored. The convention is a `crlf_` prefix; add more overrides
+# here if other line-ending-sensitive fixtures are introduced.
+versions/*/tests/valid/whitespace/crlf_*.ktav -text

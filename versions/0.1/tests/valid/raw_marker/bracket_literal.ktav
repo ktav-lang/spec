@@ -1,0 +1,3 @@
+regex:: [a-z]+
+addr:: [::1]:8080
+template:: {issue.id}.tpl

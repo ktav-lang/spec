@@ -1,0 +1,26 @@
+# Machine-readable index of Ktav specification versions.
+#
+# Written in Ktav itself — implementations can parse this file to
+# discover the canonical location of each version and its stability
+# status.
+
+stable: {
+    version: 0.1.0
+    path: versions/0.1
+    released: 2026-04-22
+}
+
+latest: {
+    version: 0.1.0
+    path: versions/0.1
+    stability: stable
+}
+
+all: [
+    {
+        version: 0.1.0
+        path: versions/0.1
+        stability: stable
+        released: 2026-04-22
+    }
+]

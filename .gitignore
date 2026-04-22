@@ -1,0 +1,22 @@
+# Local working directories
+/docs_local
+
+# Editors / IDEs
+.idea/
+.vscode/
+.vs/
+.zed/
+*.code-workspace
+.history/
+
+# Editor backups
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini

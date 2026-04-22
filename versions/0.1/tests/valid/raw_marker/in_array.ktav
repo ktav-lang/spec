@@ -1,0 +1,8 @@
+items: [
+    plain
+    :: [bracketed]
+    :: {braced}
+    :: (
+    :: true
+    ::
+]

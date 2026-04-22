@@ -1,0 +1,6 @@
+{
+  "name": "demo",
+  "port": 8080,
+  "ratio": 0.5,
+  "description": "has both"
+}

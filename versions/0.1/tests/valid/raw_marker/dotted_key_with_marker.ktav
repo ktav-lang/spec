@@ -1,0 +1,2 @@
+pattern.raw:: {template}
+server.regex:: [0-9]+

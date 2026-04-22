@@ -1,0 +1,4 @@
+name: demo
+port:i 8080
+ratio:f 0.5
+description: has both

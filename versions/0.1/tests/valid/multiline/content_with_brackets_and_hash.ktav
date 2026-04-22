@@ -1,0 +1,6 @@
+script: (
+{
+# this is not a comment inside multiline
+[x]
+}
+)

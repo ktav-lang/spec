@@ -1,0 +1,5 @@
+items: [
+    a
+    b
+]
+items.extra: value

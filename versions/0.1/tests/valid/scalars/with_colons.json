@@ -1,0 +1,5 @@
+{
+  "url": "http://example.com:8080/path",
+  "addr": "host:8080",
+  "pattern": ".*\\.onion:\\d+"
+}
