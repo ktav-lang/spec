@@ -388,13 +388,20 @@ timeout: null
 
 ## Реализации
 
-- **Rust** — [`ktav-lang/rust`](https://github.com/ktav-lang/rust) —
-  эталонная реализация, нативная под serde, десериализация
-  zero-copy.
-- **Python** — [`ktav-lang/python`](https://github.com/ktav-lang/python) —
-  PyO3-обёртка над Rust-крейтом; wheels со стабильным ABI
-  (abi3-py39) под Linux / macOS / Windows, API `loads` / `dumps` в
-  форме стандартного `json`.
+| Язык             | Репозиторий                                             | Установка                                            |
+|------------------|---------------------------------------------------------|------------------------------------------------------|
+| Rust (эталонная) | [`ktav-lang/rust`](https://github.com/ktav-lang/rust)   | `cargo add ktav`                                     |
+| C# / .NET        | [`ktav-lang/csharp`](https://github.com/ktav-lang/csharp) | `dotnet add package Ktav`                          |
+| Go               | [`ktav-lang/golang`](https://github.com/ktav-lang/golang) | `go get github.com/ktav-lang/golang`               |
+| Java / JVM       | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | `io.github.ktav-lang:ktav` на Maven Central          |
+| JS / TS          | [`ktav-lang/js`](https://github.com/ktav-lang/js)       | `npm install @ktav-lang/ktav`                        |
+| PHP              | [`ktav-lang/php`](https://github.com/ktav-lang/php)     | `composer require ktav-lang/ktav`                    |
+| Python           | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                 |
+
+Rust crate — эталонный парсер; каждый из остальных биндингов поставляет
+сборку `ktav_cabi` (C-ABI обёртка) и предоставляет тот же Ktav 0.1
+интерфейс — language-agnostic набор `tests/` ниже прогоняется на всех
+из них при каждом релизе.
 
 Строите новую реализацию? Начните со `spec.md` целевой версии
 ([`spec.ru.md`](versions/0.1/spec.ru.md), раздел 8 — Compliance)

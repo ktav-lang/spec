@@ -360,15 +360,22 @@ timeout: null
 
 ## 实现
 
-- **Rust** — [`ktav-lang/rust`](https://github.com/ktav-lang/rust) —
-  参考实现，原生 serde 支持，零拷贝反序列化。
-- **Python** — [`ktav-lang/python`](https://github.com/ktav-lang/python) —
-  基于 PyO3 封装 Rust 实现；面向 Linux / macOS / Windows 的稳定
-  ABI（abi3-py39）wheel，API 与标准库 `json` 同形（`loads` /
-  `dumps`）。
+| 语言            | 仓库                                                    | 安装                                                  |
+|-----------------|---------------------------------------------------------|-------------------------------------------------------|
+| Rust(参考)    | [`ktav-lang/rust`](https://github.com/ktav-lang/rust)   | `cargo add ktav`                                      |
+| C# / .NET       | [`ktav-lang/csharp`](https://github.com/ktav-lang/csharp) | `dotnet add package Ktav`                          |
+| Go              | [`ktav-lang/golang`](https://github.com/ktav-lang/golang) | `go get github.com/ktav-lang/golang`               |
+| Java / JVM      | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | `io.github.ktav-lang:ktav`(Maven Central)             |
+| JS / TS         | [`ktav-lang/js`](https://github.com/ktav-lang/js)       | `npm install @ktav-lang/ktav`                         |
+| PHP             | [`ktav-lang/php`](https://github.com/ktav-lang/php)     | `composer require ktav-lang/ktav`                     |
+| Python          | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                  |
 
-打算写新实现？请先读目标版本的 `spec.md`
-（[`spec.zh.md`](versions/0.1/spec.zh.md) 的第 8 节 Compliance），
+Rust crate 是参考解析器;其他每个绑定都附带一份预构建的 `ktav_cabi`
+(C-ABI 包装)并暴露相同的 Ktav 0.1 接口 —— 下面与语言无关的
+`tests/` 套件每次发布时都会针对所有实现运行。
+
+打算写新实现?请先读目标版本的 `spec.md`
+([`spec.zh.md`](versions/0.1/spec.zh.md) 的第 8 节 Compliance),
 再让 [`tests/`](versions/0.1/tests/) 套件跑过你的解析器。
 
 ## 贡献

@@ -374,12 +374,20 @@ pin to a version directory by path.
 
 ## Implementations
 
-- **Rust** — [`ktav-lang/rust`](https://github.com/ktav-lang/rust) —
-  reference implementation, serde-native, zero-copy deserialization.
-- **Python** — [`ktav-lang/python`](https://github.com/ktav-lang/python) —
-  PyO3 wrapper over the Rust crate; stable-ABI (abi3-py39) wheels for
-  Linux / macOS / Windows, `loads` / `dumps` API in the shape of
-  stdlib `json`.
+| Language       | Repo                                                  | Install                                              |
+|----------------|-------------------------------------------------------|------------------------------------------------------|
+| Rust (reference) | [`ktav-lang/rust`](https://github.com/ktav-lang/rust) | `cargo add ktav`                                     |
+| C# / .NET      | [`ktav-lang/csharp`](https://github.com/ktav-lang/csharp) | `dotnet add package Ktav`                        |
+| Go             | [`ktav-lang/golang`](https://github.com/ktav-lang/golang) | `go get github.com/ktav-lang/golang`             |
+| Java / JVM     | [`ktav-lang/java`](https://github.com/ktav-lang/java) | `io.github.ktav-lang:ktav` on Maven Central          |
+| JS / TS        | [`ktav-lang/js`](https://github.com/ktav-lang/js)     | `npm install @ktav-lang/ktav`                        |
+| PHP            | [`ktav-lang/php`](https://github.com/ktav-lang/php)   | `composer require ktav-lang/ktav`                    |
+| Python         | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                |
+
+The Rust crate is the reference parser; every other binding ships a
+prebuilt `ktav_cabi` (the C ABI wrapper) and exposes the same Ktav
+0.1 surface — the language-agnostic `tests/` suite below runs against
+all of them on every release.
 
 Building a new implementation? Start with your target version's
 [`spec.md`](versions/0.1/spec.md) (section 8 — Compliance) and run
