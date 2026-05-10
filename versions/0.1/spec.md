@@ -1,8 +1,8 @@
 # Ktav — The Written Configuration Format
 
 **Languages:** **English** · [Русский](spec.ru.md) · [简体中文](spec.zh.md)
-**Version:** 0.1.0
-**Date:** 2026-04-22
+**Version:** 0.1.1
+**Date:** 2026-05-10
 
 ## Abstract
 
@@ -187,8 +187,54 @@ pair — they appear only when the typed markers `:i` or `:f` are used
 String, preserving 0.1.0's "everything is String until marked
 otherwise" guarantee.
 
-The root Value produced by parsing a document is always an Object
-(possibly empty).
+The root Value produced by parsing a document is either an **Object**
+or an **Array** (each possibly empty). The kind of the root is
+determined by the **first content line** of the document — see
+§ 5.0.1.
+
+### 5.0.1 Top-Level Kind Detection (added in 0.1.1)
+
+The "first content line" is the first line that is neither blank
+(§ 5.1 rule 1) nor a comment (§ 5.1 rule 2). The root kind is
+established from this line as follows:
+
+1. If the document has **no content lines** (empty document, or only
+   blank/comment lines) → root is an **Object** (empty). This
+   preserves the behaviour of conforming 0.1.0 parsers on
+   comment-only and empty inputs.
+2. If the first content line trimmed contains a `:` separator that
+   would classify it as a **pair line** under § 5.3 (i.e. `key: …` /
+   `key:: …` / `key:i …` / `key:f …`, including dotted keys) → root
+   is an **Object**.
+3. Otherwise, if the first content line trimmed is recognised as an
+   **array-item line** under § 5.4 (a bare scalar, a typed-marker
+   item like `:: …` / `:i …` / `:f …`, a lone `{` or `[` opening a
+   nested compound, or a multi-line opener `(` / `((`) → root is
+   an **Array**.
+4. Otherwise (the first content line is a bare close `}` / `]`,
+   or otherwise unclassifiable) → error (§ 6.1).
+
+The root kind is **fixed** by the first content line. Subsequent
+lines are dispatched per § 5.1 rules 7/8 according to the chosen
+kind:
+
+- Inside a top-level **Array**, every non-blank, non-comment line
+  is an array-item line (§ 5.4). A line that *looks* like a pair
+  (e.g. `host: localhost`) is just a bare scalar String per § 5.4
+  rule 11 — there is no implicit re-classification back to a pair.
+  To make a colon-bearing scalar unambiguous, use the raw marker
+  form (`:: host: localhost`).
+- Inside a top-level **Object**, every line is a pair line (§ 5.3).
+  A bare scalar without `:` is a `MissingSeparator` error.
+
+> Rationale: bare top-level Arrays let a document express, e.g., a
+> list of records or a flat list of items without an outer key. The
+> shape is asymmetric with Object's inline brackets `{…}` (Array has
+> no required `[…]` brackets at the root), but the savings on
+> nesting depth outweigh the symmetry concern. An empty Array at
+> the root cannot be expressed and is normalised to an empty Object;
+> implementations MAY treat the empty document as either equivalent
+> per their idiom.
 
 ### 5.1 Dispatch per Line
 
@@ -202,14 +248,20 @@ this exact order:
    the trimmed line equals the block's terminator, the multi-line
    string is closed; otherwise the raw (untrimmed) line is added to
    the content of the multi-line string.
-4. If the trimmed line is exactly `}` → close the innermost open
+4. If the trimmed line is the document's first content line, the
+   root kind is set as in § 5.0.1; processing then proceeds with
+   the same line under the chosen-kind dispatch (rules 5–9).
+5. If the trimmed line is exactly `}` → close the innermost open
    Object, otherwise error (§ 6.1).
-5. If the trimmed line is exactly `]` → close the innermost open
+6. If the trimmed line is exactly `]` → close the innermost open
    Array, otherwise error (§ 6.1).
-6. If the innermost open compound is an Array:
+7. If the innermost open compound is an Array, **or** there is no
+   open compound and the root was established as an Array (§ 5.0.1):
    treat the line as an **array-item line** (§ 5.4).
-7. Otherwise (innermost open compound is an Object, or the top-level):
+8. If the innermost open compound is an Object, **or** there is no
+   open compound and the root was established as an Object (§ 5.0.1):
    treat the line as a **pair line** (§ 5.3).
+9. (Unreachable — kept for completeness.)
 
 ### 5.2 Scalar Value Interpretation
 

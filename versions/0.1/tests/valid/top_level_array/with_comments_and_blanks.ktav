@@ -1,0 +1,7 @@
+# top-level array, comments and blanks allowed before/around items
+
+foo
+
+# inline comment between items
+bar
+baz

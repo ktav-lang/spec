@@ -16,6 +16,37 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.1.1] — 2026-05-10
+
+Backward-compatible extension: bare top-level Arrays.
+
+### Added
+
+- **Top-level Array** — a document whose first content line is an
+  array-item shape (bare scalar, `:: text`, `:i 42`, `:f 3.14`, lone
+  `{` / `[`, or multi-line opener `(` / `((`) is now parsed as a
+  root-level **Array**. Previously the root Value was always an
+  **Object**, so a bare scalar at line 1 was a `MissingSeparator`
+  error. New § 5.0.1 specifies the detection rule.
+- New conformance fixtures under
+  `versions/0.1/tests/valid/top_level_array/` and
+  `versions/0.1/tests/invalid/top_level/`.
+
+### Compatibility
+
+This change is **strictly additive** for parsers and documents:
+every document valid under 0.1.0 stays valid under 0.1.1 and produces
+the same Value (still an Object). Only inputs that 0.1.0 rejected
+as `MissingSeparator` are now accepted as Arrays. Documents written
+against 0.1.1 may fail under a strict 0.1.0 parser — this is
+expected forward incompatibility for new features.
+
+Implementations supporting 0.1.1 MUST handle § 5.0.1 detection;
+implementations claiming 0.1.0 compliance only continue to be
+conforming (they remain bug-free for 0.1.0 inputs, only lacking the
+new capability).
+
+
 ## [0.1.0] — 2026-04-22
 
 Initial specification. Defines lexical structure, grammar, semantics,

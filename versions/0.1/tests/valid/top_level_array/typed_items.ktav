@@ -1,0 +1,5 @@
+:i 1
+:i 2
+:f 3.14
+:: literal-with-special-(chars)
+plain-string

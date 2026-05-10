@@ -1,0 +1,4 @@
+{
+  "expected_error": "MissingSeparator",
+  "note": "Top-level kind was Object (first content line is a pair). The bare scalar line `bare-item-not-a-pair` is not a valid pair (no colon)."
+}
