@@ -348,7 +348,8 @@ timeout: null
 ├── versions.ktav          machine-readable index of versions
 ├── CHANGELOG.md           summary across versions
 ├── CONTRIBUTING.md        how to propose changes
-├── LICENSE                MIT
+├── LICENSE-MIT            MIT License
+├── LICENSE-APACHE         Apache License 2.0
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
@@ -391,4 +392,5 @@ Rust crate 是参考解析器;其他每个绑定都附带一份预构建的 `kta
 
 ## 许可证
 
-MIT。见 [LICENSE](LICENSE)。
+双重许可 **MIT OR Apache-2.0**,由您选择。见 [LICENSE-MIT](LICENSE-MIT)
+与 [LICENSE-APACHE](LICENSE-APACHE)。

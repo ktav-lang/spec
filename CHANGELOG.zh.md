@@ -14,6 +14,73 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
+## [0.5.0] —— 2026-05-28
+
+语言的重大修订。三个破坏性变更与显著的 inline 形式增补面。
+声明 0.5.0 兼容性的实现需要重写解析器 —— 没有从 0.1.x 的
+自动迁移。
+
+### 破坏性
+
+- **移除类型标记 `:i` 与 `:f`。** 数字、布尔与 `null` 从标量
+  字面形式推断(§ 3.6、§ 5.2)。`::` 原始标记保留。
+- **注释改为 `##`** (两个 ASCII `#` 字节)且 MUST 独占一行
+  (§ 3.4)。
+- **裸 `port: 8080` 现在为 `Integer(8080)`**,而非
+  `String("8080")`。
+- **首条内容行的单独 `{` / `[` 现在为多行根 Object / Array**
+  (§ 5.0.1 规则 4–5)。先前(0.1.1)首行的单独开启符产生
+  根级 Array 内的单一 Object / Array 项;JSONL 式形式不再
+  被接受。
+- **Float Values 不再保留文本形式**;应用数值规范化(§ 3.6、
+  § 5.2、§ 5.9.8)。Value 模型携带数值;规范 writer 输出
+  确定性的文本形式。下划线、`e` vs `E` 的选择、前导 `+`
+  均不属于 Value。
+- **键段修剪前后 ASCII 空白**(§ 4)。修剪后为空的段是
+  `EmptyKey`(§ 6.5)。段内空白 verbatim 保留。
+- **行终止符是 `LF`、`CR` 或 `CR LF`**(§ 3.2)。三者等价。`CR`
+  字节在解析时绝不作为内容出现;要在 String 中插入 `CR`,需在
+  inline 复合值内使用 `\r` 转义。此类 Value 在规范形式中不可表示
+  (§ 5.9.7)。
+
+### 新增
+
+- **Inline 复合值** —— `{key: value, key2: value}` 与
+  `[v1, v2, v3]`,可选尾部逗号(§ 5.8)。
+- **八个 Escape 序列** —— `\\`、`\,`、`\}`、`\]`、`\{`、`\[`、
+  `\n`、`\r` 在 inline 标量值内(§ 3.7)。
+- **数字字面量语法**(§ 3.6)。Integer 携带整数值;Float 携带
+  数值。大整数溢出回退为 String。
+- **规范形式(§ 5.9)** —— 每个 Value 的规范 writer 输出,由
+  writer-conforming 实现使用,由 `*.canonical.ktav` fixture
+  验证。规范形式字节确定。
+- **三元测试套件** —— 每个 valid fixture 含三个文件:
+  `name.ktav`(输入)、`name.json`(Value oracle)、
+  `name.canonical.ktav`(writer oracle)。
+- **顶层 inline 复合值** —— 文档首条内容行为闭合 inline 时,
+  即为根级 inline Object / Array(§ 5.0.1 规则 2–3)。
+- **键段中允许空格与制表符**(§ 4 `<key-char>`)。
+- **值中间的 `{` / `[` 字面化**(§ 5.8.5)。
+- **错误类别** —— `UnterminatedInlineCompound`(§ 6.11)、
+  `MalformedInlineCompound`(§ 6.12)、`BadEscapeSequence`
+  (§ 6.13)。
+- **§ 6.14 `OrphanLineAfterTopLevelInline`** —— 独立错误类别。
+- **附录 B:迁移指南** 从 0.1.x 到 0.5.0。
+- **合规性拆分** —— § 8 现在定义 parser-conforming(§ 8.1)、
+  writer-conforming(§ 8.2)与 round-trip 性质(§ 8.3)。
+
+### 移除
+
+- 错误类别 `InlineNonEmptyCompound`(原 § 6.7)与
+  `InvalidTypedScalar`(原 § 6.9)。其编号保留。实现 MUST NOT
+  对 0.5.0 文档输出标签为此名称的错误。
+
+### 版本控制
+
+`versions/0.5/` 为新的顶层格式目录。`versions/0.1/` 处的 0.1.x
+规范保留在仓库中,以便希望并行支持旧语法的旧解析器。
+
+
 ## [0.1.1] —— 2026-05-10
 
 向后兼容的扩展:裸顶层 Array。

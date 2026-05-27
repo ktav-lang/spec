@@ -151,5 +151,6 @@ Full policy in the org-level
 
 ## License
 
-By contributing, you agree that your contribution is licensed under
-the MIT License, same as the rest of this repository.
+By contributing, you agree that your contribution is dual-licensed
+under **MIT OR Apache-2.0** at the user's option, same as the rest
+of this repository.

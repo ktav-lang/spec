@@ -6,6 +6,14 @@
 
 # Exception: conformance fixtures that intentionally test a specific
 # line-ending behaviour (§ 3.2 of spec.md) must land on disk byte-for-byte
-# as authored. The convention is a `crlf_` prefix; add more overrides
-# here if other line-ending-sensitive fixtures are introduced.
+# as authored. The convention is a `crlf_` substring in the filename or
+# explicit listing below; add more overrides here if other
+# line-ending-sensitive fixtures are introduced.
 versions/*/tests/valid/whitespace/crlf_*.ktav -text
+versions/*/tests/valid/multiline/crlf_*.ktav -text
+versions/*/tests/valid/multiline/crlf_*.canonical.ktav -text
+versions/*/tests/valid/io/mixed_lf_crlf.ktav -text
+versions/*/tests/valid/io/lone_cr_in_value.ktav -text
+versions/*/tests/valid/io/lone_cr_in_value.canonical.ktav -text
+versions/*/tests/valid/inline/escape/all_escapes.canonical.ktav -text
+versions/*/tests/valid/inline/escape/newline.canonical.ktav -text

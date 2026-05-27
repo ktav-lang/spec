@@ -16,6 +16,114 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.5.0] — 2026-05-28
+
+Major language revision. Three breaking changes plus a substantial
+additive surface for inline forms. Implementations claiming 0.5.0
+compliance need a fresh parser pass — there is no automatic
+migration from 0.1.x.
+
+### Breaking
+
+- **Typed markers `:i` and `:f` removed.** Numbers, booleans, and
+  `null` are inferred from the lexical form of the scalar body
+  (§ 3.6, § 5.2). The raw marker `::` is kept to force a literal
+  String for cases where the form would otherwise match a number
+  or keyword.
+- **Comments now use `##`** (two ASCII `#` bytes) and MUST occupy
+  their own line (§ 3.4). A single `#` byte has no special meaning;
+  trailing comments after content on the same line are not
+  supported.
+- **Bare `port: 8080` is now `Integer(8080)`**, not `String("8080")`.
+  This follows from removing the typed markers. To keep the value
+  as a String, write `port:: 8080`.
+- **Lone `{` / `[` on the first content line is now a multi-line
+  root Object / Array** (§ 5.0.1 rules 4–5). Previously (0.1.1) a
+  lone opener on line 1 produced a single Object / Array item
+  inside a root-level Array. The 0.1.1 JSONL-style form (multiple
+  top-level objects on consecutive lines producing a root Array)
+  is no longer accepted.
+- **Float Values no longer carry textual form**; numeric
+  canonicalisation applies (§ 3.6, § 5.2, § 5.9.8). The Value
+  model carries a numeric value; the canonical writer emits a
+  deterministic textual form. Underscores, the choice of `e` vs
+  `E`, and a leading `+` are not part of the Value.
+- **Key segments are trimmed of leading and trailing ASCII
+  whitespace** (§ 4). A segment empty after trimming is
+  `EmptyKey` (§ 6.5). Internal whitespace within a segment is
+  preserved verbatim.
+- **Line terminators are `LF`, `CR`, or `CR LF`** (§ 3.2). All
+  three are equivalent. A `CR` byte never appears as content at
+  parse time; to embed `CR` in a String value, use the `\r` escape
+  inside an inline compound. Such Values are not representable in
+  canonical form (§ 5.9.7).
+
+### Added
+
+- **Inline compounds** — `{key: value, key2: value}` and
+  `[v1, v2, v3]`, with optional trailing comma, allowed as values,
+  as array items, or as the entire document (§ 5.8). Whitespace
+  inside is optional everywhere.
+- **Escape sequences** — eight in total: `\\`, `\,`, `\}`, `\]`,
+  `\{`, `\[`, `\n`, `\r` inside inline scalar values (§ 3.7).
+  The bracket-pair set is full and symmetric. Any other `\X`
+  form is a `BadEscapeSequence` error.
+- **Number literal grammar** covering `0x` hex, `0o` octal, `0b`
+  binary, decimal, with underscore digit separators (§ 3.6).
+  Integer Value carries an integer value; Float Value carries a
+  numeric value. Big-integer overflow falls back to String.
+  Implementations MUST support at least the i64 range for
+  Integer; wider ranges (bignum) are permitted (§ 5.2 rule 13).
+- **Canonical form (§ 5.9)** — a normative writer output for every
+  Value, used by writer-conforming implementations and verified by
+  `*.canonical.ktav` fixtures. The canonical form is
+  byte-deterministic: any two writer-conforming implementations
+  produce identical output for the same Value.
+- **Triple-test conformance suite** — every valid fixture has three
+  files: `name.ktav` (input as written, with comments / inline /
+  hex / `_` underscores / multiple forms), `name.json` (Value
+  oracle), `name.canonical.ktav` (writer oracle — the canonical
+  form of the parsed Value).
+- **Top-level inline compounds** — a document whose first content
+  line is a closed inline `{...}` or `[...]` is a root-level inline
+  Object / Array (§ 5.0.1 rules 2–3).
+- **Spaces and tabs in key segments are allowed** (§ 4 `<key-char>`).
+  A key may contain internal whitespace such as `first name`; only
+  the structural delimiters and ASCII control bytes are excluded.
+- **Mid-value `{` / `[` is literal** (§ 5.8.5). A `{` or `[` byte
+  that is NOT the first non-whitespace byte of an inline value is
+  a literal character; it does not open a nested compound. Example:
+  `{a: hello{world, b: x}` yields `{a: "hello{world", b: "x"}`.
+- **Error categories** — `UnterminatedInlineCompound` (§ 6.11),
+  `MalformedInlineCompound` (§ 6.12), `BadEscapeSequence` (§ 6.13).
+  `MalformedInlineCompound` covers leading commas, consecutive
+  commas, empty array items, and other structural defects inside a
+  closed inline compound that aren't already an Unterminated error.
+- **§ 6.14 `OrphanLineAfterTopLevelInline`** — a distinct error
+  category for content after a top-level inline root or after the
+  matching close of a lone-`{` / lone-`[` root opener. Previously
+  this was lumped with `MissingSeparator`.
+- **Appendix B: Migration guide** from 0.1.x to 0.5.0 — typed
+  markers, comments, bare-number typing, and root-Array form.
+- **Compliance split** — § 8 now defines parser-conforming (§ 8.1),
+  writer-conforming (§ 8.2), and a round-trip property (§ 8.3).
+  Implementations may claim either or both.
+
+### Removed
+
+- Error categories `InlineNonEmptyCompound` (was § 6.7) and
+  `InvalidTypedScalar` (was § 6.9). The numbers are reserved so
+  older error catalogs don't renumber. Implementations MUST NOT
+  emit errors labelled with these names when parsing 0.5.0
+  documents.
+
+### Versioning
+
+`versions/0.5/` is a new top-level format directory. The 0.1.x
+spec at `versions/0.1/` remains in the repository for legacy
+parsers that wish to support the older syntax in parallel.
+
+
 ## [0.1.1] — 2026-05-10
 
 Backward-compatible extension: bare top-level Arrays.

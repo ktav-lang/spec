@@ -362,7 +362,8 @@ pin to a version directory by path.
 ├── versions.ktav          machine-readable index of versions
 ├── CHANGELOG.md           summary across versions
 ├── CONTRIBUTING.md        how to propose changes
-├── LICENSE                MIT
+├── LICENSE-MIT            MIT License
+├── LICENSE-APACHE         Apache License 2.0
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
@@ -406,4 +407,5 @@ help, please reach out at **phpcraftdream@gmail.com**.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Dual-licensed under **MIT OR Apache-2.0** at your option. See
+[LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).

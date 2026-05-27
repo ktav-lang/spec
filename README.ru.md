@@ -376,7 +376,8 @@ timeout: null
 ├── versions.ktav          machine-readable index of versions
 ├── CHANGELOG.md           summary across versions
 ├── CONTRIBUTING.md        how to propose changes
-├── LICENSE                MIT
+├── LICENSE-MIT            MIT License
+├── LICENSE-APACHE         Apache License 2.0
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
@@ -421,4 +422,5 @@ Rust crate — эталонный парсер; каждый из остальн
 
 ## Лицензия
 
-MIT. См. [LICENSE](LICENSE).
+Двойная лицензия **MIT OR Apache-2.0** на ваш выбор. См.
+[LICENSE-MIT](LICENSE-MIT) и [LICENSE-APACHE](LICENSE-APACHE).

@@ -1,0 +1,1 @@
+{"expected_error": "OrphanLineAfterTopLevelInline", "note": "Lone { on line 1 opens the root multi-line Object (5.0.1 rule 4); the matching } closes the root. The second { is then content after root — orphan."}
