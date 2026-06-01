@@ -1,0 +1,1 @@
+{"expected_error": "UnterminatedInlineCompound", "note": "A `(` byte as the first non-whitespace of an inline scalar is treated as inline scalar (5.8.5). With no inline terminator on the same line, this is UnterminatedInlineCompound (6.11)."}

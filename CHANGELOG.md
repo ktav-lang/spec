@@ -16,6 +16,60 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.6.0] — 2026-06-01
+
+Targeted breaking change: keys now process escape sequences. Two new
+escapes (`\.` and `\:`) make it possible to use literal dots and
+colons inside key names — keys like `example.com`, `1.0`, or `a:b`
+that were impossible to express in 0.5.0.
+
+### Breaking
+
+- **Keys now process escape sequences** (§ 3.7). The backslash byte
+  `\` is the escape lead inside keys, just as it already was inside
+  inline scalar values. `\.` produces a literal dot (NOT a path
+  separator); `\:` produces a literal colon (NOT the pair
+  separator); `\\` produces a literal backslash. A literal
+  backslash in a key that was bare in 0.5.0 now requires `\\`.
+  Rare in practice; documents that did not embed `\` in keys
+  parse identically under 0.6.0.
+- **The `<key>` / `<segment>` / `<key-char>` grammar productions**
+  (§ 4) are now escape-aware. The dotted-path separator splits only
+  on **unescaped** `.`; the pair separator is the first
+  **unescaped** `:` / `::`. Backslash and dot are excluded from
+  `<key-char>` and handled via a new `<key-escape>` production.
+
+### Added
+
+- **Two new escape sequences** — `\.` → `.` and `\:` → `:` — in the
+  § 3.7 escape table (now ten entries total: `\\`, `\,`, `\}`,
+  `\]`, `\{`, `\[`, `\n`, `\r`, `\.`, `\:`). Applies to inline
+  scalar values AND to keys.
+- **Appendix C — migration guide** from 0.5.0 to 0.6.0.
+
+### Changed
+
+- "Keys" removed from the "escape sequences are NOT processed in"
+  list (§ 3.7). Keys now DO process escapes — same set as inline
+  scalars.
+- § 5.9.10 (canonical key emission) — the writer MUST re-escape
+  `\`, `.`, and `:` inside a key segment so that the canonical
+  output round-trips through the parser.
+- § 6.13 `BadEscapeSequence` — updated to list ten valid escape
+  characters (added `.` and `:`).
+
+### Versioning
+
+`versions/0.6/` is a new top-level format directory. The 0.5.0
+spec at `versions/0.5/` and the 0.1.x spec at `versions/0.1/`
+remain in the repository for legacy parsers that wish to support
+the older syntax in parallel.
+
+Pre-1.0 versioning policy: a MINOR bump (0.5 → 0.6) carries a
+breaking change in this version stream. Once the format reaches
+1.0, breaking changes will require a MAJOR bump.
+
+
 ## [0.5.0] — 2026-05-28
 
 Major language revision. Three breaking changes plus a substantial
