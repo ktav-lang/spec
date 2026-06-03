@@ -2,6 +2,8 @@
 
 **Languages:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
+**Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
+
 > Простой формат конфигурации. Форма JSON — скаляры, массивы, объекты,
 > `null`, `true`, `false` — без пунктуации JSON. Никаких кавычек
 > вокруг строк, никаких запятых, никакой таблицы escape-последовательностей.

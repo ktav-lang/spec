@@ -2,6 +2,8 @@
 
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
+**Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
+
 > A plain configuration format. JSON-shape — scalars, arrays, objects,
 > `null`, `true`, `false` — with none of JSON's punctuation. No quotes
 > around strings, no commas, no escape table. Dotted keys for nesting,
