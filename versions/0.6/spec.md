@@ -1223,8 +1223,8 @@ mask: 0b1111_0000
 million: 1_000_000
 ratio: 0.5
 sci: 1.5e-3
-big: 99999999999999999999       ## overflows i64 → falls back to String
-forced_string: :: 0xFF          ## NOT here — `::` is its own marker
+big: 99999999999999999999
+forced_string: :: 0xFF
 literal_hex: :: 0xFF
 ```
 
