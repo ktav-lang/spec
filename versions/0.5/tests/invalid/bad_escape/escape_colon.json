@@ -1,1 +1,0 @@
-{"expected_error": "BadEscapeSequence", "note": "\\: is not in the escape set; `:` is literal inside inline value."}

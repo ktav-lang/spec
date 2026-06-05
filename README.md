@@ -20,13 +20,13 @@ the version they target.
 ## A taste
 
 One example that exercises every major form the format offers —
-default `:` (String), keyword Bool, typed `:i` (Integer) and `:f`
-(Float), raw `::` (literal String), dotted keys, nested compounds,
-and a multi-line string.
+`:` pairs (a bare number is typed by its form, everything else is a
+String), keyword Bool, `::` (forced literal String), dotted keys,
+nested compounds, and a multi-line string.
 
 ```text
-# A config for a SOCKS5 rotator.
-port:i 20082
+## A config for a SOCKS5 rotator.
+port: 20082
 log_level: info
 debug: true
 
@@ -38,24 +38,24 @@ banned_patterns: [
 upstreams: [
     {
         host: a.example
-        port:i 1080
-        weight:f 0.7
+        port: 1080
+        weight: 0.7
         timeouts: {
-            read:i 30
-            write:i 10
+            read: 30
+            write: 10
         }
     }
     {
         host: b.example
-        port:i 1080
-        weight:f 0.3
+        port: 1080
+        weight: 0.3
     }
 ]
 
-# Dotted keys — flat alternative to nesting.
+## Dotted keys — flat alternative to nesting.
 node.host: a.example
-node.port:i 1080
-# `::` forces a literal string — keeps the ':' inside the password.
+node.port: 1080
+## `::` forces a literal string — keeps the ':' inside the password.
 node.auth:: p@ss:word
 
 motd: (
@@ -65,14 +65,13 @@ motd: (
 ```
 
 Parses to this value (shown as JSON5 — comments and unquoted keys for
-readability). Note how the markers map:
+readability). Note how the values map:
 
-- `:` — default String, stays a string at Value level even for digit
-  content (`log_level: "info"`, `banned_patterns[0]: "…"`).
+- `:` with a bare integer body (`20082`) — Integer; with a bare
+  decimal body (`0.7`) — Float; any other body (`info`, a regex, a
+  path) — String, verbatim, even for digit-ish content.
 - `: true` / `: false` / `: null` — Bool / Null keywords.
-- `:i` — Integer as native JSON number.
-- `:f` — Float as native JSON number (with decimal point).
-- `::` — raw String, no classification applied.
+- `::` — forced literal String, no classification applied.
 
 ```json5
 {
@@ -109,27 +108,28 @@ readability). Note how the markers map:
 }
 ```
 
-### Without `:i` / `:f` — numbers stay strings
+### Numbers are typed by lexical form
 
-The format never auto-detects number-looking bodies; typing is
-explicit and opt-in. Without a marker, every scalar is a String at
-the Value level. Consumers that want native numbers either mark the
-value with `:i` / `:f` or cast at their own boundary (Rust + serde
-does this automatically through `FromStr`).
+The format types a scalar from the *shape* of its body: a bare
+integer becomes an Integer, a bare decimal becomes a Float, and
+everything else stays a String. No marker is needed. Nothing that
+merely *looks* number-ish but isn't a bare number (a version, a
+label) is coerced — and `::` forces a genuine bare number to stay a
+literal string when you need that.
 
 ```text
 retries: 3
 version: 1.2
-ratio:f 0.5
-count:i 42
+build:: 0007
+label: v1.2
 ```
 
 ```json5
 {
-  retries: "3",      // plain `:` — String
-  version: "1.2",    // plain `:` — String
-  ratio: 0.5,        // :f — native JSON number
-  count: 42,         // :i — native JSON number
+  retries: 3,        // bare integer — Integer
+  version: 1.2,      // bare decimal — Float
+  build: "0007",     // `::` — forced literal String
+  label: "v1.2",     // not a bare number — String
 }
 ```
 
@@ -140,13 +140,13 @@ A body that would otherwise be classified as a keyword (`null`,
 (`{`, `[`) needs the raw `::` marker to come out as a plain String.
 
 ```text
-# Would be Bool true without `::` — here it's the string "true".
+## Would be Bool true without `::` — here it's the string "true".
 on_release:: true
-# Starts with `[` — `::` prevents "open array" interpretation.
+## Starts with `[` — `::` prevents "open array" interpretation.
 regex::      [a-z]+
-# IPv6 address literal — same reason.
+## IPv6 address literal — same reason.
 ipv6::       [::1]:8080
-# `null` keyword used as a literal four-char string.
+## `null` keyword used as a literal four-char string.
 placeholder:: null
 ```
 
@@ -193,19 +193,17 @@ A Ktav document is an implicit top-level object. Inside any object you
 have pairs; inside any array you have items.
 
 ```text
-# comment              — any line starting with '#'
-key: value             — scalar pair; value is a String (default)
+## comment             — any line starting with '##'
+key: value             — scalar pair; bare number → Integer/Float,
+                         any other body → String
 key:: value            — scalar pair; value is ALWAYS a literal string
-key:i value            — scalar pair; value is an Integer (digits only)
-key:f value            — scalar pair; value is a Float (needs decimal)
 key: { ... }           — multi-line object; `}` closes on its own line
 key: [ ... ]           — multi-line array; `]` closes on its own line
 key: {}   /   key: []  — empty compound, inline
 key: ( ... )           — multi-line string; common indent stripped
 key: (( ... ))         — multi-line string; verbatim (no stripping)
+value                  — inside an array: bare item (typed by form)
 :: value               — inside an array: literal-string item
-:i value               — inside an array: Integer item
-:f value               — inside an array: Float item
 ```
 
 That's the whole language. No commas, no quotes, no escape table — the
@@ -256,26 +254,25 @@ literal_bracket:: [
 keyword_as_string:: true
 ```
 
-### Numbers, when you want them
+### Numbers, typed by form
 
-By default a numeric-looking value is a string — `port: 8080` gives
-you `"8080"`. Typed-language consumers (Rust + serde, Go) cast that
-to a real number at their boundary without any format cooperation.
-
-For dynamic-language consumers (JS, PHP, Python), opt into typed
-values with `:i` (Integer) or `:f` (Float):
+A bare number is typed directly — `port: 8080` gives you an Integer,
+`ratio: 0.5` a Float. The body's shape decides: digits only →
+Integer; digits with a decimal point or exponent → Float; anything
+else → String.
 
 ```text
-port:i   8080
-ratio:f  0.5
-offset:i -100
-eps:f    1.5e-10
+port:    8080
+ratio:   0.5
+offset:  -100
+eps:     1.5e-10
 ```
 
-Values are still preserved as their textual form at the Value level
+Values are preserved as their textual form at the Value level
 — `Integer("8080")`, `Float("0.5")` — so 40-digit integers survive
-round-trip and `1.2` is never accidentally coerced into a Number.
-The consumer narrows to the native type it wants.
+round-trip and `1.2` is never accidentally widened or truncated. To
+keep a numeric-looking value as text, force it with `::`
+(`zip:: 01007`).
 
 ### Multi-line strings
 
@@ -313,7 +310,7 @@ timeout: null
 
 ```json5
 {
-  port: "8080",   // plain `:` — String, not a number
+  port: 8080,     // bare integer → Integer
   active: true,   // keyword → native JSON bool
   timeout: null,  // keyword → native JSON null
 }
@@ -321,26 +318,25 @@ timeout: null
 
 ## Full specification
 
-- **Current stable:** [Ktav 0.1.0](versions/0.1/spec.md) — released 2026-04-22.
+- **Current stable:** [Ktav 0.6.0](versions/0.6/spec.md) — released 2026-06-01.
 - **Machine-readable index** of all versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.1/tests/). Pairs of
+[`versions/<v>/tests/`](versions/0.6/tests/). Pairs of
 `<name>.ktav` + `<name>.json` — the `.json` is the expected `Value`,
-mapped 1:1 for plain scalars (`Null`→`null`, `Bool`→`bool`,
-`String`→`string`, `Array`→`array`, `Object`→`object`; plain-`:`
-numeric bodies stay as strings at Value level). Typed scalars
-(`:i` / `:f`) are encoded as native JSON numbers — `8080` for
-Integer, `0.5` for Float — distinguished by the presence of a
-decimal point. See [`versions/0.1/tests/README.md`](versions/0.1/tests/README.md)
-for the full oracle. Object field order is significant.
+mapped 1:1 (`Null`→`null`, `Bool`→`bool`, `String`→`string`,
+`Array`→`array`, `Object`→`object`). Numbers are typed by lexical
+form: a bare integer body (`8080`) maps to a JSON integer, a bare
+decimal body (`0.5`) to a JSON float, and every other scalar stays a
+string — `::` forces a literal string when a number-like value must
+remain text. Object field order is significant.
 
 An implementation conforms to a version if it passes every test in
 that version's suite. Consume the directory as a git submodule (or
-copy it); see [`versions/0.1/tests/README.md`](versions/0.1/tests/README.md).
+copy it).
 
 ## Version scheme
 
@@ -397,8 +393,8 @@ prebuilt `ktav_cabi` (the C ABI wrapper) and exposes the same Ktav
 all of them on every release.
 
 Building a new implementation? Start with your target version's
-[`spec.md`](versions/0.1/spec.md) (section 8 — Compliance) and run
-the [`tests/`](versions/0.1/tests/) suite against your parser.
+[`spec.md`](versions/0.6/spec.md) (section 8 — Compliance) and run
+the [`tests/`](versions/0.6/tests/) suite against your parser.
 
 ## Contributing
 

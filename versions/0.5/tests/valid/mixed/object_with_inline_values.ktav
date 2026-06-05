@@ -1,4 +1,0 @@
-network: {host: api, port: 443}
-admins: [alice, bob, carol]
-debug: true
-features: {async: true, cache: false, retry_count: 3}

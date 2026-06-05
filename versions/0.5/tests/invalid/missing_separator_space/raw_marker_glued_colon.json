@@ -1,1 +1,0 @@
-{"expected_error": "MissingSeparatorSpace", "note": "After key:: the next byte must be whitespace or EOL (6.10). key:::value has another colon following the raw marker, glued to value with no space."}

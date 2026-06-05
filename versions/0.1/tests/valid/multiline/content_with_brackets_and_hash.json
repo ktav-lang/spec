@@ -1,3 +1,0 @@
-{
-  "script": "{\n# this is not a comment inside multiline\n[x]\n}"
-}

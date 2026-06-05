@@ -1,1 +1,0 @@
-{"expected_error": "EmptyKey", "note": "Inside Object context, an empty key (line starts with `:`) errors."}

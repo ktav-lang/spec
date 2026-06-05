@@ -1,5 +1,0 @@
-server.host: 127.0.0.1
-server.port: 8080
-server.endpoints.api: /v1
-server.endpoints.admin: /admin
-app.debug: true

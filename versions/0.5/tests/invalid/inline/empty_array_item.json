@@ -1,1 +1,0 @@
-{"expected_error": "MalformedInlineCompound", "note": "Empty inline-array item: `[a, , b]` — the position between the two commas is empty (only whitespace) and is not a valid empty-String item per § 5.8.3."}

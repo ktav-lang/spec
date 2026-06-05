@@ -18,13 +18,13 @@
 
 ## 尝一口
 
-一个调动格式所有主要形式的例子 —— 默认 `:`(String)、关键字
-Bool、类型标记 `:i`(Integer)与 `:f`(Float)、原始 `::`(字面
-String)、点分键、嵌套复合值、多行字符串。
+一个调动格式所有主要形式的例子 —— `:` 对(裸数字按形式定型,其余
+皆为 String)、关键字 Bool、`::`(强制字面 String)、点分键、嵌套
+复合值、多行字符串。
 
 ```text
-# A config for a SOCKS5 rotator.
-port:i 20082
+## A config for a SOCKS5 rotator.
+port: 20082
 log_level: info
 debug: true
 
@@ -36,24 +36,24 @@ banned_patterns: [
 upstreams: [
     {
         host: a.example
-        port:i 1080
-        weight:f 0.7
+        port: 1080
+        weight: 0.7
         timeouts: {
-            read:i 30
-            write:i 10
+            read: 30
+            write: 10
         }
     }
     {
         host: b.example
-        port:i 1080
-        weight:f 0.3
+        port: 1080
+        weight: 0.3
     }
 ]
 
-# Dotted keys — flat alternative to nesting.
+## Dotted keys — flat alternative to nesting.
 node.host: a.example
-node.port:i 1080
-# `::` 强制字面字符串 —— 密码中的冒号 ':' 得以保留。
+node.port: 1080
+## `::` 强制字面字符串 —— 密码中的冒号 ':' 得以保留。
 node.auth:: p@ss:word
 
 motd: (
@@ -63,14 +63,13 @@ motd: (
 ```
 
 解析为下列 Value(以 JSON5 形式展示,带注释与无引号键以便阅读)。
-注意各标记的对应关系:
+注意各值的对应关系:
 
-- `:` —— 默认 String,即使内容是数字,在 Value 层也保持为字符串
-  (`log_level: "info"`、`banned_patterns[0]: "…"`)。
+- `:` 跟裸整数 body(`20082`)—— Integer;跟裸小数 body(`0.7`)
+  —— Float;其余任何 body(`info`、正则、路径)—— String,逐字
+  保留,即便内容像数字。
 - `: true` / `: false` / `: null` —— 关键字 Bool / Null。
-- `:i` —— Integer 作为原生 JSON number。
-- `:f` —— Float 作为原生 JSON number(带小数点)。
-- `::` —— 原始 String,不进行分类。
+- `::` —— 强制字面 String,不进行分类。
 
 ```json5
 {
@@ -107,26 +106,26 @@ motd: (
 }
 ```
 
-### 不用 `:i` / `:f` —— 数字保持为字符串
+### 数字按词法形式定型
 
-格式绝不自动检测看起来像数字的 body;类型标注是显式、可选的。
-没有标记，每个标量在 Value 层都是 String。需要原生数字的消费方要么
-用 `:i` / `:f` 标记该值，要么在自己的边界上做转换（Rust + serde
-通过 `FromStr` 自动完成）。
+格式按 body 的*形状*定型:裸整数成为 Integer,裸小数成为 Float,
+其余一切保持为 String。无需标记。任何只是*看起来*像数字、却并非
+裸数字的内容(版本号、标签)都不会被转换 —— 而 `::` 可在需要时
+强制一个真正的裸数字保持为字面字符串。
 
 ```text
 retries: 3
 version: 1.2
-ratio:f 0.5
-count:i 42
+build:: 0007
+label: v1.2
 ```
 
 ```json5
 {
-  retries: "3",      // 普通 `:` — String
-  version: "1.2",    // 普通 `:` — String
-  ratio: 0.5,        // :f — 原生 JSON number
-  count: 42,         // :i — 原生 JSON number
+  retries: 3,        // 裸整数 — Integer
+  version: 1.2,      // 裸小数 — Float
+  build: "0007",     // `::` — 强制字面 String
+  label: "v1.2",     // 并非裸数字 — String
 }
 ```
 
@@ -137,13 +136,13 @@ count:i 42
 让它成为普通 String。
 
 ```text
-# 若不用 `::` 会变成 Bool true —— 此处是字符串 "true"。
+## 若不用 `::` 会变成 Bool true —— 此处是字符串 "true"。
 on_release:: true
-# 以 `[` 开头 —— `::` 阻止"开启数组"的解释。
+## 以 `[` 开头 —— `::` 阻止"开启数组"的解释。
 regex::      [a-z]+
-# IPv6 地址字面量 —— 同理。
+## IPv6 地址字面量 —— 同理。
 ipv6::       [::1]:8080
-# `null` 关键字用作字面的四个字符的字符串。
+## `null` 关键字用作字面的四个字符的字符串。
 placeholder:: null
 ```
 
@@ -186,19 +185,17 @@ Ktav 保留了 JSON 的形态（你始终清楚一个文档意味着什么），
 Ktav 文档是一个隐式的顶层对象。任何对象里是键值对，任何数组里是元素。
 
 ```text
-# comment              — any line starting with '#'
-key: value             — scalar pair; value is a String (default)
+## comment             — any line starting with '##'
+key: value             — scalar pair; bare number → Integer/Float,
+                         any other body → String
 key:: value            — scalar pair; value is ALWAYS a literal string
-key:i value            — scalar pair; value is an Integer (digits only)
-key:f value            — scalar pair; value is a Float (needs decimal)
 key: { ... }           — multi-line object; `}` closes on its own line
 key: [ ... ]           — multi-line array; `]` closes on its own line
 key: {}   /   key: []  — empty compound, inline
 key: ( ... )           — multi-line string; common indent stripped
 key: (( ... ))         — multi-line string; verbatim (no stripping)
+value                  — inside an array: bare item (typed by form)
 :: value               — inside an array: literal-string item
-:i value               — inside an array: Integer item
-:f value               — inside an array: Float item
 ```
 
 整个语言就这些。没有逗号、没有引号、没有转义表——唯一的「转义」
@@ -247,25 +244,24 @@ literal_bracket:: [
 keyword_as_string:: true
 ```
 
-### 需要数字时再写数字
+### 数字,按形式定型
 
-默认情况下，看起来像数字的值就是字符串：`port: 8080` 给你的是
-`"8080"`。类型化语言的消费方（Rust + serde、Go）会在自己的边界上
-将其转换成真正的数字，无需格式配合。
-
-对于动态类型语言的消费方（JS、PHP、Python），通过 `:i`（Integer）
-或 `:f`（Float）显式取用类型值：
+裸数字会被直接定型:`port: 8080` 给你 Integer,`ratio: 0.5` 给你
+Float。由 body 的形状决定:只有数字 → Integer;带小数点或指数 →
+Float;其余一切 → String。
 
 ```text
-port:i   8080
-ratio:f  0.5
-offset:i -100
-eps:f    1.5e-10
+port:    8080
+ratio:   0.5
+offset:  -100
+eps:     1.5e-10
 ```
 
 值在 Value 层仍然保留为文本形式——`Integer("8080")`、
-`Float("0.5")`——因此 40 位整数可以往返存活，`1.2` 也不会被
-意外强转成 Number。消费方在自己那边再收窄到所需的原生类型。
+`Float("0.5")`——因此 40 位整数可以往返存活,`1.2` 也不会被意外
+扩展或截断。类型化语言的消费方（Rust + serde、Go）在自己那边收窄
+到所需的原生类型;若要让看起来像数字的值保持为文本,用 `::` 强制
+（`zip:: 01007`）。
 
 ### 多行字符串
 
@@ -301,7 +297,7 @@ timeout: null
 
 ```json5
 {
-  port: "8080",   // 普通 `:` — String，不是数字
+  port: 8080,     // 裸整数 → Integer
   active: true,   // 关键字 → 原生 JSON bool
   timeout: null,  // 关键字 → 原生 JSON null
 }
@@ -309,26 +305,24 @@ timeout: null
 
 ## 完整规范
 
-- **当前稳定版本：** [Ktav 0.1.0](versions/0.1/spec.zh.md) — 发布于 2026-04-22。
+- **当前稳定版本：** [Ktav 0.6.0](versions/0.6/spec.zh.md) — 发布于 2026-06-01。
 - **所有版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.1/tests/)。成对的
+[`versions/<v>/tests/`](versions/0.6/tests/)。成对的
 `<name>.ktav` + `<name>.json`——其中 `.json` 是期望的 `Value`，
-对普通标量按 1:1 映射（`Null`→`null`、`Bool`→`bool`、
-`String`→`string`、`Array`→`array`、`Object`→`object`；普通 `:`
-对的数值 body 在 Value 层保持为字符串）。类型标量（`:i` / `:f`）
-以原生 JSON 数字编码——Integer 写为 `8080`，Float 写为 `0.5`——
-通过是否包含小数点来区分。完整的预期输出见
-[`versions/0.1/tests/README.zh.md`](versions/0.1/tests/README.zh.md)。
+按 1:1 映射（`Null`→`null`、`Bool`→`bool`、`String`→`string`、
+`Array`→`array`、`Object`→`object`）。数字按词法形式定型：整数
+body（`8080`）映射为 JSON 整数，小数 body（`0.5`）映射为 JSON
+浮点数，其余标量保持为字符串；当类数字的值需保持文本时，用
+`::` 强制字面字符串。
 对象字段顺序是有意义的。
 
 若实现通过某一版本套件中的全部测试，则视为符合该版本。可以把目录
-作为 git submodule 引入（或直接拷贝），详见
-[`versions/0.1/tests/README.zh.md`](versions/0.1/tests/README.zh.md)。
+作为 git submodule 引入（或直接拷贝）。
 
 ## 版本方案
 
@@ -378,12 +372,12 @@ timeout: null
 | Python          | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                  |
 
 Rust crate 是参考解析器;其他每个绑定都附带一份预构建的 `ktav_cabi`
-(C-ABI 包装)并暴露相同的 Ktav 0.1 接口 —— 下面与语言无关的
+(C-ABI 包装)并暴露相同的 Ktav 接口 —— 下面与语言无关的
 `tests/` 套件每次发布时都会针对所有实现运行。
 
 打算写新实现?请先读目标版本的 `spec.md`
-([`spec.zh.md`](versions/0.1/spec.zh.md) 的第 8 节 Compliance),
-再让 [`tests/`](versions/0.1/tests/) 套件跑过你的解析器。
+([`spec.zh.md`](versions/0.6/spec.zh.md) 的第 8 节 Compliance),
+再让 [`tests/`](versions/0.6/tests/) 套件跑过你的解析器。
 
 ## 贡献
 

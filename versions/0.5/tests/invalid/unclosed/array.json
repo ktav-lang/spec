@@ -1,1 +1,0 @@
-{"expected_error": "UnclosedCompound", "note": "Multi-line Array opened with `[` but no matching `]`."}

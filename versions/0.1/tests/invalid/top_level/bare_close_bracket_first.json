@@ -1,4 +1,0 @@
-{
-  "expected_error": "UnbalancedBracket",
-  "note": "Bare close `]` as first content line — no Array is open."
-}
