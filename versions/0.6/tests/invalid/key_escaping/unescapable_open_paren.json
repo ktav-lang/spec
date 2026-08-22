@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "`(` has no § 3.7 escape sequence at all — it is not one of the ten recognised escapes, unlike `,` `}` `]` `{` `[` `\\n` `\\r` `.` `:`. A literal `(` cannot appear in a key at all, escaped or not."}
