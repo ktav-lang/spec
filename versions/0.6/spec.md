@@ -1,8 +1,8 @@
 # Ktav — The Written Configuration Format
 
 **Languages:** **English** · [Русский](spec.ru.md) · [简体中文](spec.zh.md)
-**Version:** 0.6.0
-**Date:** 2026-06-01
+**Version:** 0.6.4
+**Date:** 2026-08-23
 
 ## Abstract
 
@@ -15,11 +15,11 @@ Multi-line strings and inline compounds use small, visible opt-in
 markers.
 
 This document specifies the syntax and semantics of the format at
-version 0.6.0. Implementations in any programming language may claim
-"Ktav 0.6.0 compliance" iff they satisfy every normative statement
+version 0.6.4. Implementations in any programming language may claim
+"Ktav 0.6.4 compliance" iff they satisfy every normative statement
 below.
 
-0.6.0: keys now process escape sequences (§ 3.7); adds `\.` and `\:`;
+0.6.4: keys now process escape sequences (§ 3.7); adds `\.` and `\:`;
 **breaking** — a literal backslash in a key now requires `\\`.
 
 ## 1. Introduction
@@ -38,7 +38,7 @@ This rules out indentation-significant whitespace (YAML),
 trailing-comma arithmetic (JSON), anchors and aliases (YAML), schema
 directives, and heredoc markers that cross many lines.
 
-Compared with 0.1.x, version 0.6.0:
+Compared with 0.1.x, version 0.6.4:
 
 - Drops the typed markers `:i` and `:f`. Numbers, booleans and `null`
   are inferred from the lexical form of the scalar instead. The raw
@@ -49,7 +49,7 @@ Compared with 0.1.x, version 0.6.0:
 - Replaces single `#` comments with **double `##`** comments that
   occupy a whole line. A single `#` is now an ordinary character.
 
-Compared with 0.5.0, version 0.6.0:
+Compared with 0.5.0, version 0.6.4:
 
 - Keys now process the full escape-sequence set (§ 3.7). Two new
   escapes — `\.` (literal dot) and `\:` (literal colon) — allow
@@ -119,7 +119,7 @@ Comments MUST occupy their own line; trailing comments at the end of
 a content line are not supported. Since comments are recognised only
 at the start of a trimmed line, the literal byte pair `##` in the
 middle of a value, key, or other content is just two `#` characters
-and needs no escape — there is no `\#` escape sequence in 0.6.0.
+and needs no escape — there is no `\#` escape sequence in 0.6.4.
 
 ### 3.5 Blank Lines
 
@@ -523,7 +523,7 @@ handled per § 5.3 / § 5.4 / § 5.8 as raw Strings.
     value that exceeds the implementation's supported range falls
     through to rule 15 (String). To guarantee interoperability, a
     portable document SHOULD NOT rely on Integer-typing for values
-    outside the i64 range; a 0.6.0-conformant parser running on a
+    outside the i64 range; a 0.6.4-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
 14. If the body matches the **float literal** grammar (§ 3.6): Float
     carrying the numeric value parsed from the body. The internal
@@ -1011,28 +1011,26 @@ SHOULD NOT rely on such content.
   mantissa is dropped. The leading `+` on the exponent is dropped
   (a positive exponent carries no sign).
 
-  The canonical textual form is the **shortest decimal expansion
-  that uniquely identifies the Value**, computed by a
-  Ryu / Grisu / Steele-White-class algorithm. For an IEEE 754
-  binary64 implementation, this is the shortest decimal that
-  round-trips to the same binary64.
+  First compute the shortest decimal expansion that uniquely identifies
+  the Value, using a Ryu / Grisu / Steele-White-class algorithm. For an
+  IEEE 754 binary64 implementation, this is the shortest decimal that
+  round-trips to the same binary64. Then choose its notation using this
+  deterministic policy, where `abs` is the absolute numeric value:
 
-  - When the shortest form has a small absolute exponent (a value
-    that prints cleanly without scientific notation), the emitted
-    form uses the `digits "." digits` alternative — e.g. `1.5`,
-    `42.0`, `0.5`, `-0.001`.
-  - When the value has a large absolute exponent or would have
-    many trailing or leading zeros in plain decimal, the emitted
-    form uses the exponent alternative — e.g. `1e9`, `1.5e9`,
-    `2.5e10`, `1.5e-3`, `-2.5e-10`.
+  - if `abs < 1e-2` or `abs >= 1e7`, use the exponent alternative;
+  - otherwise, use the `digits "." digits` alternative.
+
+  The thresholds are exact: `0.01` and `9999999.0` use decimal form,
+  while `0.001`, `0.0015`, `-0.001`, and `10000000.0` use exponent
+  form. Scientific output uses lowercase `e`, omits a positive exponent
+  sign, and strips a trailing `.0` from the mantissa. Thus the examples
+  are `0.01`, `1e-3`, `1.5e-3`, `-1e-3`, `9999999.0`, and `1e7`.
 
   Two writer-conforming implementations using the same Float
   representation (binary64) MUST produce identical output for the
   same Value. The test fixtures `*.canonical.ktav` assume binary64
-  semantics; implementations using arbitrary-precision decimal may
-  legitimately produce different output where the binary64
-  shortest-decimal coincides with a representable decimal — they
-  are still writer-conforming on their own Value domain.
+  semantics; implementations using arbitrary-precision decimal MAY
+  produce different output only where their Value domain differs.
 
 #### 5.9.9 Keywords
 
@@ -1115,7 +1113,7 @@ Object.
 Previously: *Inline non-empty compound*. In 0.5.0+, inline non-empty
 compounds are valid (§ 5.8). This number is reserved to avoid
 renumbering older error catalogs. Implementations MUST NOT emit an
-error labelled `InlineNonEmptyCompound` when parsing 0.6.0 documents.
+error labelled `InlineNonEmptyCompound` when parsing 0.6.4 documents.
 
 ### 6.8 I/O Errors
 
@@ -1126,7 +1124,7 @@ I/O failure while reading a document yields an `Io` error.
 Previously: *Invalid typed scalar*. In 0.5.0+, typed markers `:i` /
 `:f` no longer exist; this number is reserved. Implementations
 MUST NOT emit an error labelled `InvalidTypedScalar` when parsing
-0.6.0 documents.
+0.6.4 documents.
 
 ### 6.10 Missing Separator Space
 
@@ -1344,7 +1342,7 @@ these round-trip.
 
 ## 8. Compliance
 
-An implementation may claim **Ktav 0.6.0 compliance** at one or more
+An implementation may claim **Ktav 0.6.4 compliance** at one or more
 of the following levels.
 
 ### 8.1 Parser-conforming
@@ -1391,7 +1389,7 @@ Implementations MAY claim parser-only, writer-only, or both
 levels of conformance. An implementation MAY support older Ktav
 format versions in parallel (e.g. 0.1.1) under a configuration
 flag, but the default behaviour for documents without a
-version-pragma SHOULD be 0.6.0.
+version-pragma SHOULD be 0.6.4.
 
 ## 9. Security Considerations
 
@@ -1491,7 +1489,7 @@ than on an in-value escape.
 
 Ktav values are written by humans. Heavy escape rules are a
 correctness footgun. The 0.5.0 escape set was the minimal closed
-set for inline scalars. 0.6.0 extends it to keys with `\.` and
+set for inline scalars. 0.6.4 extends it to keys with `\.` and
 `\:`, giving the full set of ten escapes — every structurally
 significant byte in inline form (`,`, `}`, `]`, `{`, `[`), the
 key-structural bytes (`.`, `:`), the literal backslash (`\\`),
@@ -1515,7 +1513,7 @@ byte exactly.
 
 Multi-line scalars and multi-line strings have no escape processing
 at all — the lexical layout makes escape unnecessary in those
-contexts. (Keys gained escape processing in 0.6.0; see § 3.7.)
+contexts. (Keys gained escape processing in 0.6.4; see § 3.7.)
 
 ### 10.5 Why is `{a:}` valid but `[,a]` an error?
 

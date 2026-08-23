@@ -305,7 +305,7 @@ timeout: null
 
 ## 完整规范
 
-- **当前稳定版本：** [Ktav 0.6.0](versions/0.6/spec.zh.md) — 发布于 2026-06-01。
+- **当前稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23。
 - **所有版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.md`](CHANGELOG.md)。
 

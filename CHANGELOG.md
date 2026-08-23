@@ -16,6 +16,20 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.6.4] — 2026-08-23
+
+### Changed
+
+- **Float canonicalisation is now normative at the notation boundary.**
+  The writer first uses the shortest round-tripping decimal for its Float
+  representation, then MUST use scientific notation when `abs < 1e-2` or
+  `abs >= 1e7`, and decimal notation otherwise. The exact boundary values
+  and examples are now explicit in § 5.9.8, eliminating the former
+  contradiction between `-0.001` and `1.5e-3`.
+- **The current stable specification is 0.6.4.** This is an editorial
+  clarification and conformance-fixture release; the directory remains
+  `versions/0.6/`.
+
 ## [0.6.0] — 2026-06-01
 
 Targeted breaking change: keys now process escape sequences. Two new

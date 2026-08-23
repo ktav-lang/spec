@@ -318,7 +318,7 @@ timeout: null
 
 ## Full specification
 
-- **Current stable:** [Ktav 0.6.0](versions/0.6/spec.md) — released 2026-06-01.
+- **Current stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23.
 - **Machine-readable index** of all versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
 

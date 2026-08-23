@@ -5,22 +5,22 @@
 ## status.
 
 stable: {
-    version: 0.6.0
+    version: 0.6.4
     path: versions/0.6
-    released: 2026-06-01
+    released: 2026-08-23
 }
 
 latest: {
-    version: 0.6.0
+    version: 0.6.4
     path: versions/0.6
     stability: stable
 }
 
 all: [
     {
-        version: 0.6.0
+        version: 0.6.4
         path: versions/0.6
         stability: stable
-        released: 2026-06-01
+        released: 2026-08-23
     }
 ]
