@@ -1,0 +1,8 @@
+items: [
+    plain
+    true
+    null
+    false
+    :: true
+    :: null
+]

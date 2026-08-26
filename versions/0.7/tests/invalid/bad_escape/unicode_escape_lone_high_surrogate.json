@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "A high surrogate (U+D800) with no following low-surrogate \\uXXXX escape is a lone surrogate."}

@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "\\u followed by fewer than four hex digits before a non-hex byte is malformed."}

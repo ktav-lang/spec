@@ -16,6 +16,53 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## Unreleased
+
+Draft normative text and conformance fixtures for 0.7.0, under
+`versions/0.7/`. Not yet the current stable specification — `versions.ktav`
+still points `stable` and `latest` at 0.6.4 until this is actually released.
+
+### Breaking
+
+- **§ 5.6 — the stripped multi-line string form (`( … )`) now strips
+  trailing whitespace from each content line**, matching what it already
+  did to each line's leading whitespace. Previously `( … )` preserved
+  trailing whitespace byte-for-byte, identically to the verbatim form
+  `(( … ))` — an editor's "trim trailing whitespace on save" could
+  silently mutate string content with no visible signal. `(( … ))` is
+  unaffected and remains fully verbatim on both edges.
+
+### Changed
+
+- **§ 3.3 — whitespace is now a fixed, exhaustively enumerated
+  25-code-point set (`MUST`), not an implementation-defined `MAY`.**
+  The set is Unicode's `White_Space` property as of Unicode 6.3 (2013),
+  frozen by explicit list rather than by reference to "the current
+  version of Unicode" — implementations MUST NOT delegate to a host
+  language's built-in Unicode-whitespace primitive (verified to disagree
+  with this list in both directions across at least two mainstream
+  language runtimes).
+- **§ 4 — key-segment trimming widens from ASCII-only to the same
+  25-code-point set**, resolving a standing contradiction between § 3.3
+  (which already permitted Unicode whitespace) and § 4 (which mandated
+  ASCII-only specifically for keys). The Rust reference implementation's
+  actual trimming behaviour does not change — it has trimmed the full
+  set since 0.6.0; only the normative text catches up to it.
+- **§ 6.13 `BadEscapeSequence`** — extended to cover malformed `\uXXXX`
+  forms (fewer than four hex digits) and lone surrogates, alongside the
+  existing unrecognised-`\X` case.
+
+### Added
+
+- **`\uXXXX` escape (new § 3.7.1)** — exactly four hex digits, surrogate
+  pairs for code points above the Basic Multilingual Plane, lone
+  surrogates rejected as `BadEscapeSequence`. Recognised wherever the
+  existing ten escapes are recognised (inline scalars and keys); not
+  processed in multi-line scalars, multi-line string content, or
+  comments. Purely additive to the escape table — no existing escape
+  sequence's meaning changes.
+- **Appendix D — migration guide 0.6.x → 0.7.0.**
+
 ## [0.6.4] — 2026-08-23
 
 ### Changed

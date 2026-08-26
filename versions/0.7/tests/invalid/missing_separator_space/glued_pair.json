@@ -1,0 +1,1 @@
+{"expected_error": "MissingSeparatorSpace", "note": "Inside Object context, `key:value` (no whitespace, no EOL after `:`) is a glued separator and an error."}

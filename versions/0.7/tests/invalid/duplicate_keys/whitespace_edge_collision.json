@@ -1,0 +1,1 @@
+{"expected_error": "DuplicateKey", "note": "Keys differ only by a whitespace code point (U+00A0 NBSP) at a trimmed edge; trimming happens before the duplicate-name check, so both segments decode to the same key \"isAdmin\"."}
