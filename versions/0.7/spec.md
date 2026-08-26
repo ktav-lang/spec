@@ -23,10 +23,10 @@ below.
 to a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3);
 § 4's key-segment trimming widens from ASCII-only to the same fixed
 set, resolving a standing internal contradiction; adds the `\uXXXX`
-escape (§ 3.7.1); the `(…)` multi-line string form now strips
-trailing whitespace per line, matching what `(…)` already did to
-leading whitespace (§ 5.6). Two independently-scoped breaking
-changes: value/key-edge trimming now covers the 22 non-ASCII
+escape (§ 3.7.1); the `(…)` multi-line string form now also strips
+trailing whitespace from every content line — `(…)` already removed
+each line's shared leading indent (§ 5.6). Two independently-scoped breaking
+changes: value/key-edge trimming now covers the 19 non-ASCII
 code points in the § 3.3 set in addition to space/tab — non-breaking
 in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the `(…)` trailing-edge strip is
@@ -290,7 +290,7 @@ surrogates, and are valid on their own.
 `\uXXXX` is recognised only where escape sequences are recognised at
 all: inline scalar values and keys. It is **not** processed inside
 multi-line scalar values, multi-line string content (`(…)` /
-`(( … ))`, § 5.6), or comments — in those contexts the six bytes
+`((…))`, § 5.6), or comments — in those contexts the six bytes
 `\`, `u`, and four following characters are literal content, exactly
 as any other unrecognised-elsewhere escape form would be (§ 3.7,
 "Escape sequences are NOT processed in", above).
@@ -339,7 +339,10 @@ alternation. `(ws)` stands for zero or more whitespace code points
                    | "." | ":"
 <hex-digit>     ::= [0-9a-fA-F]
 <key-char>      ::= any UTF-8 code point except
-                    ASCII control bytes < 0x20 (other than tab 0x09),
+                    ASCII control bytes < 0x20 other than the § 3.3
+                    whitespace members (tab 0x09, VT 0x0B, FF 0x0C —
+                    LF 0x0A and CR 0x0D are excluded separately below
+                    as line terminators, not as control bytes),
                     DEL (0x7F),
                     line terminator (LF 0x0A, CR 0x0D),
                     "[", "]", "{", "}", "(", ")", ":", ",",
@@ -375,7 +378,12 @@ alternation. `(ws)` stands for zero or more whitespace code points
                     `\uXXXX` produces the named code point and is
                     likewise never re-examined as a structural
                     delimiter, regardless of which code point it
-                    decodes to. Any other `\X` form in a key is a
+                    decodes to — the `<key-char>` exclusions above
+                    apply only to raw, unescaped bytes; a decoded
+                    `\uXXXX` code point (including a control code
+                    point such as `U+0000`) is accepted as key
+                    content and is subject only to the surrogate
+                    rule of § 3.7.1. Any other `\X` form in a key is a
                     `BadEscapeSequence` error (§ 6.13).
 
                     The pair separator is the first **unescaped** `:`
@@ -832,9 +840,13 @@ from `\n`, CR from `\r`) are content and are not subject to further
 trimming after escape replacement.
 
 To preserve trailing/leading whitespace in a String value, escape the
-first or last whitespace code point — see § 3.7 (no `\<space>` escape is
-defined, so whitespace-preserving values cannot be expressed in
-inline form; use the multi-line pair form instead).
+first or last whitespace code point — see § 3.7. No `\<space>` named
+escape is defined, but `\uXXXX` (§ 3.7.1) can name any whitespace
+code point explicitly (e.g. the four-digit form naming U+0020, an
+ordinary space), so a whitespace-preserving value CAN be expressed
+in inline form as of
+0.7.0; the verbatim multi-line form `((…))` remains the byte-exact
+alternative for values needing more than edge preservation.
 
 #### 5.8.2 Pairs
 
@@ -1021,14 +1033,19 @@ A pair separator is selected by the kind/content of its value:
   ASCII-only), (c) contains no ASCII control byte
   (0x00–0x1F other than 0x09 `TAB`), (d) is not a token the
   parser would classify under § 5.2 as something other than a
-  String (number, `null`, `true`, `false`), and (e) does not
+  String (number, `null`, `true`, `false`), (e) does not
   start with `{` or `[` (which would cause § 5.2 to dispatch
-  the body as an inline compound rather than a String).
+  the body as an inline compound rather than a String), and
+  (f) is not exactly `()` or `(())` (which § 5.7's
+  empty-compound shortcuts would reinterpret as the empty
+  String, not this literal two- or four-character body).
 - **`key:: <bytes>` (raw marker):** when the bytes are a non-empty
   one-line String that would otherwise be reinterpreted by § 5.2
   if emitted with plain `:` — either as a number / `null` /
-  `true` / `false`, or as an inline compound (a body starting
-  with `{` or `[`), or any other non-String classification.
+  `true` / `false`, as an inline compound (a body starting
+  with `{` or `[`), as the empty String via § 5.7's shortcuts
+  (a body of exactly `()` or `(())`), or any other non-String
+  classification.
 - **`key: <multi-line>`:** when the value is a String containing
   `LF`, leading/trailing whitespace, or any control byte other
   than `LF` / `TAB` (and not `CR`, which is not representable —
@@ -1043,8 +1060,8 @@ A pair separator is selected by the kind/content of its value:
   `key: <bytes>` form of § 5.9.5 (including: does not start with
   `{` or `[`).
 - **Raw-marker item:** `:: <bytes>` — when the body would otherwise
-  be reinterpreted by § 5.2 as a number, keyword, or inline
-  compound.
+  be reinterpreted by § 5.2 as a number, keyword, an inline
+  compound, or (via § 5.7's shortcuts) the empty String.
 - **Empty Object item:** `{}` on its own line.
 - **Empty Array item:** `[]` on its own line.
 - **Non-empty Object item:** `{` opening line, body lines at
@@ -1057,7 +1074,9 @@ A pair separator is selected by the kind/content of its value:
   part of the String value), `))` closing line at the current
   indent. (Rationale: § 5.6 specifies verbatim joins content
   lines byte-for-byte. Adding indentation to body lines would
-  inject whitespace code points into the parsed value.)
+  inject whitespace code points into the parsed value.) Subject
+  to § 5.9.7's stripped-form fallback when a body segment trims
+  to exactly `))`.
 
 #### 5.9.7 String form selection
 
@@ -1071,7 +1090,8 @@ Let *body* be the byte sequence of a String Value.
   `false`:** emit as `key:: <body>` (pair) or `:: <body>` (item),
   using the raw marker.
 - **Contains `LF`, leading/trailing whitespace, or any control byte
-  (`0x00`–`0x1F` other than `0x09` `TAB` and `0x0A` `LF`):** emit
+  (`0x00`–`0x1F` other than `0x09` `TAB` and `0x0A` `LF`, and not
+  `0x0D` `CR`, which the next bullet handles separately):** emit
   as verbatim multi-line `((` … `))`. The opener `((` is emitted
   on the value line (preceded by `key: ` for a pair, or alone for
   an item) at the current indent. The body is split on `LF`; each
@@ -1091,34 +1111,43 @@ Let *body* be the byte sequence of a String Value.
 
 The canonical writer prefers verbatim multi-line form `((` … `))`
 for strings requiring multi-line representation. If any segment of
-the body (after splitting on `LF`) is exactly `))`, verbatim form
-is impossible (the segment would close the block); in that case
-the canonical writer MUST switch to stripped form `(` … `)` with
-no leading indent (the writer emits body segments at indent 0 so
-the common-indent computation yields zero). The closing `)` line
-is then at the outer indent.
+the body (after splitting on `LF`), when trimmed of leading and
+trailing whitespace (§ 3.3), is exactly `))` — matching § 5.6.1's
+parser-side closer trigger, which trims a content line before
+comparing it to `))` — verbatim form is impossible: the segment
+would be misread as the closer regardless of any leading or
+trailing whitespace of its own (e.g. a segment `"  ))"` collides
+just as much as a bare `"))"`). In that case the canonical writer
+MUST switch to stripped form `(` … `)` with no leading indent (the
+writer emits body segments at indent 0 so the common-indent
+computation yields zero). The closing `)` line is then at the
+outer indent.
 
 (Rationale: stripped form's `)` closer leaves `))` available as
 content, which is the only way to represent that byte sequence in
-a multi-line value.)
+a multi-line value — provided no segment also collides with the
+`)` closer; see below.)
 
-A String whose body would require both forms — containing both a
-`))` content line AND a `)` content line — is not representable
-in the canonical multi-line form; implementations MAY produce
-either form and accept that the round-trip property does not
-strictly hold for such pathological values. Portable documents
-SHOULD NOT rely on such content.
+A String whose body would require both forms — containing a
+segment that trims to exactly `))` (forcing the stripped-form
+fallback above) AND a segment that trims to exactly `)` (which
+would then collide with the stripped-form closer) — is not
+representable in the canonical multi-line form; implementations
+MAY produce either form and accept that the round-trip property
+does not strictly hold for such pathological values. Portable
+documents SHOULD NOT rely on such content.
 
-As of 0.7.0, a body containing a `))` content line (forcing the
-stripped-form fallback above) that ALSO has trailing whitespace
-(§ 3.3) on any content line is likewise not representable: the
-stripped form now strips that trailing whitespace on emission,
-so the fallback would silently lose it. Implementations MAY
-produce the stripped form and accept that the round-trip property
-does not strictly hold for such pathological values, exactly as
-for the both-forms-required case above. Portable documents
-SHOULD NOT rely on trailing whitespace inside a multi-line String
-body that also requires a literal `))` content line.
+As of 0.7.0, a body containing a segment that trims to exactly
+`))` (forcing the stripped-form fallback above) that ALSO has
+trailing whitespace (§ 3.3) on any content line is likewise not
+representable: the stripped form now strips that trailing
+whitespace on emission, so the fallback would silently lose it.
+Implementations MAY produce the stripped form and accept that the
+round-trip property does not strictly hold for such pathological
+values, exactly as for the both-forms-required case above.
+Portable documents SHOULD NOT rely on trailing whitespace inside a
+multi-line String body that also requires a segment trimming to
+`))`.
 
 #### 5.9.8 Number canonicalisation
 
@@ -1169,17 +1198,30 @@ in the Value model from one parsed from `a: { b: { c: 1 } }`, and
 the canonical writer chooses the explicit nested form (not the
 dotted form).
 
-When emitting a key segment, the writer MUST re-escape any byte that
-would otherwise be structural or ambiguous:
+When emitting a key segment, the writer MUST re-escape every code
+point that `<key-char>` (§ 4) excludes from raw content, plus any
+§ 3.3 whitespace code point at the segment's first or last position
+(which § 4's trimming rule would otherwise remove on re-parse):
 
-- `\` → `\\` (backslash is the escape lead)
-- `.` → `\.` (dot is the path separator)
-- `:` → `\:` (colon is the pair separator)
+- Bytes with a named escape (§ 3.7) use it: `\` → `\\`, `.` → `\.`,
+  `:` → `\:`, `,` → `\,`, `{` → `\{`, `}` → `\}`, `[` → `\[`,
+  `]` → `\]`, LF → `\n`, CR → `\r`.
+- Everything else `<key-char>` excludes — `(`, `)`, DEL (`0x7F`),
+  and any control byte below `0x20` that is not a § 3.3 whitespace
+  member — has no named escape and MUST be emitted as `\uXXXX`
+  (§ 3.7.1).
+- A § 3.3 whitespace code point at the first or last position of
+  the segment MUST likewise be emitted as `\uXXXX` rather than
+  literally, even though § 4 otherwise permits whitespace as
+  ordinary interior key content: left unescaped, it would be
+  silently trimmed away on re-parse, changing the key. Interior
+  whitespace needs no escaping.
 
 This ensures that the canonical output round-trips: unescaped dots
-in the canonical key are path separators only. A key segment
-containing a literal `.`, `:`, or `\` emits the escaped form so that
-re-parsing produces the same key.
+in the canonical key are path separators only, structural bytes
+never appear raw, and no edge whitespace is lost to re-parse
+trimming. A key segment containing a literal `.`, `:`, or `\` emits
+the escaped form so that re-parsing produces the same key.
 
 Example: the key `a.b` (a single segment containing a literal dot)
 is emitted as `a\.b`; the key `a:b` is emitted as `a\:b`.
@@ -1636,13 +1678,16 @@ there opens a nested compound), but having all four forms removes
 a "may I escape this here?" question for the writer and gives a
 clean rule: every inline structural delimiter has an escape form.
 
-Tab (`\t`, `0x09`) and other low-ASCII control bytes are
-intentionally **not** in the escape set. Tab is a permitted
-literal byte in keys and scalars (§ 4); control bytes are content
-data. A String containing such bytes is representable through
-verbatim multi-line form (§ 5.6, § 5.9.7) — there is no need for
-an inline tab escape because the multi-line form preserves the
-byte exactly.
+Tab (`0x09`) and other low-ASCII control bytes intentionally have
+no **dedicated named** escape (no `\t`) — no letter is worth
+reserving for a byte that is legal as a literal in the first
+place. Tab is a permitted literal byte in keys and scalars (§ 4);
+control bytes are content data. A String containing such bytes is
+representable through verbatim multi-line form (§ 5.6, § 5.9.7),
+or, since 0.7.0, inline via `\uXXXX` (§ 3.7.1), which can name any
+of them by number — there is no need for a dedicated named escape
+for each one when the multi-line form preserves the byte exactly
+and `\uXXXX` covers the inline case generically.
 
 Multi-line scalars and multi-line strings have no escape processing
 at all — the lexical layout makes escape unnecessary in those
@@ -1699,15 +1744,19 @@ The conformance suite tests both directions: input variety via
 
 ### 0.7.0 — unreleased
 
-- **Changed (normative clarification, non-breaking against every
-  shipped 0.6.x Rust core):** § 3.3 whitespace changes from
+- **Breaking:** § 3.3 whitespace changes from
   ASCII-mandatory-plus-Unicode-`MAY` to a fixed, exhaustively
   enumerated 25-code-point `MUST` (the Unicode `White_Space`
   property as of Unicode 6.3, frozen by explicit list rather than by
   reference). Implementations MUST NOT delegate to a host language's
   built-in Unicode-whitespace primitive — verified to disagree with
   this list in both directions across at least two mainstream
-  language runtimes.
+  language runtimes. Non-breaking against every shipped 0.6.x Rust
+  core, which already recognised the full set via `char::is_whitespace()`
+  (§ 3.3) — as with § 4's entry below, this is breaking only for an
+  implementation that took the old `MAY` at face value and stuck to
+  ASCII space/tab, rather than matching the Rust core's actual
+  behaviour; only the normative text catches up to the code.
 - **Breaking:** § 4's key-segment trimming widens from ASCII-only to
   the same fixed 25-code-point set (§ 3.3), resolving a standing
   contradiction between § 3.3 (which already permitted Unicode
@@ -1725,7 +1774,7 @@ The conformance suite tests both directions: input variety via
 - **Breaking:** The `(…)` multi-line string form now strips trailing
   whitespace (§ 3.3) from each content line, matching what it already
   did to each line's leading whitespace. Previously `(…)` preserved
-  trailing whitespace code point-for-byte, identically to `((…))` — an
+  trailing whitespace byte-for-byte, identically to `((…))` — an
   editor's "trim trailing whitespace on save" could silently mutate
   string content with no visible signal. `((…))` is unaffected and
   remains fully verbatim on both edges.

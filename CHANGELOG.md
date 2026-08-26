@@ -24,16 +24,6 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 
 ### Breaking
 
-- **§ 5.6 — the stripped multi-line string form (`( … )`) now strips
-  trailing whitespace from each content line**, matching what it already
-  did to each line's leading whitespace. Previously `( … )` preserved
-  trailing whitespace byte-for-byte, identically to the verbatim form
-  `(( … ))` — an editor's "trim trailing whitespace on save" could
-  silently mutate string content with no visible signal. `(( … ))` is
-  unaffected and remains fully verbatim on both edges.
-
-### Changed
-
 - **§ 3.3 — whitespace is now a fixed, exhaustively enumerated
   25-code-point set (`MUST`), not an implementation-defined `MAY`.**
   The set is Unicode's `White_Space` property as of Unicode 6.3 (2013),
@@ -41,13 +31,33 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   version of Unicode" — implementations MUST NOT delegate to a host
   language's built-in Unicode-whitespace primitive (verified to disagree
   with this list in both directions across at least two mainstream
-  language runtimes).
+  language runtimes). Non-breaking against every shipped 0.6.x Rust
+  core, which already recognised the full set; breaking only for an
+  implementation that took the old `MAY` at face value and stuck to
+  ASCII space/tab.
 - **§ 4 — key-segment trimming widens from ASCII-only to the same
   25-code-point set**, resolving a standing contradiction between § 3.3
   (which already permitted Unicode whitespace) and § 4 (which mandated
-  ASCII-only specifically for keys). The Rust reference implementation's
-  actual trimming behaviour does not change — it has trimmed the full
-  set since 0.6.0; only the normative text catches up to it.
+  ASCII-only specifically for keys). Two keys differing only by a
+  non-ASCII whitespace code point at a trimmed edge, previously distinct
+  under a literal reading of § 4, now collide as the same key (§ 5.5).
+  The Rust reference implementation's actual trimming behaviour does not
+  change — it has trimmed the full set since 0.6.0; only the normative
+  text catches up to it, so this is breaking only for an implementation
+  that followed the old § 4 text literally rather than matching the
+  Rust core's actual behaviour.
+- **§ 5.6 — the stripped multi-line string form (`( … )`) now strips
+  trailing whitespace from each content line**, matching what it already
+  did to each line's leading whitespace. Previously `( … )` preserved
+  trailing whitespace byte-for-byte, identically to the verbatim form
+  `(( … ))` — an editor's "trim trailing whitespace on save" could
+  silently mutate string content with no visible signal. `(( … ))` is
+  unaffected and remains fully verbatim on both edges. Breaking even
+  for the Rust core, which previously preserved trailing whitespace on
+  every line of a stripped-form block.
+
+### Changed
+
 - **§ 6.13 `BadEscapeSequence`** — extended to cover malformed `\uXXXX`
   forms (fewer than four hex digits) and lone surrogates, alongside the
   existing unrecognised-`\X` case.
