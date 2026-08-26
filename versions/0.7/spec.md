@@ -25,11 +25,14 @@ to a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3);
 set, resolving a standing internal contradiction; adds the `\uXXXX`
 escape (§ 3.7.1); the `(…)` multi-line string form now strips
 trailing whitespace per line, matching what `(…)` already did to
-leading whitespace (§ 5.6) — **breaking** for documents whose
-significant content was ASCII-whitespace-adjacent at a value/key edge
-or a `(…)` line's trailing edge, though non-breaking in practice
-against every 0.6.x Rust-core release, which already trimmed the
-full set.
+leading whitespace (§ 5.6). Two independently-scoped breaking
+changes: value/key-edge trimming now covers the 22 non-ASCII
+code points in the § 3.3 set in addition to space/tab — non-breaking
+in practice against every 0.6.x Rust-core release, which already
+trimmed the full set there; the `(…)` trailing-edge strip is
+breaking even for the Rust core, which previously preserved
+trailing whitespace (including plain ASCII space/tab) on every line
+of a stripped-form block.
 
 ## 1. Introduction
 
@@ -47,7 +50,7 @@ This rules out indentation-significant whitespace (YAML),
 trailing-comma arithmetic (JSON), anchors and aliases (YAML), schema
 directives, and heredoc markers that cross many lines.
 
-Compared with 0.1.x, version 0.6.4:
+Compared with 0.1.x, version 0.7.0:
 
 - Drops the typed markers `:i` and `:f`. Numbers, booleans and `null`
   are inferred from the lexical form of the scalar instead. The raw
@@ -58,7 +61,7 @@ Compared with 0.1.x, version 0.6.4:
 - Replaces single `#` comments with **double `##`** comments that
   occupy a whole line. A single `#` is now an ordinary character.
 
-Compared with 0.5.0, version 0.6.4:
+Compared with 0.5.0, version 0.7.0:
 
 - Keys now process the full escape-sequence set (§ 3.7). Two new
   escapes — `\.` (literal dot) and `\:` (literal colon) — allow
@@ -114,13 +117,15 @@ reference to "the current version of Unicode":
 Implementations MUST recognise exactly this set, no more and no
 fewer, wherever this specification says "whitespace" or "trimmed" —
 never delegate to a host language's built-in Unicode-whitespace
-primitive (e.g. `\s`, `isspace()`, `char::is_whitespace()`): distinct
+primitive, even one that currently matches this list exactly (Rust's
+`char::is_whitespace()` is `White_Space`-exact today): distinct
 language runtimes disagree with this list in both directions (for
-example, some runtimes additionally treat the ASCII control bytes
-`U+001C`–`U+001F` as whitespace; others fail to recognise `U+0085`),
-and depending on a moving, per-runtime definition would silently
-reintroduce the cross-implementation identity gap this rule exists to
-close. `LF` (`U+000A`) and `CR` (`U+000D`) are members of this set for
+example, Python's `str.isspace()` additionally treats the ASCII
+control bytes `U+001C`–`U+001F` as whitespace; JavaScript's `\s`
+regex class fails to recognise `U+0085`), and depending on a moving,
+per-runtime definition would silently reintroduce the
+cross-implementation identity gap this rule exists to close. `LF`
+(`U+000A`) and `CR` (`U+000D`) are members of this set for
 completeness, but are consumed by the line-terminator rules (§ 3.2)
 before whitespace-trimming ever applies to them — they are never
 treated as an ordinary in-line separator.
@@ -141,7 +146,7 @@ separate, narrower "structural" whitespace concept.
 
 ### 3.4 Comments
 
-A **comment** is a line whose first non-whitespace bytes are `##`
+A **comment** is a line whose first non-whitespace code points are `##`
 (two ASCII `#` bytes). The rest of the line, up to and including the
 line terminator, is the comment body. Comments produce no Value and
 are ignored.
@@ -153,11 +158,11 @@ Comments MUST occupy their own line; trailing comments at the end of
 a content line are not supported. Since comments are recognised only
 at the start of a trimmed line, the literal byte pair `##` in the
 middle of a value, key, or other content is just two `#` characters
-and needs no escape — there is no `\#` escape sequence in 0.6.4.
+and needs no escape — there is no `\#` escape sequence in 0.7.0.
 
 ### 3.5 Blank Lines
 
-A **blank line** is a line consisting only of whitespace bytes.
+A **blank line** is a line consisting only of whitespace code points.
 Blank lines produce no Value and are ignored, with the exception of
 content inside multi-line strings (§ 5.6).
 
@@ -242,6 +247,21 @@ structural (dot separates path segments; colon separates the key
 from its value). Example: `a\.b: v` produces the flat key `a.b`
 with value `v` (no nesting); `a\:b: v` produces the key `a:b`.
 
+Any other `\X` form (including `\#`, `\t`, `\ <space>`,
+`\<any-other>`) is a `BadEscapeSequence` error (§ 6.13). See
+§ 3.7.1 below for the specific validity rules of `\uXXXX`.
+
+Escape sequences are NOT processed in:
+
+- Multi-line scalar values (the body of a pair or array item that is
+  the whole content of a line, § 5.3 / § 5.4).
+- Multi-line string content (`(…)` and `((…))`, § 5.6) — content is
+  verbatim.
+- Comments (§ 3.4) — content is ignored.
+
+In contexts without escape processing, the literal byte sequence
+`\X` is two characters (`\` followed by `X`).
+
 #### 3.7.1 Unicode Escapes (`\uXXXX`)
 
 `\uXXXX` consists of the two bytes `\u` followed by **exactly four**
@@ -250,9 +270,9 @@ hexadecimal digits (`[0-9a-fA-F]`, case-insensitive), naming a
 digits following `\u`, or a non-hex byte before the fourth digit, is
 a `BadEscapeSequence` error (§ 6.13) — the escape is never partially
 consumed. Exactly four digits are consumed; any further hex-looking
-bytes immediately after are ordinary content, not part of the escape
-(`A` + `1` decodes to the code point `U+0041` followed by the
-literal digit `1`, not a five-digit escape).
+byte immediately after is ordinary content, not part of the escape:
+an escape naming `U+0041` immediately followed by the literal digit
+`1` decodes to `A1` — two characters, not a five-digit escape.
 
 Code points outside the Basic Multilingual Plane (above `U+FFFF`) are
 written as a **surrogate pair**: a high surrogate (`U+D800`–`U+DBFF`)
@@ -273,35 +293,23 @@ multi-line scalar values, multi-line string content (`(…)` /
 `(( … ))`, § 5.6), or comments — in those contexts the six bytes
 `\`, `u`, and four following characters are literal content, exactly
 as any other unrecognised-elsewhere escape form would be (§ 3.7,
-"Escape sequences are NOT processed in", below).
+"Escape sequences are NOT processed in", above).
 
 A canonical writer emits ordinary Unicode content as UTF-8 directly;
 it is under no obligation to represent any code point as `\uXXXX`
 instead. Where a writer chooses to escape a byte that also has a
 named escape in the table above, it SHOULD prefer the named form
-(`\.` over `.`, for consistency with the existing ten) and use
-`\uXXXX` only for code points with no named escape.
-
-Any other `\X` form (including `\#`, `\t`, `\ <space>`,
-`\<any-other>`) is a `BadEscapeSequence` error (§ 6.13).
-
-Escape sequences are NOT processed in:
-
-- Multi-line scalar values (the body of a pair or array item that is
-  the whole content of a line, § 5.3 / § 5.4).
-- Multi-line string content (`(…)` and `((…))`, § 5.6) — content is
-  verbatim.
-- Comments (§ 3.4) — content is ignored.
-
-In contexts without escape processing, the literal byte sequence
-`\X` is two characters (`\` followed by `X`).
+(`\.` over the `\uXXXX` form of the same code point, for consistency
+with the existing ten) and use `\uXXXX` only for code points with no
+named escape.
 
 ## 4. Grammar
 
 The grammar is presented in a semi-formal notation, one rule per line.
 Terminals are in double quotes; `<name>` denotes a non-terminal;
 `*` is zero-or-more, `+` is one-or-more, `?` is optional, `|` is
-alternation. `(ws)` stands for zero or more whitespace bytes.
+alternation. `(ws)` stands for zero or more whitespace code points
+(§ 3.3 — the fixed 25-code-point set, not ASCII-only).
 
 ```
 <document>      ::= <line>*
@@ -338,9 +346,10 @@ alternation. `(ws)` stands for zero or more whitespace bytes.
                     "\" (backslash — now an escape lead, § 3.7),
                     "." (dot — now the path separator; use "\." for
                     a literal dot inside a segment)
-                    (note: ASCII space 0x20 AND horizontal tab 0x09
-                    ARE allowed inside a key segment, so a key MAY
-                    contain internal whitespace such as
+                    (note: any whitespace code point (§ 3.3) is
+                    allowed inside a key segment — only the trimmed
+                    edges are removed, not interior occurrences — so
+                    a key MAY contain internal whitespace such as
                     "first name: alice"; "#" is allowed; "##" two-byte
                     run only becomes a comment when at the start of
                     a trimmed line, § 3.4)
@@ -392,7 +401,7 @@ alternation. `(ws)` stands for zero or more whitespace bytes.
                       delimiter applies the same way regardless of
                       which of the eleven forms produced the byte
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 whitespace byte, or the line end
+<sep-end>       ::= 1*ws | &eol                    ; ≥1 whitespace code point, or the line end
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
@@ -443,7 +452,7 @@ Notes on the notation:
 - `(ws)` stands for zero or more whitespace code points (§ 3.3 — the
   fixed 25-code-point set, not ASCII-only).
 - `1*ws` stands for **one or more** whitespace code points (§ 3.3).
-- `<sep-end>` stands for "at least one whitespace byte, or the end of
+- `<sep-end>` stands for "at least one whitespace code point, or the end of
   the line". It is used after the multi-line pair separators (`:`,
   `::`). Writing `key:value` (no whitespace, no EOL after the
   separator) is a syntax error in the multi-line pair form — see
@@ -452,7 +461,7 @@ Notes on the notation:
 - `&eol` is a zero-width positive lookahead — it matches the end of
   line without consuming it, so the EOL is still the line terminator.
 - The `<inline-value>` alternatives are checked **left-to-right** on
-  the first non-whitespace byte of the inline-value position. If that
+  the first non-whitespace code point of the inline-value position. If that
   byte is `{`, the value is a nested inline object (matching one of
   the first two `{`-rules) and MUST close with `}` on the same line;
   if the byte is `[`, it is a nested inline array. Any other first
@@ -503,13 +512,13 @@ the first matching rule wins.
    blank/comment lines) → root is an empty **Object**.
 2. If the first content line trimmed is a **closed inline object**
    `{ … }` — a `{`, balanced inline content, and a matching `}` as
-   the last non-whitespace byte of the trimmed line — → root **IS**
+   the last non-whitespace code point of the trimmed line — → root **IS**
    that inline Object. The document MUST have no further content
    lines; any subsequent non-blank, non-comment line is an
    `OrphanLineAfterTopLevelInline` error (§ 6.14).
 3. If the first content line trimmed is a **closed inline array**
    `[ … ]` — a `[`, balanced inline content, and a matching `]` as
-   the last non-whitespace byte of the trimmed line — → root **IS**
+   the last non-whitespace code point of the trimmed line — → root **IS**
    that inline Array. The document MUST have no further content
    lines; any subsequent non-blank, non-comment line is an
    `OrphanLineAfterTopLevelInline` error (§ 6.14).
@@ -620,7 +629,7 @@ handled per § 5.3 / § 5.4 / § 5.8 as raw Strings.
     value that exceeds the implementation's supported range falls
     through to rule 15 (String). To guarantee interoperability, a
     portable document SHOULD NOT rely on Integer-typing for values
-    outside the i64 range; a 0.6.4-conformant parser running on a
+    outside the i64 range; a 0.7.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
 14. If the body matches the **float literal** grammar (§ 3.6): Float
     carrying the numeric value parsed from the body. The internal
@@ -664,7 +673,7 @@ where:
   (§ 3.7) are NOT processed in a multi-line pair body (a body that
   is the whole rest of the line); they ARE processed in an inline
   pair body (§ 5.8).
-- `<sep-end>` requires at least one whitespace byte or end-of-line
+- `<sep-end>` requires at least one whitespace code point or end-of-line
   after the separator. Writing `key:value` / `key::value` (no
   whitespace, body continues on the same line) is a
   `MissingSeparatorSpace` error (§ 6.10). The `<sep-end>` rule does
@@ -738,7 +747,7 @@ a line whose trimmed content is exactly `)` (for stripped) or `))`
   that prefix from each line, then removes trailing whitespace
   (§ 3.3) from each line. The lines are then joined by single `\n`
   bytes. Blank lines inside the block contribute empty strings to the
-  joined result. A blank line containing only whitespace bytes
+  joined result. A blank line containing only whitespace code points
   (per § 3.5) does NOT participate in the common-indent computation;
   it contributes an empty content line to the joined result.
 
@@ -823,7 +832,7 @@ from `\n`, CR from `\r`) are content and are not subject to further
 trimming after escape replacement.
 
 To preserve trailing/leading whitespace in a String value, escape the
-first or last whitespace byte — see § 3.7 (no `\<space>` escape is
+first or last whitespace code point — see § 3.7 (no `\<space>` escape is
 defined, so whitespace-preserving values cannot be expressed in
 inline form; use the multi-line pair form instead).
 
@@ -882,7 +891,7 @@ overly-deep input.
   the same line; a `{` / `[` not followed by a matching closer is a
   `UnterminatedInlineCompound` error.
 
-If a `(` or `((` byte appears as the first non-whitespace byte of an
+If a `(` or `((` byte appears as the first non-whitespace code point of an
 inline scalar value, it is treated as the start of an inline scalar
 (per § 5.8.1). Because no inline terminator (`,`, `}`, `]`) follows
 on the same line, this raises `UnterminatedInlineCompound` (§ 6.11).
@@ -896,11 +905,11 @@ key: {a: (
 )}
 ```
 
-A `{` or `[` byte that is **NOT** the first non-whitespace byte of
+A `{` or `[` byte that is **NOT** the first non-whitespace code point of
 an inline value (i.e. it appears mid-scalar) is a literal character
 and does NOT open a nested compound. The decision is made once,
 when the parser begins reading an inline value: if the first
-non-whitespace byte is `{` or `[`, the value is a nested compound;
+non-whitespace code point is `{` or `[`, the value is a nested compound;
 otherwise the value is an inline scalar that runs to the next
 unescaped `,` / `}` / `]` (or end-of-line, which is an error per
 § 6.11). Inside that inline scalar, additional `{` or `[` bytes are
@@ -1008,7 +1017,8 @@ A pair separator is selected by the kind/content of its value:
 - **`key: <bytes>` (plain separator + one space + scalar body):**
   when the value is a non-empty bare String whose body (a)
   contains no `LF` and no `CR` byte, (b) has no leading or
-  trailing ASCII whitespace, (c) contains no ASCII control byte
+  trailing whitespace (§ 3.3 — the fixed 25-code-point set, not
+  ASCII-only), (c) contains no ASCII control byte
   (0x00–0x1F other than 0x09 `TAB`), (d) is not a token the
   parser would classify under § 5.2 as something other than a
   String (number, `null`, `true`, `false`), and (e) does not
@@ -1047,7 +1057,7 @@ A pair separator is selected by the kind/content of its value:
   part of the String value), `))` closing line at the current
   indent. (Rationale: § 5.6 specifies verbatim joins content
   lines byte-for-byte. Adding indentation to body lines would
-  inject whitespace bytes into the parsed value.)
+  inject whitespace code points into the parsed value.)
 
 #### 5.9.7 String form selection
 
@@ -1098,6 +1108,17 @@ in the canonical multi-line form; implementations MAY produce
 either form and accept that the round-trip property does not
 strictly hold for such pathological values. Portable documents
 SHOULD NOT rely on such content.
+
+As of 0.7.0, a body containing a `))` content line (forcing the
+stripped-form fallback above) that ALSO has trailing whitespace
+(§ 3.3) on any content line is likewise not representable: the
+stripped form now strips that trailing whitespace on emission,
+so the fallback would silently lose it. Implementations MAY
+produce the stripped form and accept that the round-trip property
+does not strictly hold for such pathological values, exactly as
+for the both-forms-required case above. Portable documents
+SHOULD NOT rely on trailing whitespace inside a multi-line String
+body that also requires a literal `))` content line.
 
 #### 5.9.8 Number canonicalisation
 
@@ -1216,7 +1237,7 @@ Object.
 Previously: *Inline non-empty compound*. In 0.5.0+, inline non-empty
 compounds are valid (§ 5.8). This number is reserved to avoid
 renumbering older error catalogs. Implementations MUST NOT emit an
-error labelled `InlineNonEmptyCompound` when parsing 0.6.4 documents.
+error labelled `InlineNonEmptyCompound` when parsing 0.7.0 documents.
 
 ### 6.8 I/O Errors
 
@@ -1227,12 +1248,12 @@ I/O failure while reading a document yields an `Io` error.
 Previously: *Invalid typed scalar*. In 0.5.0+, typed markers `:i` /
 `:f` no longer exist; this number is reserved. Implementations
 MUST NOT emit an error labelled `InvalidTypedScalar` when parsing
-0.6.4 documents.
+0.7.0 documents.
 
 ### 6.10 Missing Separator Space
 
 In a multi-line pair line, the separator `:` / `::` MUST be followed
-by at least one whitespace byte or end-of-line. A glued form
+by at least one whitespace code point or end-of-line. A glued form
 (`key:value` / `key::value`) is a `MissingSeparatorSpace` error.
 
 Inline-compound pairs (§ 5.8) do NOT require whitespace after the
@@ -1276,7 +1297,7 @@ A `\u` not immediately followed by exactly four hexadecimal digits
 (§ 3.7.1) is also a `BadEscapeSequence` error, as is a lone
 surrogate — a high surrogate not immediately followed by a valid
 low-surrogate `\uXXXX` escape, or a low surrogate not immediately
-preceded by a high surrogate one.
+preceded by a high-surrogate `\uXXXX` escape.
 
 ### 6.14 Orphan Line After Top-Level Inline
 
@@ -1451,7 +1472,7 @@ these round-trip.
 
 ## 8. Compliance
 
-An implementation may claim **Ktav 0.6.4 compliance** at one or more
+An implementation may claim **Ktav 0.7.0 compliance** at one or more
 of the following levels.
 
 ### 8.1 Parser-conforming
@@ -1460,10 +1481,10 @@ A parser-conforming implementation:
 
 - Satisfies every normative MUST / MUST NOT statement in this
   document that pertains to parsing.
-- Accepts every fixture under `versions/0.6/tests/valid/` and
+- Accepts every fixture under `versions/0.7/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
   oracle.
-- Rejects every fixture under `versions/0.6/tests/invalid/` with
+- Rejects every fixture under `versions/0.7/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 
 ### 8.2 Writer-conforming
@@ -1471,7 +1492,7 @@ A parser-conforming implementation:
 A writer-conforming implementation:
 
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
-- For each fixture under `versions/0.6/tests/valid/`, produces —
+- For each fixture under `versions/0.7/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
   output equal to `name.canonical.ktav`.
 
@@ -1498,7 +1519,7 @@ Implementations MAY claim parser-only, writer-only, or both
 levels of conformance. An implementation MAY support older Ktav
 format versions in parallel (e.g. 0.1.1) under a configuration
 flag, but the default behaviour for documents without a
-version-pragma SHOULD be 0.6.4.
+version-pragma SHOULD be 0.7.0.
 
 ## 9. Security Considerations
 
@@ -1598,12 +1619,15 @@ than on an in-value escape.
 
 Ktav values are written by humans. Heavy escape rules are a
 correctness footgun. The 0.5.0 escape set was the minimal closed
-set for inline scalars. 0.6.4 extends it to keys with `\.` and
-`\:`, giving the full set of ten escapes — every structurally
-significant byte in inline form (`,`, `}`, `]`, `{`, `[`), the
-key-structural bytes (`.`, `:`), the literal backslash (`\\`),
-plus two convenience escapes (`\n`, `\r`) for embedded newlines.
-Other byte values are written literally.
+set for inline scalars. 0.6.0 extends it to keys with `\.` and
+`\:`, giving ten named escapes — every structurally significant
+byte in inline form (`,`, `}`, `]`, `{`, `[`), the key-structural
+bytes (`.`, `:`), the literal backslash (`\\`), plus two
+convenience escapes (`\n`, `\r`) for embedded newlines. 0.7.0 adds
+an eleventh, `\uXXXX` (§ 3.7.1), for the rare case of needing to
+name an arbitrary code point by number rather than typing it
+directly — most byte values are still written literally, since
+they need no escape at all.
 
 The bracket pair-set is full and symmetric: `\}` / `\{` and
 `\]` / `\[`. `\{` and `\[` are only ambiguity-relevant as the
@@ -1622,7 +1646,7 @@ byte exactly.
 
 Multi-line scalars and multi-line strings have no escape processing
 at all — the lexical layout makes escape unnecessary in those
-contexts. (Keys gained escape processing in 0.6.4; see § 3.7.)
+contexts. (Keys gained escape processing in 0.6.0; see § 3.7.)
 
 ### 10.5 Why is `{a:}` valid but `[,a]` an error?
 
@@ -1684,17 +1708,24 @@ The conformance suite tests both directions: input variety via
   built-in Unicode-whitespace primitive — verified to disagree with
   this list in both directions across at least two mainstream
   language runtimes.
-- **Changed:** § 4's key-segment trimming widens from ASCII-only to
+- **Breaking:** § 4's key-segment trimming widens from ASCII-only to
   the same fixed 25-code-point set (§ 3.3), resolving a standing
   contradiction between § 3.3 (which already permitted Unicode
   whitespace) and § 4 (which mandated ASCII-only for keys
-  specifically). The Rust reference implementation's actual trimming
-  behaviour does not change — it already trimmed the full set since
-  0.6.0; only the normative text catches up to it.
+  specifically) — the same category as the 0.5.0 entry's "Key
+  segments are trimmed of leading and trailing ASCII whitespace",
+  widened one step further. Two keys differing only by a non-ASCII
+  whitespace code point at a trimmed edge, previously distinct under
+  a literal reading of § 4, now collide as the same key (§ 5.5). The
+  Rust reference implementation's actual trimming behaviour does not
+  change — it already trimmed the full set since 0.6.0, so this is
+  breaking only for an implementation that followed the old § 4 text
+  literally rather than matching the Rust core's actual behaviour;
+  only the normative text catches up to the code.
 - **Breaking:** The `(…)` multi-line string form now strips trailing
   whitespace (§ 3.3) from each content line, matching what it already
   did to each line's leading whitespace. Previously `(…)` preserved
-  trailing whitespace byte-for-byte, identically to `((…))` — an
+  trailing whitespace code point-for-byte, identically to `((…))` — an
   editor's "trim trailing whitespace on save" could silently mutate
   string content with no visible signal. `((…))` is unaffected and
   remains fully verbatim on both edges.
@@ -1865,10 +1896,11 @@ Rust core's actual behaviour need to change.
 One breaking change applies to every implementation, Rust included:
 
 1. **`(…)` multi-line strings no longer preserve trailing whitespace
-   on each content line.** If a document relies on trailing spaces
-   or tabs inside a `(…)` block being preserved verbatim, switch that
-   block to `((…))`, which keeps both edges byte-for-byte in both
-   0.6.x and 0.7.0.
+   (§ 3.3 — any of the 25 code points, not just space/tab) on each
+   content line.** If a document relies on trailing whitespace inside
+   a `(…)` block being preserved verbatim, switch that block to
+   `((…))`, which keeps both edges byte-for-byte in both 0.6.x and
+   0.7.0.
 
 Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
