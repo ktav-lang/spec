@@ -1,1 +1,1 @@
-{"expected_error": "BadEscapeSequence", "note": "\\t is not in the escape set; tab has no escape form in 0.5.0."}
+{"expected_error": "BadEscapeSequence", "note": "\\t is not a named escape in any version -- tab has no dedicated named form. As of 0.7.0 a literal tab can be spelled `\\u0009`; a bare `\\t` remains BadEscapeSequence."}

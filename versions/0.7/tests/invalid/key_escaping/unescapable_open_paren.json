@@ -1,1 +1,1 @@
-{"expected_error": "BadEscapeSequence", "note": "`(` has no § 3.7 escape sequence at all — it is not one of the ten recognised escapes, unlike `,` `}` `]` `{` `[` `\\n` `\\r` `.` `:`. A literal `(` cannot appear in a key at all, escaped or not."}
+{"expected_error": "BadEscapeSequence", "note": "`(` has no named § 3.7 escape sequence -- it is not one of the ten named-escapable bytes, unlike `,` `}` `]` `{` `[` `\\n` `\\r` `.` `:`. As of 0.7.0 a literal `(` in a key must be spelled `\\u0028` (no named form exists); a bare `\\(` remains BadEscapeSequence."}

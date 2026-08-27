@@ -61,6 +61,14 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 - **§ 6.13 `BadEscapeSequence`** — extended to cover malformed `\uXXXX`
   forms (fewer than four hex digits) and lone surrogates, alongside the
   existing unrecognised-`\X` case.
+- **§ 5.9.10's key re-escape rule** now enumerates every code point
+  `<key-char>` excludes (not just `\`/`.`/`:`) and requires `\uXXXX` for
+  edge whitespace and for structural bytes with no named form (`(`, `)`,
+  DEL, control bytes). Keys containing `(`, `)`, DEL, or a control code
+  point are emittable in canonical form for the first time.
+- **`<key-char>` (§ 4)** now admits raw VT (`0x0B`) and FF (`0x0C`) as
+  literal key content, matching the § 3.3 widening. Non-breaking — only
+  accepts documents previously rejected as `InvalidKey`.
 
 ### Added
 

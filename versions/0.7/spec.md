@@ -301,7 +301,11 @@ instead. Where a writer chooses to escape a byte that also has a
 named escape in the table above, it SHOULD prefer the named form
 (`\.` over the `\uXXXX` form of the same code point, for consistency
 with the existing ten) and use `\uXXXX` only for code points with no
-named escape.
+named escape. When a writer does emit `\uXXXX`, the four hex digits
+MUST be uppercase (`0-9A-F`) — parsing is case-insensitive (§ 3.7.1
+above), but two writer-conforming implementations emitting the same
+code point MUST produce byte-identical output (§ 5.9's determinism
+requirement).
 
 ## 4. Grammar
 
@@ -1211,11 +1215,15 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   member — has no named escape and MUST be emitted as `\uXXXX`
   (§ 3.7.1).
 - A § 3.3 whitespace code point at the first or last position of
-  the segment MUST likewise be emitted as `\uXXXX` rather than
+  the segment MUST likewise be escaped rather than emitted
   literally, even though § 4 otherwise permits whitespace as
   ordinary interior key content: left unescaped, it would be
-  silently trimmed away on re-parse, changing the key. Interior
-  whitespace needs no escaping.
+  silently trimmed away on re-parse, changing the key. Use the
+  named form when one exists (LF and CR per bullet 1 above) and
+  `\uXXXX` otherwise — either form is immune to § 4's raw-byte
+  trimming, since the trimmed text is the escape's own ASCII
+  spelling (`\`, then a letter or four hex digits), never the
+  whitespace byte itself. Interior whitespace needs no escaping.
 
 This ensures that the canonical output round-trips: unescaped dots
 in the canonical key are path separators only, structural bytes
@@ -1788,6 +1796,18 @@ The conformance suite tests both directions: input variety via
 - **Changed:** § 6.13 `BadEscapeSequence` — extended to cover
   malformed `\uXXXX` forms (fewer than four hex digits) and lone
   surrogates, alongside the existing unrecognised-`\X` case.
+- **Changed:** § 5.9.10's key re-escape rule now enumerates every
+  code point `<key-char>` excludes (not just `\`/`.`/`:`) and
+  requires `\uXXXX` for edge whitespace and for structural bytes
+  with no named form (`(`, `)`, DEL, control bytes). Keys containing
+  `(`, `)`, DEL, or a control code point — previously representable
+  in the Value model but not emittable in canonical form at all —
+  are emittable for the first time as of 0.7.0, via `\uXXXX`.
+- **Changed:** `<key-char>` (§ 4) now admits raw VT (`0x0B`) and FF
+  (`0x0C`) as literal key content, matching the § 3.3 widening —
+  previously only tab was exempted from the control-byte exclusion.
+  Non-breaking: this only accepts documents previously rejected as
+  `InvalidKey`, no previously-valid document's meaning changes.
 
 ### 0.6.0 — 2026-06-01
 
