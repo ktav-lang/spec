@@ -297,15 +297,23 @@ as any other unrecognised-elsewhere escape form would be (§ 3.7,
 
 A canonical writer emits ordinary Unicode content as UTF-8 directly;
 it is under no obligation to represent any code point as `\uXXXX`
-instead. Where a writer chooses to escape a byte that also has a
-named escape in the table above, it SHOULD prefer the named form
-(`\.` over the `\uXXXX` form of the same code point, for consistency
-with the existing ten) and use `\uXXXX` only for code points with no
-named escape. When a writer does emit `\uXXXX`, the four hex digits
-MUST be uppercase (`0-9A-F`) — parsing is case-insensitive (§ 3.7.1
-above), but two writer-conforming implementations emitting the same
-code point MUST produce byte-identical output (§ 5.9's determinism
-requirement).
+instead. In canonical output this discretion is exercised nowhere
+except within a key segment (§ 5.9.10): a non-empty scalar's body is
+never escaped in canonical form at all (§ 5.9.4, § 5.9.7), and
+§ 5.9.10's own key-escaping algorithm has no discretion of its
+own — every code point it requires escaped uses the named form when
+one exists and `\uXXXX` otherwise, never a writer's choice between
+the two. The SHOULD/MAY language below therefore describes a writer
+producing hand-authored, non-canonical Ktav text, not the canonical
+algorithm. Where such a writer chooses to escape a byte that also
+has a named escape in the table above, it SHOULD prefer the named
+form (`\.` over the `\uXXXX` form of the same code point, for
+consistency with the existing ten) and use `\uXXXX` only for code
+points with no named escape. When `\uXXXX` is emitted, the four hex
+digits MUST be uppercase (`0-9A-F`) — parsing is case-insensitive
+(§ 3.7.1 above), but two writer-conforming implementations emitting
+the same code point MUST produce byte-identical output (§ 5.9's
+determinism requirement).
 
 ## 4. Grammar
 
@@ -966,9 +974,15 @@ lines are permitted.
 ### 5.9 Canonical Form
 
 A **writer-conforming** implementation MUST emit a *canonical* Ktav
-serialisation of any Value. The canonical form is byte-deterministic:
-for any given Value, every writer-conforming implementation MUST
-produce the same byte sequence.
+serialisation of any **representable** Value — § 5.9.7 defines the
+narrow set of String values that are not representable. The
+canonical form is byte-deterministic: for any given representable
+Value, every writer-conforming implementation MUST produce the same
+byte sequence. A writer-conforming implementation MUST reject a
+non-representable Value with an error, rather than serialise it:
+permitting an implementation-chosen or lossy encoding for the same
+non-representable Value would itself violate the byte-determinism
+guarantee just stated.
 
 #### 5.9.1 Whitespace, indentation, line endings
 
@@ -1020,7 +1034,10 @@ by the Value's kind, and parses back per § 5.0.1.
 Note: an Object pair line cannot be mistaken for a closed-inline or
 lone-opener root line (it always has a `:` separator); only Array
 roots whose first item is itself a compound (empty or not) require
-the wrap.
+the wrap. A separate hazard — an Array root's first item whose bare
+rendering would itself be recognised as a pair line (§ 5.0.1 rule 6)
+— is resolved not by this wrap but by forcing the raw-marker form
+for that one item instead (§ 5.9.6).
 
 #### 5.9.4 Compound values (non-root)
 
@@ -1092,13 +1109,29 @@ A pair separator is selected by the kind/content of its value:
   form (§ 4) instead of the literal two-byte content; a body
   starting with `##` is unconditionally read by § 5.1 rule 2 as a
   comment (§ 3.4), dropping the entire line silently rather than
-  raising an error.
+  raising an error. When the item is the **first item of an Array
+  root** (§ 5.9.3), the bare form is additionally not used if the
+  body would itself be recognised by § 5.0.1 rule 6 as a pair line
+  — that is, if it contains a `:` code point positioned so that
+  everything before it parses as one or more non-empty
+  `<key-token>+` segments (§ 4) separated by unescaped `.` (for
+  example `host: localhost`, or a bare `a:`). Only the Array root's
+  first item is exposed to § 5.0.1's root-kind detection; every
+  other item position is dispatched directly as an array-item line
+  regardless of its shape (§ 5.1 rules 7–8), so this exclusion does
+  not apply there.
 - **Raw-marker item:** `:: <bytes>` — when the body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would
   otherwise collide with a line-level structural token (a body of
-  exactly `}`, `]`, or `::`, or starting with `##`).
+  exactly `}`, `]`, or `::`, or starting with `##`), or (when the
+  item is the first item of an Array root) would otherwise be
+  recognised by § 5.0.1 rule 6 as a pair line. The raw-marker form
+  itself is immune to this last hazard: a line beginning `::` has
+  no key segment before the separator, so it never matches
+  `<pair-line>`'s grammar and is read as this Array's first item
+  (§ 5.0.1 rule 7) without needing the root-wrap of § 5.9.3.
 - **Empty Object item:** `{}` on its own line.
 - **Empty Array item:** `[]` on its own line.
 - **Non-empty Object item:** `{` opening line, body lines at
@@ -1140,11 +1173,11 @@ Let *body* be the byte sequence of a String Value.
   representable** in canonical form. A `CR` byte in a String can
   only be produced through the `\r` escape inside an inline
   compound (§ 3.7), and canonical form never emits inline
-  compounds for non-empty scalars. Writer-conforming
-  implementations MAY produce any deterministic encoding for such
-  Values (or reject them), and the round-trip property of § 8.3
-  does not hold. Portable documents SHOULD NOT rely on `CR` bytes
-  in String values.
+  compounds for non-empty scalars. A writer-conforming
+  implementation MUST reject such a Value with an error rather
+  than serialise it; it is outside the scope of the round-trip
+  property of § 8.3. Portable documents SHOULD NOT rely on `CR`
+  bytes in String values.
 
 The canonical writer prefers verbatim multi-line form `((` … `))`
 for strings requiring multi-line representation. If any segment of
@@ -1169,22 +1202,21 @@ A String whose body would require both forms — containing a
 segment that trims to exactly `))` (forcing the stripped-form
 fallback above) AND a segment that trims to exactly `)` (which
 would then collide with the stripped-form closer) — is not
-representable in the canonical multi-line form; implementations
-MAY produce either form and accept that the round-trip property
-does not strictly hold for such pathological values. Portable
-documents SHOULD NOT rely on such content.
+representable in the canonical multi-line form. A writer-conforming
+implementation MUST reject such a Value with an error rather than
+serialise it; it is outside the scope of the round-trip property of
+§ 8.3. Portable documents SHOULD NOT rely on such content.
 
 As of 0.7.0, a body containing a segment that trims to exactly
 `))` (forcing the stripped-form fallback above) that ALSO has
 trailing whitespace (§ 3.3) on any content line is likewise not
 representable: the stripped form now strips that trailing
-whitespace on emission, so the fallback would silently lose it.
-Implementations MAY produce the stripped form and accept that the
-round-trip property does not strictly hold for such pathological
-values, exactly as for the both-forms-required case above.
-Portable documents SHOULD NOT rely on trailing whitespace inside a
-multi-line String body that also requires a segment trimming to
-`))`.
+whitespace on emission, so the fallback would silently lose it. A
+writer-conforming implementation MUST reject such a Value with an
+error rather than serialise it, exactly as for the
+both-forms-required case above. Portable documents SHOULD NOT rely
+on trailing whitespace inside a multi-line String body that also
+requires a segment trimming to `))`.
 
 Independently of the trailing-whitespace case above, a body forced
 into stripped form (via a segment trimming to exactly `))`) where
@@ -1195,12 +1227,11 @@ distinguish that shared leading whitespace from writer-added
 structural indentation, and would strip it. This ambiguity in the
 stripped form's parsing rule predates 0.7.0 — it is documented here
 for the first time, alongside the other non-representable cases
-this form already has. Implementations MAY produce the stripped
-form and accept that the round-trip property does not strictly hold
-for such pathological values, exactly as for the other cases above.
-Portable documents SHOULD NOT rely on shared leading whitespace
-inside a multi-line String body that also requires a segment
-trimming to `))`.
+this form already has. A writer-conforming implementation MUST
+reject such a Value with an error rather than serialise it, exactly
+as for the other cases above. Portable documents SHOULD NOT rely on
+shared leading whitespace inside a multi-line String body that also
+requires a segment trimming to `))`.
 
 #### 5.9.8 Number canonicalisation
 
@@ -1275,12 +1306,16 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   whitespace byte itself. Interior whitespace needs no escaping.
 - If the key's raw text (the first segment, as written on the
   line) begins with the two-byte sequence `##`, the writer MUST
-  escape at least the first `#` as `\u0023`: unescaped, § 5.1
-  rule 2 reads the line as a comment (§ 3.4) and drops it
-  silently — a byte is neither in `<key-char>`'s exclusion list
-  nor at a trimmed edge, yet still needs escaping, because this
-  hazard operates at the line-dispatch layer, above § 4's
-  key-segment grammar entirely.
+  escape exactly the first `#` as `\u0023` and leave every
+  other byte of the segment — including the second `#` —
+  unescaped: left unescaped, § 5.1 rule 2 reads the line as a
+  comment (§ 3.4) and drops it silently — a byte is neither in
+  `<key-char>`'s exclusion list nor at a trimmed edge, yet still
+  needs escaping, because this hazard operates at the
+  line-dispatch layer, above § 4's key-segment grammar entirely.
+  Escaping exactly this one byte is both necessary and sufficient:
+  two writer-conforming implementations MUST produce the identical
+  `\u0023#…` prefix, never `\u0023\u0023…` or any other variant.
 
 This ensures that the canonical output round-trips: unescaped dots
 in the canonical key are path separators only, structural bytes
@@ -1307,9 +1342,18 @@ byte-offset Span covering the offending region.
 
 ### 6.1 Unbalanced or Mismatched Brackets
 
-A close-token (`}`, `]`, `)`, `))`) on a line that does not match
-the innermost open compound, or a bracket left open at end-of-file,
-is an `UnbalancedBracket` or `UnclosedCompound` error.
+A `}` or `]` on a line that does not match the innermost open
+Object/Array (§ 5.1 rules 5–6) is an `UnbalancedBracket` error. An
+Object, Array, or multi-line string left open at end-of-file — its
+matching `}`, `]`, `)`, or `))` never found — is an
+`UnclosedCompound` error.
+
+`)` and `))` are never close-tokens outside this second case: inside
+an open multi-line string, a line that does not match that string's
+own terminator (§ 5.6) is read as ordinary content (§ 5.1 rule 3),
+not an error; outside any open multi-line string, `)` and `))` are
+ordinary array-item or pair-value text (§ 5.2, § 5.4) like any other
+line.
 
 ### 6.2 Duplicate Name
 
@@ -1607,10 +1651,10 @@ The canonical form is defined in § 5.9.
 
 ### 8.3 Round-trip property
 
-The following identity MUST hold for every Value V producible by a
-parser-conforming implementation, when emitted and re-parsed by
-writer- and parser-conforming implementations of the same Value
-domain:
+The following identity MUST hold for every **representable** Value V
+(§ 5.9.7) producible by a parser-conforming implementation, when
+emitted and re-parsed by writer- and parser-conforming
+implementations of the same Value domain:
 
 ```
 emit_canonical(parse(emit_canonical(V))) == emit_canonical(V)
@@ -1618,7 +1662,9 @@ emit_canonical(parse(emit_canonical(V))) == emit_canonical(V)
 
 That is: parsing canonical output and re-emitting it produces
 byte-identical output. The canonical form is a fixed point of the
-parse-emit cycle.
+parse-emit cycle. A non-representable Value is outside the scope of
+this identity: § 5.9's writer-conforming requirement is to reject
+such a Value with an error rather than serialise it (§ 5.9.7).
 
 ### 8.4 Claims
 

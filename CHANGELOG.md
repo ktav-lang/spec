@@ -73,6 +73,21 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 - **`<key-char>` (§ 4)** now admits raw VT (`0x0B`) and FF (`0x0C`) as
   literal key content, matching the § 3.3 widening. Non-breaking — only
   accepts documents previously rejected as `InvalidKey`.
+- **§ 5.9 / § 8.3** now define the round-trip guarantee over
+  *representable* Values only (§ 5.9.7's narrow set of String values —
+  a `CR` byte, or one of a few pathological multi-line stripped-form
+  collisions). A writer-conforming implementation MUST reject a
+  non-representable Value with an error rather than serialise it;
+  previously § 5.9.7 separately allowed any implementation-chosen or
+  lossy encoding for the same Values, which was incompatible with
+  § 5.9's byte-determinism requirement.
+- **§ 5.9.6** — a root Array's first item, if its bare rendering would
+  itself be recognised by § 5.0.1 rule 6 as a pair line (e.g.
+  `host: localhost`, or a bare `a:`), now MUST use the raw-marker
+  (`::`) form. Previously the canonical writer could produce such an
+  item bare, and the resulting document's root re-parsed as an Object
+  instead of the original Array — a round-trip failure specific to an
+  Array root's first item (every other item position is unaffected).
 
 ### Added
 

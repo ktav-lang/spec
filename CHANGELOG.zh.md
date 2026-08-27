@@ -58,6 +58,18 @@
 - **`<key-char>`(§ 4)** 现在允许原始 VT(`0x0B`)与 FF(`0x0C`)
   作为字面键内容,与 § 3.3 的扩展一致。非破坏性 —— 仅接受此前被
   拒绝为 `InvalidKey` 的文档。
+- **§ 5.9 / § 8.3** 现在仅对**可表示**(representable)的 Value
+  定义 round-trip 保证(§ 5.9.7 中的一小类 String 值 —— `CR`
+  字节,或 stripped 多行形式的若干病态碰撞之一)。writer-conforming
+  实现 MUST 以错误拒绝不可表示的 Value,而不是将其序列化;此前
+  § 5.9.7 单独允许为同一类 Value 输出任意或 lossy 编码,这与
+  § 5.9 的字节确定性要求不兼容。
+- **§ 5.9.6** —— 根 Array 的第一个项,若其裸形式本身会被 § 5.0.1
+  规则 6 识别为 pair line(例如 `host: localhost`,或裸
+  `a:`),现在 MUST 使用原始标记(`::`)形式。此前规范 writer 可能
+  以裸形式输出该项,导致结果文档重解析时根变为 Object 而非原本的
+  Array —— 这一 round-trip 失败专属于根 Array 的第一个项(其余
+  任何项位置不受影响)。
 
 ### 新增
 
