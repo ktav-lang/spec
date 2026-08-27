@@ -66,6 +66,10 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   edge whitespace and for structural bytes with no named form (`(`, `)`,
   DEL, control bytes). Keys containing `(`, `)`, DEL, or a control code
   point are emittable in canonical form for the first time.
+  Also newly documented (a pre-existing hazard, not new
+  behaviour): a key beginning with `##` MUST have the first `#`
+  escaped as `\u0023`, or the canonical line is silently read as
+  a comment.
 - **`<key-char>` (§ 4)** now admits raw VT (`0x0B`) and FF (`0x0C`) as
   literal key content, matching the § 3.3 widening. Non-breaking — only
   accepts documents previously rejected as `InvalidKey`.

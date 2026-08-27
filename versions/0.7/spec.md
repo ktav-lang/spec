@@ -583,7 +583,9 @@ this exact order:
 
 1. If the trimmed line is empty → blank line; no effect except where
    stated (§ 5.6, multiline).
-2. If the trimmed line begins with `##` → comment; ignored (§ 3.4).
+2. If the trimmed line begins with `##` → comment; ignored (§ 3.4),
+   except where stated (§ 5.6, multiline) — `##` is ordinary content
+   inside an open multi-line string, not a comment marker.
 3. **If the parser is inside an open multi-line string** (§ 5.6): if
    the trimmed line equals the block's terminator, the multi-line
    string is closed; otherwise the raw (untrimmed) line is added to
@@ -654,8 +656,14 @@ are matched **case-sensitively**. A body of `True`, `NULL`, `False`,
 `0xZZ`, `0o9`, etc., is a String.
 
 Scalar classification under this section is a deterministic function
-of the trimmed, escape-processed byte sequence. Two parser-conforming
-implementations MUST produce the same Value kind for the same body.
+of the trimmed, escape-processed byte sequence — determinism only,
+not a license to re-run classification against escape-produced bytes
+as if they were raw, unescaped source: § 3.7's provenance rule (an
+escape's output is never re-examined as structural) applies here too,
+so a body like `\{value\}` classifies by the literal characters
+`{value}` under rule 15 (String), not by re-entering these rules at
+the decoded `{`. Two parser-conforming implementations MUST produce
+the same Value kind for the same body.
 
 ### 5.3 Pair Lines
 
@@ -754,9 +762,15 @@ after the opener and its optional trailing whitespace. The closer is
 a line whose trimmed content is exactly `)` (for stripped) or `))`
 (for verbatim).
 
-- **Stripped form (`( … )`)**: the parser computes the **minimum
-  leading whitespace** across non-blank content lines and removes
-  that prefix from each line, then removes trailing whitespace
+- **Stripped form (`( … )`)**: the parser computes the **common
+  leading whitespace** across non-blank content lines — the longest
+  prefix, measured in whitespace code points (§ 3.3) rather than
+  bytes, that is identical code-point-for-code-point across every
+  non-blank line's own leading run (a line starting with a tab and a
+  line starting with a space share no common prefix at all, even
+  though both begin with *some* whitespace code point, because the
+  code points themselves differ at position 0) — and removes that
+  shared prefix from each line, then removes trailing whitespace
   (§ 3.3) from each line. The lines are then joined by single `\n`
   bytes. Blank lines inside the block contribute empty strings to the
   joined result. A blank line containing only whitespace code points
@@ -1040,14 +1054,19 @@ A pair separator is selected by the kind/content of its value:
   String (number, `null`, `true`, `false`), (e) does not
   start with `{` or `[` (which would cause § 5.2 to dispatch
   the body as an inline compound rather than a String), and
-  (f) is not exactly `()` or `(())` (which § 5.7's
-  empty-compound shortcuts would reinterpret as the empty
-  String, not this literal two- or four-character body).
+  (f) is not exactly `()`, `(())`, `(`, or `((` (the first two
+  are § 5.7's empty-compound shortcuts, reinterpreted as the
+  empty String rather than this literal body; the last two are
+  a multi-line-string opener per § 4's `<value-start>` grammar,
+  reinterpreted as opening a block rather than a one-byte or
+  two-byte String — the same class of hazard as (e) above, and
+  resolved the same way, via the raw marker below).
 - **`key:: <bytes>` (raw marker):** when the bytes are a non-empty
   one-line String that would otherwise be reinterpreted by § 5.2
   if emitted with plain `:` — either as a number / `null` /
   `true` / `false`, as an inline compound (a body starting
-  with `{` or `[`), as the empty String via § 5.7's shortcuts
+  with `{` or `[`), as a multi-line-string opener (a body of
+  exactly `(` or `((`), as the empty String via § 5.7's shortcuts
   (a body of exactly `()` or `(())`), or any other non-String
   classification.
 - **`key: <multi-line>`:** when the value is a String containing
@@ -1062,10 +1081,24 @@ A pair separator is selected by the kind/content of its value:
 - **Bare scalar item:** `<bytes>` on its own line at the current
   indent — when the body satisfies the same conditions as the
   `key: <bytes>` form of § 5.9.5 (including: does not start with
-  `{` or `[`).
+  `{` or `[`; is not exactly `(` or `((`), and — because an item
+  line has no `key: ` prefix, making the entire line the body — is
+  additionally not exactly `}`, `]`, or `::`, and does not start
+  with the two-byte sequence `##`. A bare `}` or `]` line is
+  unconditionally read by § 5.1's line-dispatch rules as closing
+  the innermost open Object/Array (raising `UnbalancedBracket`,
+  § 6.1, when the innermost open compound is actually an Array/Object);
+  a bare `::` line matches `<item-literal>`'s raw-marker-with-empty-body
+  form (§ 4) instead of the literal two-byte content; a body
+  starting with `##` is unconditionally read by § 5.1 rule 2 as a
+  comment (§ 3.4), dropping the entire line silently rather than
+  raising an error.
 - **Raw-marker item:** `:: <bytes>` — when the body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
-  compound, or (via § 5.7's shortcuts) the empty String.
+  compound, a multi-line-string opener (a body of exactly `(` or
+  `((`), or (via § 5.7's shortcuts) the empty String, or would
+  otherwise collide with a line-level structural token (a body of
+  exactly `}`, `]`, or `::`, or starting with `##`).
 - **Empty Object item:** `{}` on its own line.
 - **Empty Array item:** `[]` on its own line.
 - **Non-empty Object item:** `{` opening line, body lines at
@@ -1153,6 +1186,22 @@ Portable documents SHOULD NOT rely on trailing whitespace inside a
 multi-line String body that also requires a segment trimming to
 `))`.
 
+Independently of the trailing-whitespace case above, a body forced
+into stripped form (via a segment trimming to exactly `))`) where
+every non-blank segment shares at least one leading whitespace code
+point in the same position is likewise not representable: on
+re-parse, § 5.6's minimum-leading-whitespace computation cannot
+distinguish that shared leading whitespace from writer-added
+structural indentation, and would strip it. This ambiguity in the
+stripped form's parsing rule predates 0.7.0 — it is documented here
+for the first time, alongside the other non-representable cases
+this form already has. Implementations MAY produce the stripped
+form and accept that the round-trip property does not strictly hold
+for such pathological values, exactly as for the other cases above.
+Portable documents SHOULD NOT rely on shared leading whitespace
+inside a multi-line String body that also requires a segment
+trimming to `))`.
+
 #### 5.9.8 Number canonicalisation
 
 - **Integer:** base-10 decimal. Leading `+` is dropped. `-0` and
@@ -1224,6 +1273,14 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   trimming, since the trimmed text is the escape's own ASCII
   spelling (`\`, then a letter or four hex digits), never the
   whitespace byte itself. Interior whitespace needs no escaping.
+- If the key's raw text (the first segment, as written on the
+  line) begins with the two-byte sequence `##`, the writer MUST
+  escape at least the first `#` as `\u0023`: unescaped, § 5.1
+  rule 2 reads the line as a comment (§ 3.4) and drops it
+  silently — a byte is neither in `<key-char>`'s exclusion list
+  nor at a trimmed edge, yet still needs escaping, because this
+  hazard operates at the line-dispatch layer, above § 4's
+  key-segment grammar entirely.
 
 This ensures that the canonical output round-trips: unescaped dots
 in the canonical key are path separators only, structural bytes
@@ -1802,7 +1859,10 @@ The conformance suite tests both directions: input variety via
   with no named form (`(`, `)`, DEL, control bytes). Keys containing
   `(`, `)`, DEL, or a control code point — previously representable
   in the Value model but not emittable in canonical form at all —
-  are emittable for the first time as of 0.7.0, via `\uXXXX`.
+  are emittable for the first time as of 0.7.0, via `\uXXXX`. Also
+  newly documented (a pre-existing hazard, not new behaviour): a
+  key beginning with `##` MUST have the first `#` escaped as
+  `\u0023`, or the canonical line is silently read as a comment.
 - **Changed:** `<key-char>` (§ 4) now admits raw VT (`0x0B`) and FF
   (`0x0C`) as literal key content, matching the § 3.3 widening —
   previously only tab was exempted from the control-byte exclusion.
