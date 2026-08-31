@@ -210,6 +210,42 @@
   `both_forms_required`、`trailing_whitespace_collision`、
   `leading_whitespace_collision`),现已重新包装为 `{"s": <string>}`,
   使每个 fixture 精确检验其同名的原因代码。
+- **§ 5.2 —— 跨实现的「相同 Value kind」`MUST` 现在限定于共享同一
+  数值域的实现。** 无条件措辞与 § 5 / § 8.1 自身的加宽域许可相
+  矛盾:仅支持 i64 的解析器与支持 bignum 的解析器会合法地把
+  `9223372036854775808` 分类为不同结果(String 对 Integer),二者
+  可以同时遵守各自的域规则却又违反旧的笼统 `MUST`。现在该保证
+  只在新清单 `versions/0.7/tests/valid/boundary-fixtures.json`
+  所列封闭 fixture 集合之外无条件成立。
+- **新增 `versions/0.7/tests/valid/boundary-fixtures.json` 清单**
+  为 § 8.1 / § 8.2 所许可的数值域偏差提供了可机读契约:恰好只有
+  其键所列的 fixture 路径可以偏离其 `.json` / `.canonical.ktav`
+  oracle,且只能偏离到该条目所指名的 `wider_domain_kind` /
+  `wider_domain_value` / `wider_domain_canonical` —— 而不是
+  runner 需要自行推导的任意「更宽域下正确」的 Value。§ 8.1 与
+  § 8.2 现在引用此清单,取代以文字描述例外。
+- **§ 5 —— binary64 下限现在规定转换语义,而不仅是范围与精度。**
+  把 decimal 的 Float 字面量转换为最小 binary64 表示 MUST 采用
+  IEEE 754 的 `roundTiesToEven`,且最小表示 MUST 支持次正规
+  (gradual-underflow)值。七个新 fixture 覆盖此下限:`max_finite`、
+  `min_positive_normal`、`min_positive_subnormal`(在任何支持的域
+  下都无歧义),以及加入新清单的四个依赖边界的 fixture ——
+  `just_above_max_finite_to_string`(在更宽 decimal 域内有限,在
+  binary64 上溢为 String)、`negative_underflow_to_negative_zero`
+  与 `half_min_subnormal_underflow_to_zero`(二者在更宽域内有限,
+  在 binary64 下溢为 `±0.0`),以及 `decimal_rounding_tie`
+  (`9007199254740993.0`,恰好位于两个 binary64 值的正中;binary64
+  舍入到偶数邻居 `9007199254740992.0`,更宽的 decimal 域则精确
+  保留该字面量)。七个全部已针对 Rust 参考解析器/writer 独立验证。
+- **§ 5.9.0 —— 「多于一个违反」许可现在覆盖当前节点与 Object 的
+  键,而不仅是后代。** 旧措辞(「在 Value 的后代中」)使得同时满足
+  两条冲突规则的 String,或同时有空键与另一处不可表示子节点的
+  Object 在技术上未被覆盖 —— 键本身并不是 Value 的后代。
+- **`versions/0.7/tests/unrepresentable/non_finite_float.json`** ——
+  唯一一个 plain JSON 无法为其编码 fixture 的原因代码
+  (`NonFiniteFloat`)如今有了 fixture:通过一个规范性
+  `{"$float": "NaN"|"Infinity"|"-Infinity"}` 哨兵,专为此情形保留。
+  README 在 `unrepresentable/` 其余 schema 之旁记录了该哨兵。
 
 ## [0.6.4] —— 2026-08-23
 

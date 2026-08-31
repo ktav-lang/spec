@@ -324,6 +324,10 @@ timeout: null
   body 映射为 JSON 整数,小数 body 映射为 JSON 浮点数,其余标量
   保持为字符串,`::` 强制字面字符串);`.canonical.ktav` 是该同一
   `Value` 期望的字节级精确 writer 输出。对象字段顺序是有意义的。
+  少数 fixture 探测数值域边界(例如 i64 溢出字面量):在这类边界
+  上,更宽域的实现被允许合法地偏离 `.json`/`.canonical.ktav` 对;
+  同目录下的 `boundary-fixtures.json` 是可机读的封闭清单,精确
+  列出是哪些 fixture、其替代结果是什么(spec § 8.1、§ 8.2)。
 - **`invalid/`**——conforming 解析器 MUST 拒绝的文档。每个用例是
   `<name>.ktav` + `<name>.json` 一对;`.json` 在 `expected_error`
   字段中指明期望的错误类别。
@@ -331,7 +335,10 @@ timeout: null
   序列化、而非输出 lossy 或部分内容的 `Value`。没有 `.ktav` 输入:
   这些 `Value` 大多只能以编程方式构造,解析永远不会产生它们。每个
   用例是单一的 `<name>.json`,含三个字段:`value`(该 `Value`,
-  与 `valid/` 相同的 JSON 映射)、`unrepresentable_reason`(规范
+  与 `valid/` 相同的 JSON 映射,唯一例外是 `NonFiniteFloat`
+  fixture:由于 plain JSON 没有这样的字面量,非有限 Float 写作
+  `{"$float": "NaN"|"Infinity"|"-Infinity"}`)、
+  `unrepresentable_reason`(规范
   定义的原因代码)以及 `note`(原因说明)。writer 用以报告拒绝的
   具体 API 形式(异常、error enum 等)是 implementation-defined;
   规范性的只是原因代码的名称。
