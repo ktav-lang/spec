@@ -111,7 +111,9 @@ motd: (
 格式按 body 的*形状*定型:裸整数成为 Integer,裸小数成为 Float,
 其余一切保持为 String。无需标记。任何只是*看起来*像数字、却并非
 裸数字的内容(版本号、标签)都不会被转换 —— 而 `::` 可在需要时
-强制一个真正的裸数字保持为字面字符串。
+强制一个真正的裸数字保持为字面字符串。唯一的边界例外:
+超出保证范围的裸数字(i64 对 Integer、binary64 对
+Float)同样保持为 String——仅凭形状并不能让它成为数字。
 
 ```text
 retries: 3
@@ -248,7 +250,8 @@ keyword_as_string:: true
 
 裸数字会被直接定型:`port: 8080` 给你 Integer,`ratio: 0.5` 给你
 Float。由 body 的形状决定:只有数字 → Integer;带小数点或指数 →
-Float;其余一切 → String。
+Float;其余一切 → String——除非数字超出保证范围(i64 对 Integer、
+binary64 对 Float),那样它同样会保持为 String。
 
 ```text
 port:    8080
@@ -257,10 +260,14 @@ offset:  -100
 eps:     1.5e-10
 ```
 
-值在 Value 层仍然保留为文本形式——`Integer("8080")`、
-`Float("0.5")`——因此 40 位整数可以往返存活,`1.2` 也不会被意外
-扩展或截断。类型化语言的消费方（Rust + serde、Go）在自己那边收窄
-到所需的原生类型;若要让看起来像数字的值保持为文本,用 `::` 强制
+数字是携带数值的 Value,并不保留书写时的原文——写出时采用规范化
+的规范形式（规范文档 5.9.8 节），因此 `0.50` 回来会变成 `0.5`,
+`1e2` 变成 `100`。保证范围内的裸整数作为 Integer 精确往返;
+i64（对 Integer）与 binary64（对 Float）是每个实现都保证的可移植
+下限——实现可以支持更宽的域（任意精度/十进制），超出其所支持范围
+的字面量会落入 String,而不会悄悄回绕或在解析时抛出异常。类型化
+语言的消费方（Rust + serde、Go）在自己那边收窄到所需的原生类型;
+若要让看起来像数字的值——无论多大——保持为文本,用 `::` 强制
 （`zip:: 01007`）。
 
 ### 多行字符串
@@ -392,9 +399,13 @@ timeout: null
 | PHP             | [`ktav-lang/php`](https://github.com/ktav-lang/php)     | `composer require ktav-lang/ktav`                     |
 | Python          | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                  |
 
-Rust crate 是参考解析器;其他每个绑定都附带一份预构建的 `ktav_cabi`
-(C-ABI 包装)。所有绑定暴露相同的 C ABI 函数接口(自 0.1 起未变),
-并解析底层 Rust 核心所支持的格式版本(当前为稳定版 0.6.4);
+Rust crate 是参考解析器,每个绑定内嵌的都是同一个核心。Go、Java、
+PHP 和 C# 通过预构建的 `ktav_cabi`(C-ABI 包装)使用它,其函数接口
+在各版本间只做增量式扩展——0.6.4 新增了 `ktav_loads_strict`,已有
+函数的签名保持不变。Python 附带专用的 PyO3 原生扩展而非 C ABI;
+JS 则为不同运行时提供多种构件——浏览器用 WASM、Node 用 N-API,
+另有 C ABI 路径——而非单一的绑定形态。它们解析的都是底层 Rust
+核心所支持的格式版本(当前为稳定版 0.6.4);
 下面与语言无关的
 `tests/` 套件每次发布时都会针对所有实现运行。
 

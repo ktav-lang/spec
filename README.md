@@ -115,7 +115,10 @@ integer becomes an Integer, a bare decimal becomes a Float, and
 everything else stays a String. No marker is needed. Nothing that
 merely *looks* number-ish but isn't a bare number (a version, a
 label) is coerced — and `::` forces a genuine bare number to stay a
-literal string when you need that.
+literal string when you need that. One boundary exception: a bare
+number that falls outside the guaranteed range (i64 for Integer,
+binary64 for Float) is kept as a String too — shape alone doesn't
+make it a number.
 
 ```text
 retries: 3
@@ -259,7 +262,9 @@ keyword_as_string:: true
 A bare number is typed directly — `port: 8080` gives you an Integer,
 `ratio: 0.5` a Float. The body's shape decides: digits only →
 Integer; digits with a decimal point or exponent → Float; anything
-else → String.
+else → String — unless the number falls outside the guaranteed range
+(i64 for Integer, binary64 for Float), in which case it's kept as a
+String instead.
 
 ```text
 port:    8080
@@ -268,10 +273,16 @@ offset:  -100
 eps:     1.5e-10
 ```
 
-Values are preserved as their textual form at the Value level
-— `Integer("8080")`, `Float("0.5")` — so 40-digit integers survive
-round-trip and `1.2` is never accidentally widened or truncated. To
-keep a numeric-looking value as text, force it with `::`
+Numbers are Values carrying a numeric value, not the text they were
+written as — the writer emits a normalised canonical form (spec
+section 5.9.8), so `0.50` comes back as `0.5` and `1e2` as `100`. A
+bare integer within the guaranteed i64 range round-trips exactly as
+an Integer; i64 (Integer) and binary64 (Float) are the portable
+floor every implementation guarantees — an implementation may
+support wider domains (arbitrary precision / decimal), and a literal
+beyond what it supports falls back to a String rather than wrapping
+or raising an error. To keep a numeric-looking value as text
+regardless of size, force it with `::`
 (`zip:: 01007`).
 
 ### Multi-line strings
@@ -413,12 +424,17 @@ pin to a version directory by path.
 | PHP            | [`ktav-lang/php`](https://github.com/ktav-lang/php)   | `composer require ktav-lang/ktav`                    |
 | Python         | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                |
 
-The Rust crate is the reference parser; every other binding ships a
-prebuilt `ktav_cabi` (the C ABI wrapper). All bindings expose the
-same C ABI function surface, unchanged since 0.1, and parse whatever
-format version the underlying Rust core supports (currently 0.6.4
-stable); the language-agnostic `tests/` suite below runs against all
-of them on every release.
+The Rust crate is the reference parser, and every binding embeds that
+same core. Go, Java, PHP and C# consume it through a prebuilt
+`ktav_cabi` (the C ABI wrapper), whose function surface has grown
+additively across releases — 0.6.4 added `ktav_loads_strict`
+alongside the existing functions. Python ships a dedicated PyO3
+native extension rather than the C ABI, and JS ships several
+runtime-specific artifacts — WASM for browsers, N-API for Node, plus
+a C ABI path — instead of a single binding shape. All of them parse
+whatever format version the underlying Rust core supports (currently
+0.6.4 stable); the language-agnostic `tests/` suite below runs
+against all of them on every release.
 
 Building a new implementation? Start with your target version's
 [`spec.md`](versions/0.6/spec.md) (section 8 — Compliance) and run
