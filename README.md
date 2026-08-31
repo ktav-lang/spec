@@ -355,7 +355,8 @@ strictly require a `MAJOR` bump as the table states.
 
 Within any stable `MAJOR`, an implementation targeting `x.0` MUST
 parse every document valid under any later `x.y.z` identically up to
-the subset it supports.
+the subset it supports — except across a pre-1.0 breaking `MINOR`
+bump per the exception above, where this guarantee does not hold.
 
 Each version's directory is fully self-contained: `spec.md`, a
 `tests/` conformance suite, and per-version addenda. Implementations

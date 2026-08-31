@@ -100,6 +100,26 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   sequence's meaning changes.
 - **Appendix D — migration guide 0.6.x → 0.7.0.**
 
+### Fixed
+
+- **README "Version scheme"** — the cross-version parsing MUST now
+  explicitly does not hold across a pre-1.0 breaking `MINOR` (the
+  exception its preceding paragraph grants): an implementation
+  targeting 0.6 is not required to parse 0.7.x documents identically.
+  The previous wording contradicted the exception directly above it.
+- **§ 4 grammar** — the `<header-line>` alternatives for `)` / `))`
+  now carry a context-dependence note: they apply only while a
+  multi-line string block is open (§ 5.6) and the trimmed line equals
+  that block's own terminator; anywhere else a lone `)` / `))` line
+  is ordinary text (§ 5.1, § 5.2, § 5.4; § 6.1), not a structural
+  closer — matching § 6.1 and the `lone_paren_tokens` fixture.
+- **§ 10.6** — a single canonical serialisation is defined for every
+  **representable** Value (§ 5.9.7), not every Value outright.
+- **Appendix A, 0.5.0** — removed the "bare `CR` is content, not a
+  line terminator" bullet: the 0.5.0 spec's own § 3.2 states the
+  opposite ("a `CR` byte never appears as a content byte at parse
+  time"), so the bullet described a change that never happened.
+
 ## [0.6.4] — 2026-08-23
 
 ### Changed

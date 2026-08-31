@@ -337,6 +337,17 @@ alternation. `(ws)` stands for zero or more whitespace code points
                   | (ws) "]" (ws) eol                ; array close
                   | (ws) ")" (ws) eol                ; multiline close (stripped)
                   | (ws) "))" (ws) eol               ; multiline close (verbatim)
+                    Context-dependence of the last two alternatives:
+                    they apply only while a multi-line string block
+                    is open (§ 5.6) and the trimmed line equals that
+                    block's own terminator — ")" for the stripped
+                    form, "))" for the verbatim form. Outside such a
+                    block — or inside one whose terminator the line
+                    does not match — a line spelling just ")" or "))" is
+                    NOT a <header-line> at all: it is ordinary text,
+                    read per § 5.1 (rule 3 inside an open block;
+                    array-item / pair-value text otherwise — § 5.2,
+                    § 5.4), exactly as § 6.1 states.
 
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; default, scalar dispatched per § 5.2
                   | <key> "::" <sep-end> <value-part-opt> eol    ; literal String
@@ -1836,7 +1847,7 @@ parse time.
 The format is intentionally permissive on input — comments, inline
 compounds, numeric literals in multiple bases, underscores, mixed
 escape styles — but **strict on output**. A single canonical
-serialisation (§ 5.9) is defined for every Value.
+serialisation (§ 5.9) is defined for every **representable** Value.
 
 This separation lets humans write Ktav in the form most natural
 to them (compact inline, explicit multi-line, comments, mixed
@@ -1970,8 +1981,6 @@ The conformance suite tests both directions: input variety via
 - **Breaking:** Key segments are trimmed of leading and trailing
   ASCII whitespace (§ 4). A segment empty after trimming is
   `EmptyKey`.
-- **Breaking:** A bare `CR` byte (`0x0D`) not immediately followed
-  by `LF` is content, not a line terminator (§ 3.2).
 - **Added:** Inline compounds — `{key: value, key2: value}` and
   `[v1, v2, v3]`, with optional trailing comma (§ 5.8). Inline
   form is usable as a value, as an array item, or as the entire
