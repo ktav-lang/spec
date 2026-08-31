@@ -552,9 +552,29 @@ the first matching rule wins.
    **multi-line Array** opened by this bracket. Its matching `]`
    closes the root; content after the matching close is
    `OrphanLineAfterTopLevelInline` (§ 6.14).
-6. Otherwise, if the first content line trimmed is a **pair line**
-   under § 5.3 (i.e. `key: …` / `key:: …`, including dotted keys)
+6. Otherwise, if the first content line trimmed is a **pair
+   candidate** — it has the *shape* of a pair line under § 5.3
+   (`key: …` / `key:: …`, including dotted keys): a first
+   **unescaped** `:` (or `::`) separator under § 4's
+   separator-scanning rule, with a non-empty raw prefix before it,
+   where the separator is either the `::` marker or a plain `:`
+   satisfied by `<sep-end>` (whitespace or end-of-line after it) —
    → root is an **Object** with this line as its first pair.
+
+   Detection is deliberately two-phase. Phase 1 (this rule) is a
+   purely lexical, shape-only test: the prefix before the separator
+   is NOT required to be a grammatically valid `<key>` (§ 4) at
+   detection time, so a first line such as `a,b: 1` still selects
+   an Object root. Phase 2 is uniform validation: once the Object
+   context exists, § 5.3 / § 5.3.1 validate the candidate's raw key
+   prefix exactly as they validate every other pair line inside an
+   established Object (§ 5.1 rule 8) — the same line then yields
+   `InvalidKey` (§ 6.4), `EmptyKey` (§ 6.5), or `BadEscapeSequence`
+   (§ 6.13) as appropriate. A glued plain-`:` line (e.g. `a,b:1`,
+   no whitespace after the separator) is not a pair candidate and
+   falls through to rule 7 (a bare-scalar array item); a glued `::`
+   line is a pair candidate, and the glued form surfaces in
+   phase 2 as `MissingSeparatorSpace` (§ 6.10).
 7. Otherwise, if the first content line trimmed is recognised as an
    **array-item line** under § 5.4 other than rules 4 / 5 above
    (a bare scalar, a raw-marker item `:: …`, a multi-line string
@@ -691,10 +711,20 @@ where:
   separator); `\:` produces a literal colon (not a pair separator);
   `\\` produces a literal backslash. Other `\X` forms are
   `BadEscapeSequence` errors. The `#` byte is allowed inside a
-  segment but two consecutive `#` bytes at the trimmed start of
-  a line form a comment marker (§ 3.4) and so an `##` substring
-  at line start cannot be a key. The pair separator is the first
-  **unescaped** `:` (or `::`) scanning left-to-right.
+  segment. A line whose trimmed form *begins* with `##` is a
+  different matter — and not a key-validation failure: § 5.1
+  rule 2 consumes such a line as a comment (§ 3.4) unconditionally,
+  before any pair-line processing begins, so it is never parsed as
+  a pair line at all. Keeping `##`-prefixed keys parseable is a
+  *writer* obligation (§ 5.9.10), not a parser-side error: a
+  canonical writer escapes the leading `#` precisely because a raw
+  `##` would make the line unparseable-as-intended on re-read.
+  The pair separator is the first **unescaped** `:` (or `::`)
+  scanning left-to-right. This scanning rule — together with a
+  non-empty prefix and `<sep-end>` for a plain `:` — is also the
+  shape-only test § 5.0.1 rule 6 uses to detect a root Object;
+  full key validation (§ 5.3.1) runs afterward, uniformly,
+  regardless of which rule established the Object context.
 - The plain `:` separator dispatches the value per § 5.2.
 - The raw marker `::` interprets the body as a literal String —
   no type inference, no recursion into compounds. Escape sequences
@@ -706,7 +736,12 @@ where:
   whitespace, body continues on the same line) is a
   `MissingSeparatorSpace` error (§ 6.10). The `<sep-end>` rule does
   NOT apply to inline pair separators (§ 5.8) where whitespace is
-  optional everywhere.
+  optional everywhere. Separator checks precede key validation: for
+  a dispatched pair line the order is `MissingSeparator` (§ 6.6) →
+  `EmptyKey` for an empty prefix (§ 6.5) → `MissingSeparatorSpace`
+  (§ 6.10) → key-segment validation (§ 5.3.1). A key defect does
+  not preempt a separator defect: `b,c:1` inside an established
+  Object reports `MissingSeparatorSpace`, not `InvalidKey`.
 
 A pair whose value-part is the empty string (the line ends right
 after the separator and its required whitespace, or right after
@@ -715,9 +750,23 @@ empty String. This is true for both plain `:` and raw `::`.
 
 #### 5.3.1 Key Validation
 
-A key segment that is empty, contains a forbidden character, or
-collides with the comment marker pattern at the start of a trimmed
-line yields an `InvalidKey` (§ 6.4) or `EmptyKey` (§ 6.5) error.
+A key segment that is empty after trimming yields an `EmptyKey`
+(§ 6.5) error; a segment containing a raw (unescaped) code point
+that `<key-char>` (§ 4) forbids yields an `InvalidKey` (§ 6.4)
+error; a malformed `\X` escape yields a `BadEscapeSequence`
+(§ 6.13) error. Validation operates on the raw prefix up to the
+first unescaped separator, however malformed the separator's
+surrounding whitespace is (check ordering: § 5.3).
+
+A segment beginning with `##` is none of these — it is not a key
+validation failure; it is never parsed as a key at all. § 5.1
+rule 2 dispatches any line whose trimmed form begins with `##` as
+a comment (§ 3.4) before any key parsing begins, so such a line
+can never reach this section. The collision is a *writer*
+round-trip hazard, not a parser-side error: the canonical writer
+MUST escape exactly the leading `#` of a `##`-prefixed key
+segment (§ 5.9.10) precisely so that the line still parses as the
+intended pair on re-read.
 
 #### 5.3.2 Dotted-Key Expansion
 
