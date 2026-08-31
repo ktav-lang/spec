@@ -341,7 +341,14 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 - **Bool** —— `true` 或 `false`。
 - **Integer** —— 数值标量,携带整数值。实现 MUST 至少支持 i64
   范围 (-2^63 .. 2^63 - 1) 且 MAY 支持更宽范围(如任意精度)。
-  Integer 的规范文本形式为基-10 十进制串,无下划线、无前导零
+  `valid/` 合规 fixture(§ 8.1)假定这一最小 i64 域用于标量分类
+  (§ 5.2 规则 13):超出 i64 范围的整数字面量对最小域实现而言是
+  String,故 `i64_overflow_to_string.json` 期望 String
+  `"9223372036854775808"`。支持更宽域的实现 MAY 恰好对此类探测
+  边界的 fixture 产生更宽域下正确的 Integer;只要偏差仅限于期望
+  Value 依赖最小域边界的 fixture,且并非任意或未记录的偏差,它仍
+  符合 parser-conforming(§ 8.1)。Integer 的规范文本形式为基-10
+  十进制串,无下划线、无前导零
   (`0` 除外);前导 `+` 舍弃;有符号零 (`+0`, `-0`) 归一化为
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
 - **Float** —— 数值标量,携带数值。内部表示由实现定义(IEEE 754
@@ -654,12 +661,46 @@ Value;不允许其他内容行。
 ### 5.9 规范形式
 
 **writer-conforming** 实现 MUST 对任何**可表示**(representable)
-Value 输出*规范* Ktav 序列化 —— § 5.9.7 定义了不可表示的一小类
-String 值。规范形式是字节确定性的:对任何给定的可表示 Value,所有
-writer-conforming 实现 MUST 产生相同的字节序列。writer-conforming
-实现 MUST 以错误拒绝不可表示的 Value,而不是将其序列化:若允许为
-同一个不可表示 Value 产生任意/lossy 编码,则会违反刚刚声明的
-字节确定性保证。
+Value 输出*规范* Ktav 序列化 —— § 5.9.0 定义了哪些 Value 可表示,
+涵盖 § 5.9.7 排除的那一小类 String 值。规范形式是字节确定性的:
+对任何给定的可表示 Value,所有 writer-conforming 实现 MUST 产生
+相同的字节序列。writer-conforming 实现 MUST 以错误拒绝不可表示的
+Value,而不是将其序列化 —— 该要求统一适用于 § 5.9.0 的每一条
+不可表示规则,而不仅是 § 5.9.7 的 String 排除:若允许为同一个
+不可表示 Value 产生任意/lossy 编码,则会违反刚刚声明的字节确定性
+保证。
+
+#### 5.9.0 可表示的值
+
+§ 5 的 Value 模型宽于存在规范 Ktav 序列化的 Value 集合:在解析器
+之外以编程方式构造的 Value 可能落在其外。Value V 为**可表示**,
+当且仅当:
+
+- **文档根:** V 是 Object 或 Array。裸标量根不可表示:§ 5.0.1
+  由首条内容行判定根类型,而任何标量都没有可充当文档根的规范
+  形式。
+- **Object:** 每对的名是非空字符串,且每对的值可表示。空名不可
+  表示:§ 4 要求每个键段至少含一个 `<key-token>`,因此任何文档
+  都不能产生这样的对(解析侧对应 `EmptyKey` 错误,§ 6.5)。
+- **Array:** V 的每一项都可表示。
+- **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity。§ 3.6 的任何
+  字面量语法都不产生非有限 Float,且 § 5.9.8 未为其定义规范文本
+  形式。
+- **String:** V 按 § 5.9.7 的规则可表示(无 `CR` 字节,且不属于
+  该节定义的病态多行碰撞情形)。
+- **Null、Bool、Integer** 及所有其他 String:始终可表示。
+
+可表示性是递归的:复合 Value(Object 或 Array)可表示,当且仅当
+其在任意深度包含的每个 Value 都可表示。writer-conforming 实现
+MUST 按 § 5.9 以错误拒绝不可表示的 Value —— 且 MUST 不输出其任何
+部分:先输出部分内容再失败不是被允许的行为。
+
+可表示性有意窄于可解析性。解析永远不会产生标量根(§ 5.0.1)或
+空对名(§ 4、§ 6.5),任何字面量语法也不产生非有限 Float(§ 3.6)
+—— 但解析可能产生被 § 5.9.7 排除的 String,因为 `CR` 字节经由
+inline 复合值的 `\r` escape(§ 3.7)进入 String。这样的文档被
+parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
+这正是不可表示 Value 处于 § 8.3 round-trip 恒等式之外的原因。
 
 #### 5.9.1 空白、缩进、行尾
 
@@ -848,8 +889,13 @@ SHOULD NOT 在同时需要修剪后恰为 `))` 的段的多行 String 内容中
   binary64 的最短十进制。然后按以下确定性策略选择表示形式,其中
   `abs` 是数值的绝对值:
 
-  - 若 `abs < 1e-2` 或 `abs >= 1e7`,使用指数形式;
+  - 若 `0 < abs < 1e-2` 或 `abs >= 1e7`,使用指数形式;
   - 否则使用 `digits "." digits` 形式。
+
+  阈值条件永不被 `abs == 0` 满足,因此零恒用十进制形式:正零的
+  规范形式为 `0.0`,负零为 `-0.0` —— 十进制,绝非科学形式,符号
+  保留。与 Integer 的 `-0` 归一化为 `0` 不同(见 § 5 的 Integer
+  条目),Float 保留 IEEE 754 在 `0.0` 与 `-0.0` 之间的符号区分。
 
   边界是精确的:`0.01` 与 `9999999.0` 使用十进制形式,而 `0.001`、
   `0.0015`、`-0.001` 与 `10000000.0` 使用指数形式。科学形式使用小写
@@ -1040,7 +1086,13 @@ Parser-conforming 实现:
 
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
 - 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与
-  对应 `name.json` 等价的 Value。
+  对应 `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需
+  数值域上(i64 Integer、binary64 Float):支持更宽域的实现
+  MAY 对期望 Value 依赖最小域边界的那些 fixture 产生不同的、
+  更宽域下正确的 Value —— 例如 i64 溢出字面量,最小域将其分类
+  为 String(`i64_overflow_to_string.json`),更宽域则分类为
+  Integer。只要偏差仅限于这些探测边界的 fixture,且并非其他
+  处的任意或未记录偏差,该实现仍符合 parser-conforming。
 - 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
 
@@ -1058,7 +1110,7 @@ Writer-conforming 实现:
 ### 8.3 Round-trip 性质
 
 下式 MUST 对任何由 parser-conforming 实现产生的**可表示**
-(representable)Value V(§ 5.9.7)成立(由同 Value 域的 writer- 和
+(representable)Value V(§ 5.9.0)成立(由同 Value 域的 writer- 和
 parser-conforming 实现执行):
 
 ```
@@ -1068,7 +1120,7 @@ emit_canonical(parse(emit_canonical(V))) == emit_canonical(V)
 即:解析规范输出并再次输出产生字节相同的输出。规范形式是
 parse-emit 循环的不动点。不可表示的 Value 不在此不变式的范围内:
 § 5.9 对 writer-conforming 实现的要求是以错误拒绝此类 Value,而
-不是将其序列化(§ 5.9.7)。
+不是将其序列化(§ 5.9.0)。
 
 ### 8.4 声明
 
@@ -1148,6 +1200,25 @@ RFC 2119、RFC 8174、RFC 3629、RFC 8259、TOML、YAML。
   (`0x0C`)作为字面键内容,与 § 3.3 的扩展一致 —— 此前只有制表符
   被排除在控制字节禁令之外。非破坏性:仅接受此前被拒绝为
   `InvalidKey` 的文档,任何此前有效的值含义均不改变。
+- **破坏性:** § 5.9.0(新增)定义**可表示的值** —— 规范 writer
+  保证所作用的域。裸标量文档根、名为空的 Object 对、非有限
+  Float(NaN / ±Infinity),以及任意深度包含不可表示 Value 的
+  任何复合值均不可表示,writer-conforming 实现 MUST 以错误拒绝
+  它们,不输出任何部分内容。此前 § 5.9 未定义这些仅经编程方式
+  出现的情形。Rust 参考核心已拒绝标量根与含 `CR` 的 String;
+  弥补其余缺口另行跟踪。
+- **变更:** § 5.9.8 —— Float 表示形式阈值现在为 `0 < abs < 1e-2`
+  (原为 `abs < 1e-2`),按字面理解后者会要求零使用科学形式。零
+  的规范形式为 `0.0` / `-0.0` —— 十进制,绝非科学形式,符号保留
+  (不同于 Integer 的 `-0` → `0`)。这与 Rust 参考核心的既有行为
+  一致;改变的只是规范文本。新 fixture `float/positive_zero` 与
+  `float/negative_zero` 将其锁定。
+- **变更:** § 8.1(连同 § 5 的 Integer 定义)—— fixture 等价性
+  定义在最小必需数值域上(i64 Integer、binary64 Float)。支持
+  更宽域的实现 MAY 恰好在 fixture 探测最小域边界之处偏离 fixture
+  oracle(如 `i64_overflow_to_string.json`),而不丧失
+  parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
+  在该 fixture 上不满足 § 8.1。
 
 ### 0.6.0 —— 2026-06-01
 

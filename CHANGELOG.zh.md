@@ -43,6 +43,13 @@
   「保存时去除尾部空白」功能可能因此在毫无提示的情况下悄悄改变字符串
   内容。`(( … ))` 不受影响,两侧边界仍完全 verbatim。即使对 Rust 核心
   也是破坏性的 —— 它此前在 stripped 块的每一行都保留尾部空白。
+- **§ 5.9.0(新增)—— 可表示的 Value 现在被规范性定义**,划定了
+  规范 writer 保证所作用的域。裸标量文档根、名为空的 Object 对、
+  非有限 Float(NaN / ±Infinity),以及任意深度包含不可表示
+  Value 的任何复合值均不可表示,writer-conforming 实现 MUST 以
+  错误拒绝它们,不输出任何部分内容。此前 § 5.9 未定义这些仅经
+  编程方式出现的情形。Rust 参考核心已拒绝标量根与含 `CR` 的
+  String;弥补其余缺口另行跟踪。
 
 ### 变更
 
@@ -70,6 +77,18 @@
   以裸形式输出该项,导致结果文档重解析时根变为 Object 而非原本的
   Array —— 这一 round-trip 失败专属于根 Array 的第一个项(其余
   任何项位置不受影响)。
+- **§ 5.9.8 —— Float 零的规范化得到澄清。** 表示形式阈值现在为
+  `0 < abs < 1e-2`(原为 `abs < 1e-2`),按字面理解后者会要求零
+  使用科学形式。零的规范形式为 `0.0` / `-0.0` —— 十进制,绝非
+  科学形式,符号保留(不同于 Integer 的 `-0` → `0`)。这与 Rust
+  参考核心的既有行为一致;改变的只是规范文本。新 fixture
+  `float/positive_zero` 与 `float/negative_zero` 将其锁定。
+- **§ 8.1(连同 § 5 的 Integer 定义)—— fixture 等价性定义在
+  最小必需数值域上**(i64 Integer、binary64 Float)。支持更宽域
+  的实现 MAY 恰好在 fixture 探测最小域边界之处偏离 fixture
+  oracle(如 `i64_overflow_to_string.json`),而不丧失
+  parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
+  在该 fixture 上不满足 § 8.1。
 
 ### 新增
 

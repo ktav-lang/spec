@@ -55,6 +55,16 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   unaffected and remains fully verbatim on both edges. Breaking even
   for the Rust core, which previously preserved trailing whitespace on
   every line of a stripped-form block.
+- **§ 5.9.0 (new) — representable Values are now normatively
+  defined**, delimiting the domain over which the canonical writer's
+  guarantees operate. A bare scalar document root, an Object pair with
+  an empty name, a non-finite Float (NaN / ±Infinity), and any compound
+  containing a non-representable Value at any depth are not
+  representable, and a writer-conforming implementation MUST reject
+  them with an error, emitting no partial output. Previously § 5.9
+  left these programmatic-only cases undefined. The Rust reference
+  core already rejects scalar roots and `CR`-bearing Strings; closing
+  the remaining gaps there is tracked separately.
 
 ### Changed
 
@@ -88,6 +98,22 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   item bare, and the resulting document's root re-parsed as an Object
   instead of the original Array — a round-trip failure specific to an
   Array root's first item (every other item position is unaffected).
+- **§ 5.9.8 — Float zero canonicalisation clarified.** The notation
+  threshold now reads `0 < abs < 1e-2` (was `abs < 1e-2`), which taken
+  literally would have demanded scientific notation for zero. The
+  canonical form of zero is `0.0` / `-0.0` — decimal, never scientific,
+  sign preserved (unlike an Integer's `-0` → `0`). This matches the
+  Rust reference core's existing behaviour; only the normative text
+  changes. New fixtures `float/positive_zero` and `float/negative_zero`
+  lock it in.
+- **§ 8.1 (with § 5's Integer definition) — fixture equivalence is
+  defined at the minimum-required numeric domain** (i64 Integer,
+  binary64 Float). An implementation supporting a wider domain MAY
+  diverge from a fixture oracle exactly where that fixture probes the
+  minimum-domain boundary (e.g. `i64_overflow_to_string.json`), without
+  forfeiting parser-conformance. Previously an arbitrary-precision
+  implementation — explicitly permitted by § 5 — failed § 8.1 on that
+  fixture as written.
 
 ### Added
 
