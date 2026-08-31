@@ -325,18 +325,38 @@ timeout: null
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.6/tests/). Pairs of
-`<name>.ktav` + `<name>.json` — the `.json` is the expected `Value`,
-mapped 1:1 (`Null`→`null`, `Bool`→`bool`, `String`→`string`,
-`Array`→`array`, `Object`→`object`). Numbers are typed by lexical
-form: a bare integer body (`8080`) maps to a JSON integer, a bare
-decimal body (`0.5`) to a JSON float, and every other scalar stays a
-string — `::` forces a literal string when a number-like value must
-remain text. Object field order is significant.
+[`versions/<v>/tests/`](versions/0.6/tests/), split into up to three
+top-level categories. A conformance runner MUST walk every category
+present in the version it targets — silently skipping one it doesn't
+recognise reports false-green, which is worse than having no fixtures
+for it at all.
+
+- **`valid/`** — parseable documents. Each case is a
+  `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` triple:
+  `.ktav` is the input; `.json` is the expected parsed `Value`,
+  mapped 1:1 (`Null`→`null`, `Bool`→`bool`, `String`→`string`,
+  `Array`→`array`, `Object`→`object` — numbers typed by lexical form,
+  a bare integer body maps to a JSON integer, a bare decimal body to
+  a JSON float, every other scalar stays a string, `::` forces a
+  literal string); `.canonical.ktav` is the expected byte-exact
+  writer output for that same `Value`. Object field order is
+  significant.
+- **`invalid/`** — documents a conforming parser MUST reject. Each
+  case is a `<name>.ktav` + `<name>.json` pair; the `.json` names the
+  expected error category in its `expected_error` field.
+- **`unrepresentable/`** *(0.7+)* — `Value`s a conforming writer MUST
+  refuse to serialise rather than emit lossy or partial output. There
+  is no `.ktav` input: most of these `Value`s can only be constructed
+  programmatically, never produced by parsing. Each case is a single
+  `<name>.json` with three fields — `value` (the `Value`, same JSON
+  mapping as `valid/`), `unrepresentable_reason` (a spec-defined
+  reason code), and `note` (why). The exact API shape a writer uses
+  to report the rejection (exception, error enum, ...) is
+  implementation-defined; only the reason code names are normative.
 
 An implementation conforms to a version if it passes every test in
-that version's suite. Consume the directory as a git submodule (or
-copy it).
+every category present in that version's suite. Consume the
+directory as a git submodule (or copy it).
 
 ## Version scheme
 

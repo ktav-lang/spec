@@ -98,6 +98,69 @@
   同样被识别;不在多行标量、多行字符串内容或注释中处理。对 escape 表
   纯属新增 —— 已有任何一个 escape 序列的含义均未改变。
 - **附录 D —— 从 0.6.x 迁移到 0.7.0 的指南。**
+- **`unrepresentable/` 一致性类别(spec#4)—— 不可表示 Value 的
+  原因代码现已规范化(§ 5.9.0),§ 8.2 要求 writer-conforming 实现
+  以指定原因代码拒绝 `versions/0.7/tests/unrepresentable/` 中每个
+  fixture 的 Value。** 七个原因代码:`ScalarRoot`、
+  `EmptyKeyName`、`NonFiniteFloat`、`CRByte`、`BothFormsRequired`、
+  `TrailingWhitespaceCollision`、`LeadingWhitespaceCollision` ——
+  其中六个有 fixture;`NonFiniteFloat` 仅有文字说明(fixture
+  oracle 所用的 JSON 格式没有可移植的 NaN/Infinity 字面量)。writer
+  用以报告拒绝的 API 形式是 implementation-defined,规范性的只是
+  代码名称。README(en/ru/zh)在既有 `valid/` / `invalid/` 旁记录了
+  新类别,并要求 runner MUST 遍历每个存在的类别,而非静默跳过不
+  认识的类别。不解决 rust#5 或 rust#12 —— 二者需要在 `rust` 核心
+  与六个语言绑定中另行完成。
+
+### 已修复
+
+- **§ 5.0.1 规则 6 —— 根检测现在明确基于形状(「pair 候选」)。**
+  旧措辞(「§ 5.3 下的 pair line」)读起来像是首行的键必须已经
+  语法完全有效才能选出 Object 根,这与 `tests/invalid/invalid_key/`
+  下的 `InvalidKey` fixture(例如整份文档就是 `a,b: 1`)相矛盾。
+  规则 6 现在给出两阶段测试:阶段 1 是纯词法的形状检查(按 § 4
+  分隔符扫描规则存在首个未 escape 的 `:` 或 `::`,其前有非空原始
+  前缀,普通 `:` 满足 `<sep-end>`);阶段 2 是统一校验,与已建立
+  Object 内任何 pair line 的校验(§ 5.1 规则 8)完全一致,按 § 5.3 /
+  § 5.3.1 进行。与参考解析器一致:粘连的普通 `:` 首行(`a,b:1`)
+  不是 pair 候选,落入规则 7(单项 Array);粘连的 `::` 行是 pair
+  候选,报告 `MissingSeparatorSpace`。
+- **§ 5.3 / § 5.3.1 —— 移除了针对裸 `##` 不可达的 `InvalidKey`
+  声明。** § 5.1 规则 2 会无条件地把任何修剪后以 `##` 开头的行当作
+  注释消费,发生在任何 pair line 处理之前,因此裸 `##` 前缀行在
+  结构上永远无法到达键校验。两节现在都陈述了这一点,并指出
+  § 5.9.10 的 writer 侧 escape(escape 首个 `#`)才是防止该碰撞的
+  真正机制。
+- **§ 5.3 / § 5.3.1 —— 错误优先级被明确化:** 对已分发的 pair
+  line,检查顺序为 `MissingSeparator`(§ 6.6)→ 空前缀的
+  `EmptyKey`(§ 6.5)→ `MissingSeparatorSpace`(§ 6.10)→ 键段校验;
+  因此键缺陷(如既有 Object 内的 `b,c:1`)报告
+  `MissingSeparatorSpace` 而非 `InvalidKey`,与参考解析器一致。
+- **§ 5.0.1 —— 行首 `[` / `{` 优先于 pair 候选检测。** 若首条
+  内容行以 `[` 或 `{` 开头,但不符合规则 2–5 中任何一条(无匹配
+  闭合符,也非单独开启符),则诊断为格式错误或未闭合的 inline
+  复合值尝试(§ 5.2 规则 8–9),该诊断先于规则 6 生效 —— 已针对
+  参考解析器验证:`[bad]: 1` 报告 `UnterminatedInlineCompound`,
+  而非 `InvalidKey`。仅当方括号/花括号是该行第一个字节时适用;
+  出现在行内其他位置时(如 `a{b: 1`)规则 6 照常生效,产生
+  `InvalidKey`。fixture `invalid_key/bracket_in_key` 已重命名为
+  `invalid/inline/leading_bracket_before_separator`,并修正了
+  `expected_error`。
+- **README「版本方案」**—— 跨版本兼容 MUST 现在明确不适用于
+  pre-1.0 破坏性 `MINOR` 递进(即上一段刚刚允许的例外):面向 0.6
+  的实现不需要以相同方式解析 0.7.x 文档。此前的措辞与上方的例外
+  直接矛盾。
+- **§ 4 语法** —— `<header-line>` 中 `)` / `))` 的分支现在带有
+  上下文相关性说明:仅当多行字符串块处于打开状态(§ 5.6)且修剪后
+  的行与该块自身的终止符一致时才成立;其他任何地方,单独一行
+  `)` / `))` 都是普通文本(§ 5.1、§ 5.2、§ 5.4;§ 6.1),而非结构性
+  闭合符 —— 与 § 6.1 及 `lone_paren_tokens` fixture 一致。
+- **§ 10.6** —— 单一规范序列化的定义对象现在是每个**可表示**的
+  Value(§ 5.9.7),而非无条件的每个 Value。
+- **附录 A,0.5.0** —— 移除了「不紧跟 `LF` 的裸 `CR` 字节为内容,
+  非行终止符」这一条:0.5.0 规范自身的 § 3.2 陈述的是相反的事实
+  (「`CR` 字节在解析时绝不作为内容字节出现」),说明该条描述的是
+  从未发生过的变更。
 
 ## [0.6.4] —— 2026-08-23
 

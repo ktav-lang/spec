@@ -125,6 +125,23 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   comments. Purely additive to the escape table — no existing escape
   sequence's meaning changes.
 - **Appendix D — migration guide 0.6.x → 0.7.0.**
+- **`unrepresentable/` conformance category (spec#4) — reason codes
+  for non-representable Values are now normative (§ 5.9.0), and
+  `§ 8.2` requires a writer-conforming implementation to reject each
+  `versions/0.7/tests/unrepresentable/` fixture's Value with the
+  named reason code.** Seven reason codes: `ScalarRoot`,
+  `EmptyKeyName`, `NonFiniteFloat`, `CRByte`, `BothFormsRequired`,
+  `TrailingWhitespaceCollision`, `LeadingWhitespaceCollision` — six
+  have a fixture; `NonFiniteFloat` is documented in prose only
+  (JSON, the fixture oracle format, has no portable NaN/Infinity
+  literal). The API shape a writer uses to report the rejection is
+  implementation-defined; only the code names are normative. README
+  (en/ru/zh) documents the new category and the existing `valid/` /
+  `invalid/` ones in the same place, and states runners MUST walk
+  every category present rather than silently skip an unrecognised
+  one. Does not close rust#5 or rust#12 — those need corresponding
+  work in the `rust` core and the six language bindings, tracked
+  separately.
 
 ### Fixed
 

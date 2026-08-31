@@ -312,17 +312,32 @@ timeout: null
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.6/tests/)。成对的
-`<name>.ktav` + `<name>.json`——其中 `.json` 是期望的 `Value`，
-按 1:1 映射（`Null`→`null`、`Bool`→`bool`、`String`→`string`、
-`Array`→`array`、`Object`→`object`）。数字按词法形式定型：整数
-body（`8080`）映射为 JSON 整数，小数 body（`0.5`）映射为 JSON
-浮点数，其余标量保持为字符串；当类数字的值需保持文本时，用
-`::` 强制字面字符串。
-对象字段顺序是有意义的。
+[`versions/<v>/tests/`](versions/0.6/tests/)，最多分为三个顶层
+类别。一致性 runner MUST 遍历目标版本中存在的每个类别——静默跳过
+不认识的类别会得到假绿色结果，比该类别完全没有 fixture 还糟。
 
-若实现通过某一版本套件中的全部测试，则视为符合该版本。可以把目录
-作为 git submodule 引入（或直接拷贝）。
+- **`valid/`**——可解析的文档。每个用例是
+  `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` 三元组：
+  `.ktav` 是输入;`.json` 是期望解析出的 `Value`,按 1:1 映射
+  (`Null`→`null`、`Bool`→`bool`、`String`→`string`、
+  `Array`→`array`、`Object`→`object`——数字按词法形式定型,整数
+  body 映射为 JSON 整数,小数 body 映射为 JSON 浮点数,其余标量
+  保持为字符串,`::` 强制字面字符串);`.canonical.ktav` 是该同一
+  `Value` 期望的字节级精确 writer 输出。对象字段顺序是有意义的。
+- **`invalid/`**——conforming 解析器 MUST 拒绝的文档。每个用例是
+  `<name>.ktav` + `<name>.json` 一对;`.json` 在 `expected_error`
+  字段中指明期望的错误类别。
+- **`unrepresentable/`***(0.7 起)*——conforming writer MUST 拒绝
+  序列化、而非输出 lossy 或部分内容的 `Value`。没有 `.ktav` 输入:
+  这些 `Value` 大多只能以编程方式构造,解析永远不会产生它们。每个
+  用例是单一的 `<name>.json`,含三个字段:`value`(该 `Value`,
+  与 `valid/` 相同的 JSON 映射)、`unrepresentable_reason`(规范
+  定义的原因代码)以及 `note`(原因说明)。writer 用以报告拒绝的
+  具体 API 形式(异常、error enum 等)是 implementation-defined;
+  规范性的只是原因代码的名称。
+
+若实现通过该版本套件中每个存在类别的全部测试,则视为符合该版本。
+可以把目录作为 git submodule 引入(或直接拷贝)。
 
 ## 版本方案
 

@@ -1,0 +1,1 @@
+{"value": 42, "unrepresentable_reason": "ScalarRoot", "note": "The document root must be an Object or an Array (Sec 5.0.1); no scalar Value -- Null, Bool, Integer, Float, or String -- has a canonical form that could serve as a document root on its own. See Sec 5.9.0."}

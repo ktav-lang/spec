@@ -1115,6 +1115,32 @@ implementation, while serialising the resulting Value MUST fail —
 which is why non-representable Values sit outside the round-trip
 identity of § 8.3.
 
+Each non-representability case above has a stable **reason code**,
+normative regardless of how any given implementation's API surfaces
+it. `versions/0.7/tests/unrepresentable/` fixtures (§ 8.2) name the
+expected reason code for a given Value; a writer-conforming
+implementation's own error type MAY take any shape (exception class,
+error enum, tagged union, ...) — only the code names and the case
+each identifies are normative, not the API through which a caller
+observes them:
+
+| Reason code                   | Case                                                                                          |
+|--------------------------------|-------------------------------------------------------------------------------------------------|
+| `ScalarRoot`                  | The document root is not an Object or an Array.                                                 |
+| `EmptyKeyName`                | An Object pair's name is the empty string.                                                      |
+| `NonFiniteFloat`              | A Float is NaN or ±Infinity.                                                                     |
+| `CRByte`                      | A String contains a `CR` byte (§ 5.9.7).                                                         |
+| `BothFormsRequired`           | A String's multi-line body needs both forms — a segment trimming to `))` and a segment trimming to `)` (§ 5.9.7). |
+| `TrailingWhitespaceCollision` | A segment trims to `))` and some content line has trailing whitespace (§ 5.9.7).                 |
+| `LeadingWhitespaceCollision`  | A segment trims to `))` and every non-blank segment shares leading whitespace at the same position (§ 5.9.7). |
+
+Of these, `NonFiniteFloat` has no `unrepresentable/` fixture: JSON,
+the format the `.json` fixture oracle is written in, has no portable
+literal for NaN or Infinity (implementations that accept the bare
+tokens `NaN` / `Infinity` as an extension disagree on round-tripping
+them), so this case is documented here in prose only, not pinned by
+a machine-checkable fixture.
+
 #### 5.9.1 Whitespace, indentation, line endings
 
 - Lines terminated by `LF` (`0x0A`) only — never `CR` or `CR LF`.
@@ -1805,6 +1831,11 @@ A writer-conforming implementation:
 - For each fixture under `versions/0.7/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
   output equal to `name.canonical.ktav`.
+- For each fixture under `versions/0.7/tests/unrepresentable/`,
+  rejects the Value described by `name.json["value"]` with the
+  reason code named in `name.json["unrepresentable_reason"]`
+  (§ 5.9.0) — via whatever error-reporting shape its own API uses;
+  the code names are normative, the surfacing mechanism is not.
 
 The canonical form is defined in § 5.9.
 

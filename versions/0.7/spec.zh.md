@@ -750,6 +750,29 @@ inline 复合值的 `\r` escape(§ 3.7)进入 String。这样的文档被
 parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 这正是不可表示 Value 处于 § 8.3 round-trip 恒等式之外的原因。
 
+上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
+无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
+`versions/0.7/tests/unrepresentable/` 下的 fixture(§ 8.2)为给定
+Value 指明期望的原因代码;writer-conforming 实现自身的错误类型
+MAY 采用任意形式(异常类、error enum、tagged union 等)——
+规范性的只是代码名称及其各自标识的情形,而非调用方借以观察到
+它们的 API:
+
+| 原因代码                        | 情形                                                                                     |
+|-----------------------------------|--------------------------------------------------------------------------------------------|
+| `ScalarRoot`                      | 文档根既非 Object 也非 Array。                                                              |
+| `EmptyKeyName`                    | Object 某对的名为空字符串。                                                                  |
+| `NonFiniteFloat`                  | Float 为 NaN 或 ±Infinity。                                                                  |
+| `CRByte`                          | String 含 `CR` 字节(§ 5.9.7)。                                                              |
+| `BothFormsRequired`               | String 的多行体同时需要两种形式 —— 一个修剪后为 `))` 的段,以及一个修剪后为 `)` 的段(§ 5.9.7)。 |
+| `TrailingWhitespaceCollision`     | 某段修剪后为 `))`,且某内容行存在尾部空白(§ 5.9.7)。                                          |
+| `LeadingWhitespaceCollision`      | 某段修剪后为 `))`,且每个非空段在同一位置共享前导空白(§ 5.9.7)。                              |
+
+其中 `NonFiniteFloat` 没有对应 fixture:fixture oracle 所用的
+JSON 格式本身没有可移植的 NaN 或 Infinity 字面量(接受裸
+`NaN` / `Infinity` 标记作为扩展的实现,在其 round-trip 行为上也不
+一致),因此该情形仅在此以文字说明,不设可机检的 fixture。
+
 #### 5.9.1 空白、缩进、行尾
 
 - 行仅以 `LF` (`0x0A`) 终止;绝不使用 `CR` 或 `CR LF`。规范输出中
@@ -1152,6 +1175,11 @@ Writer-conforming 实现:
 - 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
   字节相同的输出。
+- 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
+  `name.json["unrepresentable_reason"]` 中指明的原因代码
+  (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
+  其自身 API 的任意错误报告形式;规范性的是代码名称,而非呈现
+  机制。
 
 规范形式定义见 § 5.9。
 
