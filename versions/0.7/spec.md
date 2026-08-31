@@ -500,7 +500,18 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
 - **Integer** — a numeric scalar carrying an integer value. The
   implementation MUST support at least the i64 range
   (-2^63 .. 2^63 - 1) and MAY support a wider range (e.g. arbitrary
-  precision). The canonical textual form of an Integer is a base-10
+  precision). The `valid/` conformance fixtures (§ 8.1) assume this
+  minimum i64 domain for scalar classification (§ 5.2 rule 13): an
+  integer literal outside the i64 range is a String for a
+  minimum-domain implementation, so `i64_overflow_to_string.json`
+  expects the String `"9223372036854775808"`. An implementation
+  supporting a wider domain MAY instead produce the
+  wider-domain-correct Integer for exactly such boundary-probing
+  fixtures; it remains parser-conforming (§ 8.1) provided the
+  divergence is confined to fixtures whose expected Value depends
+  on the minimum-domain boundary, and is not an arbitrary or
+  undocumented divergence. The canonical textual form of an Integer
+  is a base-10
   decimal string with no underscores and no leading zeros (except
   the literal `0`); a leading `+` is dropped; signed-zero literals
   (`+0`, `-0`) normalise to `0`. The canonical form is used by
@@ -974,15 +985,61 @@ lines are permitted.
 ### 5.9 Canonical Form
 
 A **writer-conforming** implementation MUST emit a *canonical* Ktav
-serialisation of any **representable** Value — § 5.9.7 defines the
-narrow set of String values that are not representable. The
-canonical form is byte-deterministic: for any given representable
-Value, every writer-conforming implementation MUST produce the same
-byte sequence. A writer-conforming implementation MUST reject a
-non-representable Value with an error, rather than serialise it:
-permitting an implementation-chosen or lossy encoding for the same
+serialisation of any **representable** Value — § 5.9.0 defines which
+Values are representable, subsuming the narrow set of String values
+that § 5.9.7 excludes. The canonical form is byte-deterministic: for
+any given representable Value, every writer-conforming
+implementation MUST produce the same byte sequence. A
+writer-conforming implementation MUST reject a non-representable
+Value with an error, rather than serialise it — this requirement
+applies uniformly to every non-representability rule of § 5.9.0,
+not only to § 5.9.7's String exclusions: permitting an
+implementation-chosen or lossy encoding for the same
 non-representable Value would itself violate the byte-determinism
 guarantee just stated.
+
+#### 5.9.0 Representable Values
+
+The Value model of § 5 is broader than the set of Values for which a
+canonical Ktav serialisation exists: a Value constructed
+programmatically, outside the parser, may fall outside it. A Value V
+is **representable** if and only if:
+
+- **Document root:** V is an Object or an Array. A bare scalar root
+  is not representable: § 5.0.1 establishes the root kind from the
+  first content line, and no scalar has a canonical form that could
+  serve as a document root.
+- **Object:** every pair's name is a non-empty string, and every
+  pair's value is representable. An empty name is not representable:
+  § 4 requires every key segment to contain at least one
+  `<key-token>`, so no document can produce such a pair (the
+  parse-side counterpart is the `EmptyKey` error, § 6.5).
+- **Array:** every item of V is representable.
+- **Float:** V is finite — neither NaN nor ±Infinity. No literal
+  grammar of § 3.6 produces a non-finite Float, and § 5.9.8 defines
+  no canonical textual form for one.
+- **String:** V is representable under § 5.9.7's rules (no `CR`
+  byte, and none of the pathological multi-line collision cases
+  defined there).
+- **Null, Bool, Integer**, and every other String: always
+  representable.
+
+Representability is recursive: a compound Value (Object or Array) is
+representable if and only if every Value it contains, at any depth,
+is representable. A writer-conforming implementation MUST reject a
+non-representable Value with an error, per § 5.9 — and MUST do so
+without emitting any part of it: partial output followed by a
+failure is not a permitted behaviour.
+
+Representability is deliberately narrower than parseability.
+Parsing never yields a scalar root (§ 5.0.1) or an empty pair name
+(§ 4, § 6.5), and no literal grammar yields a non-finite Float
+(§ 3.6) — but it can yield a String that § 5.9.7 excludes, since a
+`CR` byte enters a String through an inline-compound `\r` escape
+(§ 3.7). Such a document is accepted by a parser-conforming
+implementation, while serialising the resulting Value MUST fail —
+which is why non-representable Values sit outside the round-trip
+identity of § 8.3.
 
 #### 5.9.1 Whitespace, indentation, line endings
 
@@ -1254,8 +1311,17 @@ requires a segment trimming to `))`.
   round-trips to the same binary64. Then choose its notation using this
   deterministic policy, where `abs` is the absolute numeric value:
 
-  - if `abs < 1e-2` or `abs >= 1e7`, use the exponent alternative;
+  - if `0 < abs < 1e-2` or `abs >= 1e7`, use the exponent
+    alternative;
   - otherwise, use the `digits "." digits` alternative.
+
+  The threshold condition is never satisfied by `abs == 0`, which
+  therefore always uses the decimal alternative: the canonical form
+  of positive zero is `0.0` and of negative zero is `-0.0` —
+  decimal, never scientific, with the sign preserved. Unlike an
+  Integer's `-0`, which normalises to `0` (see the Integer bullet
+  of § 5), a Float keeps the IEEE 754 sign distinction between
+  `0.0` and `-0.0`.
 
   The thresholds are exact: `0.01` and `9999999.0` use decimal form,
   while `0.001`, `0.0015`, `-0.001`, and `10000000.0` use exponent
@@ -1643,7 +1709,17 @@ A parser-conforming implementation:
   document that pertains to parsing.
 - Accepts every fixture under `versions/0.7/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
-  oracle.
+  oracle. That equivalence is defined at the minimum-required
+  numeric domain of § 5 (i64 Integer, binary64 Float): an
+  implementation supporting a wider domain MAY produce a different,
+  wider-domain-correct Value for exactly those fixtures whose
+  expected Value depends on the minimum-domain boundary — e.g. an
+  i64-overflow literal, classified as a String by the minimum
+  domain (`i64_overflow_to_string.json`) but as an Integer by a
+  wider one. Such an implementation remains parser-conforming
+  provided the divergence is confined to these boundary-probing
+  fixtures, and is not an arbitrary or undocumented divergence
+  elsewhere.
 - Rejects every fixture under `versions/0.7/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 
@@ -1661,7 +1737,7 @@ The canonical form is defined in § 5.9.
 ### 8.3 Round-trip property
 
 The following identity MUST hold for every **representable** Value V
-(§ 5.9.7) producible by a parser-conforming implementation, when
+(§ 5.9.0) producible by a parser-conforming implementation, when
 emitted and re-parsed by writer- and parser-conforming
 implementations of the same Value domain:
 
@@ -1673,7 +1749,7 @@ That is: parsing canonical output and re-emitting it produces
 byte-identical output. The canonical form is a fixed point of the
 parse-emit cycle. A non-representable Value is outside the scope of
 this identity: § 5.9's writer-conforming requirement is to reject
-such a Value with an error rather than serialise it (§ 5.9.7).
+such a Value with an error rather than serialise it (§ 5.9.0).
 
 ### 8.4 Claims
 
@@ -1923,6 +1999,33 @@ The conformance suite tests both directions: input variety via
   previously only tab was exempted from the control-byte exclusion.
   Non-breaking: this only accepts documents previously rejected as
   `InvalidKey`, no previously-valid document's meaning changes.
+- **Breaking:** § 5.9.0 (new) defines **representable Values** —
+  the domain over which the canonical writer's guarantees operate.
+  A bare scalar document root, an Object pair with an empty name, a
+  non-finite Float (NaN / ±Infinity), and any compound containing a
+  non-representable Value at any depth are not representable, and a
+  writer-conforming implementation MUST reject them with an error,
+  emitting no partial output. Previously § 5.9 left these
+  programmatic-only cases undefined. The Rust reference core
+  already rejects scalar roots and `CR`-bearing Strings; closing
+  the remaining gaps there is tracked separately.
+- **Changed:** § 5.9.8 — the Float notation threshold now reads
+  `0 < abs < 1e-2` (was `abs < 1e-2`), which taken literally would
+  have demanded scientific notation for zero. The canonical form of
+  zero is `0.0` / `-0.0` — decimal, never scientific, sign
+  preserved (unlike an Integer's `-0` → `0`). This matches the Rust
+  reference core's existing behaviour; only the normative text
+  changes. New fixtures `float/positive_zero` and
+  `float/negative_zero` lock it in.
+- **Changed:** § 8.1 (with § 5's Integer definition) — fixture
+  equivalence is defined at the minimum-required numeric domain
+  (i64 Integer, binary64 Float). An implementation supporting a
+  wider domain MAY diverge from a fixture oracle exactly where that
+  fixture probes the minimum-domain boundary (e.g.
+  `i64_overflow_to_string.json`), without forfeiting
+  parser-conformance. Previously an arbitrary-precision
+  implementation — explicitly permitted by § 5 — failed § 8.1 on
+  that fixture as written.
 
 ### 0.6.0 — 2026-06-01
 

@@ -1,0 +1,14 @@
+outer: [
+    ((
+x
+)
+    ))
+    {
+        note: (
+  keep
+  indent
+        )
+        empty_obj: {}
+        empty_arr: []
+    }
+]
