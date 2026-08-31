@@ -2163,6 +2163,31 @@ The conformance suite tests both directions: input variety via
   parser-conformance. Previously an arbitrary-precision
   implementation — explicitly permitted by § 5 — failed § 8.1 on
   that fixture as written.
+- **Changed:** § 8.2 (with § 5.9.5) — the writer-conforming
+  byte-exact requirement gets the mirror-image numeric-domain
+  caveat to § 8.1's: exactly on the boundary-probing fixtures § 8.1
+  names, a wider-domain implementation's parsed Value may
+  legitimately differ, and its output MAY differ from the fixture's
+  fixed `canonical.ktav`, provided that output is the correct
+  canonical form (§ 5.9) for the Value it actually holds. Previously
+  an arbitrary-precision implementation — explicitly permitted by
+  § 5 — failed § 8.2 on `i64_overflow_to_string` as written: it
+  parses the body as an Integer and would canonically write it
+  bare (no raw marker), which the fixture's fixed `canonical.ktav`
+  forbids.
+- **Changed:** the Float bullet of § 5 and rule 14 of § 5.2 — the
+  Float domain now has a normative floor (MUST support at least the
+  range and precision of IEEE 754 binary64; MAY support a wider
+  representation) and an overflow fallback mirroring Integer's rule
+  13: a float literal that is not finite in the implementation's
+  Float domain (e.g. `1e9999` on binary64) falls through to String,
+  so a 0.7.0-conformant parser MUST NOT ever produce a non-finite
+  Float — which is what makes § 5.9.0's claim that "no literal
+  grammar of § 3.6 produces a non-finite Float" true. New fixtures
+  `float/positive_overflow_to_string`,
+  `float/negative_overflow_to_string`, and `float/underflow_to_zero`
+  pin the boundary; the last documents that underflowing to `0.0`
+  (finite) is an ordinary Float, not a String-fallback case.
 
 ### 0.6.0 — 2026-06-01
 
