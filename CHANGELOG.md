@@ -129,6 +129,17 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   → key-segment validation; a key defect (e.g. `b,c:1` inside an
   established Object) therefore reports `MissingSeparatorSpace`, not
   `InvalidKey`, matching the reference parser.
+- **§ 5.0.1 — a leading `[` / `{` pre-empts pair-candidate detection.**
+  A first content line starting with `[` or `{` that matches none of
+  rules 2–5 (no matching closer, not a lone opener) is diagnosed as
+  an unterminated/malformed inline-compound attempt (§ 5.2 rules 8–9)
+  before rule 6 is ever considered — confirmed against the reference
+  parser, which reports `UnterminatedInlineCompound` for `[bad]: 1`,
+  not `InvalidKey`. Only applies when the bracket/brace is the line's
+  first byte; elsewhere (`a{b: 1`) rule 6 proceeds normally and yields
+  `InvalidKey`. Fixture `invalid_key/bracket_in_key` renamed to
+  `invalid/inline/leading_bracket_before_separator` with its
+  `expected_error` corrected to match.
 
 ## [0.6.4] — 2026-08-23
 

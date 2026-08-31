@@ -552,6 +552,20 @@ the first matching rule wins.
    **multi-line Array** opened by this bracket. Its matching `]`
    closes the root; content after the matching close is
    `OrphanLineAfterTopLevelInline` (§ 6.14).
+
+   If the first content line trimmed begins with `[` or `{` but
+   matches none of rules 2–5 above — the leading bracket/brace has
+   no matching closer at the end of the line, and the line is not a
+   lone opener either — it is diagnosed as a malformed or
+   unterminated inline-compound attempt (§ 5.2 rules 8–9;
+   `UnterminatedInlineCompound` / `MalformedInlineCompound`,
+   § 6.11 / § 6.12). This diagnosis takes precedence over rule 6
+   below: such a line is never treated as a pair candidate, even if
+   it also contains an unescaped `:` later on (e.g. `[bad]: 1`).
+   This precedence only applies when `[` or `{` is the line's first
+   byte — elsewhere in the line (e.g. `a{b: 1`) the byte is just an
+   ordinary forbidden `<key-char>`, and rule 6 proceeds normally,
+   yielding `InvalidKey` on validation.
 6. Otherwise, if the first content line trimmed is a **pair
    candidate** — it has the *shape* of a pair line under § 5.3
    (`key: …` / `key:: …`, including dotted keys): a first
