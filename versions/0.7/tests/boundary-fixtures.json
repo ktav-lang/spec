@@ -1,0 +1,13 @@
+{
+    "$comment": "Flat list of valid/ fixture paths (relative to valid/, without extension) that are known to probe a numeric-domain boundary named in Sec 5 / Sec 8.1 / Sec 8.2. This file lives outside valid/ so a runner enumerating valid/**/*.json as fixtures never mistakes it for one (Sec 8.1, Sec 8.2). Listing a fixture here does NOT define what a wider-domain implementation's output must be -- it only tells the shared corpus runner that an implementation supporting a domain wider than the minimum (Sec 5) is exempt from matching this fixture's own <name>.json / <name>.canonical.ktav byte-for-byte. Such an implementation's correctness on these specific inputs is governed directly by Sec 5 (which numeric value and kind it holds) and Sec 5.9 (how it canonically writes whatever Value it actually holds), not by a pinned alternative oracle in this corpus. A minimum-domain-only implementation MUST match every fixture listed here exactly, the same as any other valid/ fixture -- for such an implementation these fixtures are in no way special.",
+    "boundary_dependent_fixtures": [
+        "numbers/integer/i64_overflow_to_string",
+        "numbers/float/positive_overflow_to_string",
+        "numbers/float/negative_overflow_to_string",
+        "numbers/float/just_above_max_finite_to_string",
+        "numbers/float/underflow_to_zero",
+        "numbers/float/negative_underflow_to_negative_zero",
+        "numbers/float/half_min_subnormal_underflow_to_zero",
+        "numbers/float/decimal_rounding_tie"
+    ]
+}

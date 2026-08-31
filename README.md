@@ -115,10 +115,12 @@ integer becomes an Integer, a bare decimal becomes a Float, and
 everything else stays a String. No marker is needed. Nothing that
 merely *looks* number-ish but isn't a bare number (a version, a
 label) is coerced — and `::` forces a genuine bare number to stay a
-literal string when you need that. One boundary exception: a bare
-number that falls outside the guaranteed range (i64 for Integer,
-binary64 for Float) is kept as a String too — shape alone doesn't
-make it a number.
+literal string when you need that. Two boundary exceptions: a bare
+integer outside the guaranteed i64 range, or a bare decimal that
+overflows to non-finite on binary64, is kept as a String instead —
+shape alone doesn't make it a number if the value can't fit. A
+decimal that instead *underflows* (too close to zero to represent)
+still becomes a Float, rounded to signed `0.0`, not a String.
 
 ```text
 retries: 3
@@ -262,9 +264,12 @@ keyword_as_string:: true
 A bare number is typed directly — `port: 8080` gives you an Integer,
 `ratio: 0.5` a Float. The body's shape decides: digits only →
 Integer; digits with a decimal point or exponent → Float; anything
-else → String — unless the number falls outside the guaranteed range
-(i64 for Integer, binary64 for Float), in which case it's kept as a
-String instead.
+else → String — with two exceptions at the numeric edges: an integer
+outside the guaranteed i64 range, or a decimal that overflows to
+non-finite on binary64, is kept as a String instead of wrapping or
+raising an error. A decimal that *underflows* (too close to zero to
+represent) still becomes a Float, rounded to signed `0.0` — it does
+not fall back to a String.
 
 ```text
 port:    8080
@@ -275,14 +280,15 @@ eps:     1.5e-10
 
 Numbers are Values carrying a numeric value, not the text they were
 written as — the writer emits a normalised canonical form (spec
-section 5.9.8), so `0.50` comes back as `0.5` and `1e2` as `100`. A
-bare integer within the guaranteed i64 range round-trips exactly as
-an Integer; i64 (Integer) and binary64 (Float) are the portable
-floor every implementation guarantees — an implementation may
-support wider domains (arbitrary precision / decimal), and a literal
-beyond what it supports falls back to a String rather than wrapping
-or raising an error. To keep a numeric-looking value as text
-regardless of size, force it with `::`
+section 5.9.8), so `0.50` comes back as `0.5` and `1e2` as `100.0`
+(the decimal point stays even for a whole-number Float, so a
+re-parse doesn't turn it into an Integer). A bare integer within the
+guaranteed i64 range round-trips exactly as an Integer; i64 (Integer)
+and binary64 (Float) are the portable floor every implementation
+guarantees — an implementation may support wider domains (arbitrary
+precision / decimal), and an overflowing literal beyond what it
+supports falls back to a String. To keep a numeric-looking value as
+text regardless of size, force it with `::`
 (`zip:: 01007`).
 
 ### Multi-line strings
@@ -337,11 +343,21 @@ timeout: null
 
 Every version ships a language-agnostic test suite under
 [`versions/<v>/tests/`](versions/0.6/tests/), split into up to three
-top-level categories. A conformance runner MUST walk every category
-present in the version it targets — silently skipping one it doesn't
-recognise reports false-green, which is worse than having no fixtures
-for it at all.
+fixture categories plus one top-level metadata file. A conformance
+runner MUST walk every fixture category present in the version it
+targets — silently skipping one it doesn't recognise reports
+false-green, which is worse than having no fixtures for it at all.
 
+- **`boundary-fixtures.json`** *(0.7+, not a fixture category)* — a
+  flat list of `valid/` fixture paths known to probe a numeric-domain
+  boundary (spec § 5.2, § 8.1, § 8.2), e.g. an i64-overflow or
+  Float-overflow literal. It lives at the `tests/` root, not inside
+  `valid/`, specifically so a runner enumerating `valid/**/*.json` as
+  fixtures never mistakes it for one. Listing a fixture there doesn't
+  say what a wider-domain implementation's output must be — only that
+  such an implementation is exempt from matching that one fixture's
+  `.json`/`.canonical.ktav` byte-for-byte; a minimum-domain
+  implementation MUST still match it exactly, like any other fixture.
 - **`valid/`** — parseable documents. Each case is a
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` triple:
   `.ktav` is the input; `.json` is the expected parsed `Value`,
@@ -351,12 +367,7 @@ for it at all.
   a JSON float, every other scalar stays a string, `::` forces a
   literal string); `.canonical.ktav` is the expected byte-exact
   writer output for that same `Value`. Object field order is
-  significant. A handful of fixtures probe a numeric-domain boundary
-  (e.g. an i64-overflow literal) where a wider-domain implementation
-  is allowed to legitimately diverge from the `.json`/`.canonical.ktav`
-  pair; `boundary-fixtures.json` in the same directory is the
-  machine-readable, closed list of exactly which fixtures those are
-  and what their alternative outcome is (spec § 8.1, § 8.2).
+  significant.
 - **`invalid/`** — documents a conforming parser MUST reject. Each
   case is a `<name>.ktav` + `<name>.json` pair; the `.json` names the
   expected error category in its `expected_error` field.
@@ -367,7 +378,9 @@ for it at all.
   `<name>.json` with three fields — `value` (the `Value`, same JSON
   mapping as `valid/`, except the one `NonFiniteFloat` fixture, which
   spells a non-finite Float as `{"$float": "NaN"|"Infinity"|"-Infinity"}`
-  since plain JSON has no such literal), `unrepresentable_reason` (a
+  since plain JSON has no such literal — `$float` is a reserved key
+  name inside `unrepresentable/`'s `value` trees, never a literal
+  Object field for any other purpose), `unrepresentable_reason` (a
   spec-defined reason code), and `note` (why). The exact API shape a
   writer uses to report the rejection (exception, error enum, ...) is
   implementation-defined; only the reason code names are normative.

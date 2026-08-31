@@ -158,10 +158,11 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   `versions/0.7/tests/unrepresentable/` fixture's Value with the
   named reason code.** Seven reason codes: `ScalarRoot`,
   `EmptyKeyName`, `NonFiniteFloat`, `CRByte`, `BothFormsRequired`,
-  `TrailingWhitespaceCollision`, `LeadingWhitespaceCollision` — six
-  have a fixture; `NonFiniteFloat` is documented in prose only
-  (JSON, the fixture oracle format, has no portable NaN/Infinity
-  literal). The API shape a writer uses to report the rejection is
+  `TrailingWhitespaceCollision`, `LeadingWhitespaceCollision` — all
+  seven now have a fixture (`NonFiniteFloat`'s uses a `{"$float":
+  ...}` sentinel in place of an ordinary JSON number, since JSON has
+  no portable NaN/Infinity literal; see below). The API shape a
+  writer uses to report the rejection is
   implementation-defined; only the code names are normative. README
   (en/ru/zh) documents the new category and the existing `valid/` /
   `invalid/` ones in the same place, and states runners MUST walk
@@ -302,8 +303,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   domain, underflow to `±0.0` at binary64), and `decimal_rounding_tie`
   (`9007199254740993.0`, exactly halfway between two binary64 values;
   binary64 rounds to the even neighbour `9007199254740992.0`, a wider
-  decimal domain keeps the literal exactly). All seven independently
-  verified against the Rust reference parser/writer.
+  decimal domain keeps the literal exactly).
 - **§ 5.9.0 — the "more than one violation" allowance now covers the
   current node and an Object's key, not only descendants.** The old
   wording ("among a Value's descendants") left a String satisfying two
@@ -316,6 +316,61 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   "Infinity"|"-Infinity"}` sentinel reserved for exactly this case.
   README documents the sentinel alongside the rest of the
   `unrepresentable/` schema.
+- **§ 5.2 no longer conflates a general semantic rule with a fixture
+  list.** The same-kind `MUST` (scoped to same numeric domain) is now
+  stated as a rule about every document a parser might see; § 8.1 /
+  § 8.2 separately name, for the shared conformance corpus only, which
+  fixtures are known to probe such a boundary. Previously § 5.2 itself
+  claimed the corpus's fixture list was the complete set of
+  domain-dependent divergence in the *format*, which is false — an
+  arbitrary out-of-domain body (e.g. `9223372036854775809`) crosses the
+  same boundary without being a named fixture.
+- **The boundary-fixture manifest moved and simplified: `versions/0.7/tests/valid/boundary-fixtures.json`
+  → `versions/0.7/tests/boundary-fixtures.json`, and it is now a flat
+  list of fixture paths, not a per-entry `wider_domain_kind` /
+  `wider_domain_value` / `wider_domain_canonical` record.** The old
+  richer schema had two problems: it described a bare scalar
+  replacement with no way to say *where* in a fixture's full Object
+  oracle that scalar belongs (accidental, not schema-guaranteed, that
+  every current boundary fixture has exactly one field), and it
+  asserted exactly one "wider" outcome where § 5's open-ended "MAY
+  support a wider representation" allows Float profiles (e.g. a
+  higher-but-finite-precision decimal with a wider exponent range)
+  that round differently from both the minimum-domain output and an
+  exact-arbitrary-precision one. § 8.1 / § 8.2 now state plainly that
+  a wider-domain implementation is *exempt* from byte-matching a
+  listed fixture, not bound to one specific alternative this corpus
+  pins — its correctness there is governed by § 5 / § 5.9 directly.
+  Moving the file out of `valid/` also means a runner enumerating
+  `valid/**/*.json` as fixtures can no longer mistake it for one.
+- **`numbers/float/decimal_rounding_tie.canonical.ktav` corrected from
+  decimal to scientific notation** (`9007199254740992.0` →
+  `9.007199254740992e15`): § 5.9.8 requires scientific notation for
+  any nonzero Float with `abs >= 1e7`, which this value (~9×10^15)
+  is far past. The wrong decimal form had been checked against
+  `ktav::render::render()`, which does not apply § 5.9.8's notation
+  threshold; `ktav::emit_canonical()` is the function that actually
+  implements it, and is what a writer-conforming implementation must
+  match. Re-verified all seven new Float fixtures, plus the
+  pre-existing `notation_boundaries` / `exponent` fixtures, against
+  `emit_canonical()` — this was the only mismatch.
+- **README (en/ru/zh) — two numeric-model errors corrected.** Float
+  overflow-to-non-finite and Integer out-of-i64-range both fall back
+  to a String, but Float *underflow* does not: it rounds to a finite
+  signed `0.0` and stays a Float, which the previous wording didn't
+  distinguish. Separately, `1e2`'s canonical form is `100.0`, not
+  `100` — a bare `100` would re-parse as an Integer, breaking the
+  Float round-trip; § 5.9.8's decimal alternative always keeps the
+  decimal point.
+- **§ 5.9.0 — the `$float` sentinel key is now explicitly reserved**
+  inside `unrepresentable/` fixture `value` trees, closing a shape
+  collision with an ordinary JSON Object that happens to have a single
+  `$float` key.
+- **CHANGELOG — removed a self-contradiction**: this section
+  previously said both that `NonFiniteFloat` had no fixture (stale,
+  from before the fixture existed) and that
+  `unrepresentable/non_finite_float.json` had been added, in the same
+  "Unreleased" section describing one coherent draft state.
 
 ## [0.6.4] — 2026-08-23
 
