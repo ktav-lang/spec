@@ -351,10 +351,12 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
   十进制串,无下划线、无前导零
   (`0` 除外);前导 `+` 舍弃;有符号零 (`+0`, `-0`) 归一化为
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
-- **Float** —— 数值标量,携带数值。内部表示由实现定义(IEEE 754
-  binary64、任意精度 decimal 或其他)。规范文本形式(§ 5.9)
-  MUST 由 writer-conforming 实现使用。Value **不**保留写入的文本
-  形式;下划线、`e` vs `E` 的选择、前导 `+` 不属于 Value。
+- **Float** —— 数值标量,携带数值。实现 MUST 至少支持 IEEE 754
+  binary64 的范围与精度,且 MAY 支持更宽的表示(如任意精度
+  decimal)。超出该最小值的内部表示由实现定义。规范文本形式
+  (§ 5.9) MUST 由 writer-conforming 实现使用。Value **不**保留
+  写入的文本形式;下划线、`e` vs `E` 的选择、前导 `+` 不属于
+  Value。
 - **String** —— (可能为空的) UTF-8 字符串。
 - **Array** —— 有序 Value 序列。
 - **Object** —— 有序 (名, Value) 对序列,名为字符串。Object 内
@@ -475,8 +477,17 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
     可移植文档 SHOULD NOT 依赖于 i64 范围之外的 Integer 类型化;
     运行于严格 i64 后端的 0.7.0 兼容解析器 MUST 将这类溢出体归入
     规则 15。
-14. 若体匹配**浮点字面量**语法(§ 3.6):Float,携带从体解析的
-    数值。内部表示由实现定义(见 § 5);规范文本形式见 § 5.9.8。
+14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所支持的
+    Float 域(§ 5)内有限:Float,携带从体解析的数值。内部表示
+    由实现定义(见 § 5);规范文本形式见 § 5.9.8。解析值在该域内
+    非有限的字面量 —— 例如 binary64 后端遇到 `1e9999`,溢出为
+    无穷 —— 回退到规则 15(String),与规则 13 中超出范围的整数
+    字面量完全一致。§ 3.6 的语法可以表达任何 Float 域都无法有限
+    表示的量级,但这类字面量永远不会被分类为 Float:0.7.0 兼容
+    解析器 MUST NOT 经由此规则产生非有限 Float —— 这正是
+    § 5.9.0「§ 3.6 的任何字面量语法都不产生非有限 Float」这一
+    断言为真的原因。下溢到 ±0.0(例如 binary64 上的 `1e-9999`)
+    不属于回退情形:零是有限的,此类字面量就是普通的 Float。
 15. 否则 → String,内容为写入的体。
 
 关键词 `null`/`true`/`false` 与数字字面量**区分大小写**。`True`、
@@ -739,8 +750,8 @@ Value,而不是将其序列化 —— 该要求统一适用于 § 5.9.0 的每�
   § 6.5)。
 - **Array:** V 的每一项都节点可表示。
 - **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity。§ 3.6 的任何
-  字面量语法都不产生非有限 Float,且 § 5.9.8 未为其定义规范文本
-  形式。
+  字面量语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14
+  回退为 String),且 § 5.9.8 未为其定义规范文本形式。
 - **String:** V 按 § 5.9.7 的规则节点可表示(无 `CR` 字节,且
   不属于该节定义的病态多行碰撞情形)。
 - **Null、Bool、Integer** 及所有其他 String:始终节点可表示。
@@ -1193,7 +1204,19 @@ Writer-conforming 实现:
 - 满足 § 5.9 所有规范性 MUST / MUST NOT 声明。
 - 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
-  字节相同的输出。
+  字节相同的输出。该要求针对实现实际持有的 Value,而由于 § 8.1
+  将 fixture 等价性定义在 § 5 的最小必需数值域上(i64 Integer、
+  binary64 Float),这个 Value 可能合法地不同于 fixture 的
+  `.json` oracle 所描述的最小域 Value —— 且恰好只在 § 8.1 所
+  指名的探测边界的 fixture 上(例如 `i64_overflow_to_string`
+  的体,最小域分类为 String,更宽域分类为 Integer)。恰恰对此类
+  fixture,更宽域的实现 MAY 产生不同于该 fixture 固定的
+  `name.canonical.ktav` 的输出 —— 例如 Integer 以不带 raw
+  标记的裸形式规范写出(§ 5.9.5)—— 只要该输出对其真正持有的
+  Value 而言是正确的规范形式(§ 5.9),并且对其自身域保持内部
+  正确与确定。这样的实现仍符合 writer-conforming,只要偏差仅限
+  于 § 8.1 所指名的同一批探测边界的 fixture,且并非其他处的
+  任意或未记录偏差。
 - 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
@@ -1314,6 +1337,24 @@ RFC 2119、RFC 8174、RFC 3629、RFC 8259、TOML、YAML。
   oracle(如 `i64_overflow_to_string.json`),而不丧失
   parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
   在该 fixture 上不满足 § 8.1。
+- **变更:** § 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节
+  fixture 要求补充了镜像 § 8.1 的数值域警告:恰在 § 8.1 所指名的
+  探测边界的 fixture 上,更宽域实现解析出的 Value 可能合法地
+  不同,其输出 MAY 不同于该 fixture 固定的 `canonical.ktav` ——
+  只要该输出对其真正持有的 Value 是正确的规范形式(§ 5.9)。此前
+  § 5 明确允许的任意精度实现会按原文本在 `i64_overflow_to_string`
+  上不满足 § 8.2:它把体解析为 Integer 并会以裸形式规范写出
+  (无 raw 标记),而 fixture 固定的 `canonical.ktav` 不允许这样。
+- **变更:** § 5 的 Float 条目与 § 5.2 规则 14 —— Float 域现在有
+  规范性下限(MUST 至少支持 IEEE 754 binary64 的范围与精度;
+  MAY 支持更宽表示)和镜像 Integer 规则 13 的溢出回退:在实现
+  Float 域内非有限的浮点字面量(如 binary64 上的 `1e9999`)回退
+  为 String,因此 0.7.0 兼容解析器 MUST NOT 永远产生非有限
+  Float —— 这使 § 5.9.0「§ 3.6 的任何字面量语法都不产生非有限
+  Float」的断言真正成立。新 fixture `float/positive_overflow_to_string`、
+  `float/negative_overflow_to_string` 与 `float/underflow_to_zero`
+  将边界锁定;最后一个 fixture 记录下溢到 `0.0`(有限)是普通
+  Float,而非回退为 String 的情形。
 
 ### 0.6.0 —— 2026-06-01
 

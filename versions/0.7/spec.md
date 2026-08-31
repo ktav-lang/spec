@@ -528,8 +528,10 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   (`+0`, `-0`) normalise to `0`. The canonical form is used by
   writer-conforming implementations (§ 5.9).
 - **Float** — a numeric scalar carrying a numeric value. The
-  internal representation is implementation-defined (IEEE 754
-  binary64, arbitrary-precision decimal, or other). The canonical
+  implementation MUST support at least the range and precision of
+  IEEE 754 binary64 and MAY support a wider representation (e.g.
+  arbitrary-precision decimal). The internal representation beyond
+  that minimum is implementation-defined. The canonical
   textual form (§ 5.9) MUST be used by writer-conforming
   implementations. The Value does **not** preserve the textual form
   as written; underscores, the choice of `e` vs `E`, and leading-`+`
@@ -710,10 +712,23 @@ handled per § 5.3 / § 5.4 / § 5.8 as raw Strings.
     portable document SHOULD NOT rely on Integer-typing for values
     outside the i64 range; a 0.7.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
-14. If the body matches the **float literal** grammar (§ 3.6): Float
-    carrying the numeric value parsed from the body. The internal
-    representation is implementation-defined (see § 5 description of
-    Float); the canonical textual form is specified in § 5.9.8.
+14. If the body matches the **float literal** grammar (§ 3.6) and
+    its numeric value is finite in the implementation's supported
+    Float domain (§ 5): Float carrying the numeric value parsed
+    from the body. The internal representation is
+    implementation-defined (see § 5 description of Float); the
+    canonical textual form is specified in § 5.9.8. A literal whose
+    parsed value would not be finite in that domain — e.g. a
+    binary64 backend given `1e9999`, which overflows to infinity —
+    falls through to rule 15 (String), exactly as an out-of-range
+    Integer literal does under rule 13. The grammar of § 3.6 can
+    express magnitudes beyond what any Float domain holds finite,
+    but no such literal is ever classified as Float: a
+    0.7.0-conformant parser MUST NOT produce a non-finite Float via
+    this rule — which is what makes § 5.9.0's "no literal grammar
+    of § 3.6 produces a non-finite Float" claim true. Underflow to
+    ±0.0 (e.g. `1e-9999` on binary64) is not a fallback case: zero
+    is finite, so such a literal is an ordinary Float.
 15. Otherwise → String whose content is the body, as written.
 
 The keyword forms `null`, `true`, `false` and the numeric literals
@@ -1099,8 +1114,9 @@ kind:
   (the parse-side counterpart is the `EmptyKey` error, § 6.5).
 - **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity. No literal
-  grammar of § 3.6 produces a non-finite Float, and § 5.9.8 defines
-  no canonical textual form for one.
+  grammar of § 3.6 produces a non-finite Float (an overflowing
+  literal falls through to String at § 5.2 rule 14), and § 5.9.8
+  defines no canonical textual form for one.
 - **String:** V is node-representable under § 5.9.7's rules (no
   `CR` byte, and none of the pathological multi-line collision
   cases defined there).
@@ -1855,7 +1871,23 @@ A writer-conforming implementation:
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
 - For each fixture under `versions/0.7/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
-  output equal to `name.canonical.ktav`.
+  output equal to `name.canonical.ktav`. That requirement applies
+  to the Value the implementation actually holds, which — since
+  § 8.1 defines fixture equivalence at the minimum-required numeric
+  domain of § 5 (i64 Integer, binary64 Float) — may legitimately
+  differ from the minimum-domain Value the fixture's `.json` oracle
+  describes, exactly on the boundary-probing fixtures § 8.1 names
+  (e.g. an `i64_overflow_to_string` body, classified as a String by
+  the minimum domain but as an Integer by a wider one). For exactly
+  such a fixture, a wider-domain implementation MAY produce output
+  different from that fixture's fixed `name.canonical.ktav` — e.g.
+  an Integer value is canonically written bare, without the raw
+  marker (§ 5.9.5) — provided that output is the correct canonical
+  form (§ 5.9) for the Value it actually holds, and remains
+  internally correct and deterministic for its own domain. Such an
+  implementation remains writer-conforming provided the divergence
+  is confined to the same boundary-probing fixtures § 8.1 names,
+  and is not an arbitrary or undocumented divergence elsewhere.
 - For each fixture under `versions/0.7/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
@@ -2156,6 +2188,31 @@ The conformance suite tests both directions: input variety via
   parser-conformance. Previously an arbitrary-precision
   implementation — explicitly permitted by § 5 — failed § 8.1 on
   that fixture as written.
+- **Changed:** § 8.2 (with § 5.9.5) — the writer-conforming
+  byte-exact requirement gets the mirror-image numeric-domain
+  caveat to § 8.1's: exactly on the boundary-probing fixtures § 8.1
+  names, a wider-domain implementation's parsed Value may
+  legitimately differ, and its output MAY differ from the fixture's
+  fixed `canonical.ktav`, provided that output is the correct
+  canonical form (§ 5.9) for the Value it actually holds. Previously
+  an arbitrary-precision implementation — explicitly permitted by
+  § 5 — failed § 8.2 on `i64_overflow_to_string` as written: it
+  parses the body as an Integer and would canonically write it
+  bare (no raw marker), which the fixture's fixed `canonical.ktav`
+  forbids.
+- **Changed:** the Float bullet of § 5 and rule 14 of § 5.2 — the
+  Float domain now has a normative floor (MUST support at least the
+  range and precision of IEEE 754 binary64; MAY support a wider
+  representation) and an overflow fallback mirroring Integer's rule
+  13: a float literal that is not finite in the implementation's
+  Float domain (e.g. `1e9999` on binary64) falls through to String,
+  so a 0.7.0-conformant parser MUST NOT ever produce a non-finite
+  Float — which is what makes § 5.9.0's claim that "no literal
+  grammar of § 3.6 produces a non-finite Float" true. New fixtures
+  `float/positive_overflow_to_string`,
+  `float/negative_overflow_to_string`, and `float/underflow_to_zero`
+  pin the boundary; the last documents that underflowing to `0.0`
+  (finite) is an ordinary Float, not a String-fallback case.
 
 ### 0.6.0 — 2026-06-01
 

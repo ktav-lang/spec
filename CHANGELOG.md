@@ -114,6 +114,33 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   forfeiting parser-conformance. Previously an arbitrary-precision
   implementation — explicitly permitted by § 5 — failed § 8.1 on that
   fixture as written.
+- **§ 8.2 (with § 5.9.5) — the writer-conforming byte-exact fixture
+  requirement now carries the numeric-domain caveat mirroring
+  § 8.1.** On exactly the boundary-probing fixtures § 8.1 names, the
+  Value a wider-domain implementation parses from `name.ktav` may
+  legitimately differ from the minimum-domain Value the fixture's
+  `.json` oracle describes, so its output MAY differ from the
+  fixture's fixed `canonical.ktav` — provided that output is the
+  correct canonical form (§ 5.9) for the Value it actually holds.
+  Previously an arbitrary-precision implementation — explicitly
+  permitted by § 5 — failed § 8.2 on `i64_overflow_to_string` as
+  written: it parses the body as an Integer and would canonically
+  write it bare (no raw marker), which the fixture's fixed
+  `canonical.ktav` forbids.
+- **§ 5 (Float) / § 5.2 rule 14 — the Float domain now has a
+  normative floor and an overflow fallback.** Implementations MUST
+  support at least the range and precision of IEEE 754 binary64
+  (MAY support a wider representation), and a float literal whose
+  parsed value is non-finite in the implementation's Float domain
+  (e.g. `1e9999` on binary64) falls through to String exactly as an
+  out-of-range Integer does under rule 13 — so a 0.7.0-conformant
+  parser MUST NOT ever produce a non-finite Float, making § 5.9.0's
+  "no literal grammar of § 3.6 produces a non-finite Float" claim
+  actually true. New fixtures `float/positive_overflow_to_string`,
+  `float/negative_overflow_to_string`, and
+  `float/underflow_to_zero` lock the boundary in; the last
+  documents that underflow to `0.0` (finite) is an ordinary Float,
+  not a String-fallback case.
 
 ### Added
 
