@@ -1077,33 +1077,46 @@ guarantee just stated.
 The Value model of § 5 is broader than the set of Values for which a
 canonical Ktav serialisation exists: a Value constructed
 programmatically, outside the parser, may fall outside it. A Value V
-is **representable** if and only if:
+is **representable** — the property § 5.9's canonical-serialisation
+contract requires — if and only if both of the following hold:
 
-- **Document root:** V is an Object or an Array. A bare scalar root
-  is not representable: § 5.0.1 establishes the root kind from the
-  first content line, and no scalar has a canonical form that could
-  serve as a document root.
+- V is an Object or an Array. A bare scalar root is not
+  representable: § 5.0.1 establishes the root kind from the first
+  content line, and no scalar has a canonical form that could serve
+  as a document root.
+- V is **node-representable**.
+
+**Node-representability** — the recursive, per-kind check applied to
+every Value in a non-root position (an Object pair's value, an
+Array's item). A Value is **node-representable** if and only if, by
+kind:
+
 - **Object:** every pair's name is a non-empty string, and every
-  pair's value is representable. An empty name is not representable:
-  § 4 requires every key segment to contain at least one
-  `<key-token>`, so no document can produce such a pair (the
-  parse-side counterpart is the `EmptyKey` error, § 6.5).
-- **Array:** every item of V is representable.
+  pair's value is node-representable. An empty name is not
+  node-representable: § 4 requires every key segment to contain at
+  least one `<key-token>`, so no document can produce such a pair
+  (the parse-side counterpart is the `EmptyKey` error, § 6.5).
+- **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity. No literal
   grammar of § 3.6 produces a non-finite Float, and § 5.9.8 defines
   no canonical textual form for one.
-- **String:** V is representable under § 5.9.7's rules (no `CR`
-  byte, and none of the pathological multi-line collision cases
-  defined there).
+- **String:** V is node-representable under § 5.9.7's rules (no
+  `CR` byte, and none of the pathological multi-line collision
+  cases defined there).
 - **Null, Bool, Integer**, and every other String: always
-  representable.
+  node-representable.
 
-Representability is recursive: a compound Value (Object or Array) is
-representable if and only if every Value it contains, at any depth,
-is representable. A writer-conforming implementation MUST reject a
-non-representable Value with an error, per § 5.9 — and MUST do so
-without emitting any part of it: partial output followed by a
-failure is not a permitted behaviour.
+Node-representability recurses through every Object pair's value and
+every Array item, at any depth, without re-imposing the root-kind
+constraint: a String or Integer nested inside a representable Object
+is node-representable on its own terms — it is never itself required
+to be an Object or an Array. Only the outermost Value handed to a
+writer is subject to the root-kind constraint.
+
+A writer-conforming implementation MUST reject a non-representable
+Value with an error, per § 5.9 — and MUST do so without emitting any
+part of it: partial output followed by a failure is not a permitted
+behaviour.
 
 Representability is deliberately narrower than parseability.
 Parsing never yields a scalar root (§ 5.0.1) or an empty pair name
@@ -1133,6 +1146,17 @@ observes them:
 | `BothFormsRequired`           | A String's multi-line body needs both forms — a segment trimming to `))` and a segment trimming to `)` (§ 5.9.7). |
 | `TrailingWhitespaceCollision` | A segment trims to `))` and some content line has trailing whitespace (§ 5.9.7).                 |
 | `LeadingWhitespaceCollision`  | A segment trims to `))` and every non-blank segment shares leading whitespace at the same position (§ 5.9.7). |
+
+When a Value violates more than one case at once, the checks are
+ordered: the document-root constraint (Object-or-Array) is evaluated
+first, and only if it passes is node-representability checked
+recursively. If node-representability then finds more than one
+violation among a Value's descendants (e.g. two Array items each
+non-representable for a different reason), an implementation MAY
+report any one of them: this specification does not mandate a
+specific traversal order or a deterministic "first" violation —
+that question belongs to the still-open structured-error contract
+(rust#12).
 
 Of these, `NonFiniteFloat` has no `unrepresentable/` fixture: JSON,
 the format the `.json` fixture oracle is written in, has no portable

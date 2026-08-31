@@ -200,6 +200,28 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   `InvalidKey`. Fixture `invalid_key/bracket_in_key` renamed to
   `invalid/inline/leading_bracket_before_separator` with its
   `expected_error` corrected to match.
+- **§ 5.9.0 — the representability predicate is split into the
+  document-root check plus a new internal, recursive
+  "node-representable" check.** The previous wording was a single
+  flat conjunction of per-kind bullets; read literally, it made an
+  ordinary child scalar (a String nested in an Object, say)
+  non-representable, since as a Value in its own right it failed
+  the very first bullet ("V is an Object or an Array"). Now only
+  the outermost Value handed to a writer is subject to the
+  root-kind constraint; "node-representability" recurses through
+  Object pair values and Array items at any depth without
+  re-imposing it. § 5.9.0 also now states a precedence rule for
+  simultaneous violations: the document-root check is evaluated
+  first, and when node-representability finds more than one
+  violation among a Value's descendants an implementation MAY
+  report any one of them (no traversal order is mandated; that
+  belongs to the still-open structured-error contract, rust#12).
+  The four `unrepresentable/` fixtures whose bare-String value
+  tripped `ScalarRoot` and their intended String-specific code
+  simultaneously (`cr_byte`, `both_forms_required`,
+  `trailing_whitespace_collision`, `leading_whitespace_collision`)
+  are rewrapped as `{"s": <string>}` so each now exercises exactly
+  its named reason code.
 
 ## [0.6.4] — 2026-08-23
 

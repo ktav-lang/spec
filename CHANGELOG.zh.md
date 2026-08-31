@@ -161,6 +161,21 @@
   非行终止符」这一条:0.5.0 规范自身的 § 3.2 陈述的是相反的事实
   (「`CR` 字节在解析时绝不作为内容字节出现」),说明该条描述的是
   从未发生过的变更。
+- **§ 5.9.0 —— 可表示性谓词被拆分为文档根检查与新增的内部递归
+  「节点可表示」（node-representable）检查。** 旧措辞是一条单一的
+  扁平合取,按字面阅读会使普通的子标量(例如嵌套在 Object 中的
+  String)不可表示,因为它作为独立的 Value 无法通过第一条
+  (「V 是 Object 或 Array」)。现在只有交给 writer 的最外层 Value
+  才受根类型约束;「节点可表示性」以任意深度递归穿过 Object 的
+  pair 值与 Array 元素,而不会重复施加该约束。§ 5.9.0 现在还规定
+  了同时违规时的优先级规则:文档根检查最先求值,而当节点可表示性
+  在 Value 的后代中发现多于一个违规时,实现 MAY 报告其中任意一个
+  (不强制遍历顺序;这属于仍未定案的 structured-error 契约,
+  rust#12)。四个 `unrepresentable/` fixture 的裸 String 值此前
+  同时触发 `ScalarRoot` 和预期的 String 专属代码(`cr_byte`、
+  `both_forms_required`、`trailing_whitespace_collision`、
+  `leading_whitespace_collision`),现已重新包装为 `{"s": <string>}`,
+  使每个 fixture 精确检验其同名的原因代码。
 
 ## [0.6.4] —— 2026-08-23
 
