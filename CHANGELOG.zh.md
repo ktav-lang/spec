@@ -290,6 +290,40 @@
   `NonFiniteFloat` 没有 fixture(过时信息,早于该 fixture 出现),
   又说 `unrepresentable/non_finite_float.json` 已被添加 —— 二者都
   出现在描述同一草稿状态的同一「未发布」节中。
+- **`boundary-fixtures.json` 现在是叶级而非 fixture 级,并补上了两个
+  此前遗漏的条目。** 扁平的边界 fixture 清单有两个问题:它遗漏了两个
+  已经存在且确实依赖数值域的 fixture(`numbers/integer/big_overflow_to_string`,
+  其 `big`/`bigger` 字段超出 i64;`numbers/float/min_positive_subnormal`,
+  任意精度 decimal 域会完整保留其精确输入值,而 binary64 会将其缩短为
+  `5e-324`)——使得一个合规的 BigInt 或精确 decimal 实现无法在它们上
+  通过 § 8.1 / § 8.2;而且即便只有部分字段依赖数值域,它也会豁免整个
+  fixture(`big_overflow_to_string` 的 `tiny` 字段在每个域中都是普通的
+  `Integer(1)` —— fixture 级的豁免会连它也停止检查)。现在每个条目
+  指向某个具体叶的 JSON 指针 `path`,外加一个 `boundary_class`
+  (`integer_range` / `float_range` / `float_underflow` /
+  `float_precision`),因此实现的豁免被限定在它真正支持更宽域的那个
+  确切叶与轴上 —— 一个拥有更宽 Integer 域但只有普通 binary64 Float
+  的实现仅在 `integer_range` 叶上豁免,反之亦然。§ 8.1 / § 8.2 已
+  相应重写。
+- **README —— 「通过测试套件」现在被表述为合规的必要条件而非充分
+  条件。** 随着 `boundary-fixtures.json` 的叶现在被显式声明为由共享
+  语料不对更宽域实现进行验证,README 中不加限定的「实现通过全部测试
+  即合规」的说法不再准确 —— 这样的实现还必须对语料豁免的那些叶自行
+  验证其 § 5 / § 5.9 行为。
+- **RU/ZH § 5.9.3 —— 恢复缺失的空首项包裹情形。** 两个译本都只描述了
+  非空复合值开启行的包裹(§ 5.0.1 规则 4/5),且 RU 明确声称仅在
+  「首项为非空复合值时」才需要包裹,遗漏了英文原文中同等规范性的空
+  复合值情形(规则 2/3,`{}` / `[]`)。严格依照 RU 或 ZH 文本构建的
+  writer 会输出一个首项为空 Object/Array 的未包裹 Array 根,其重新
+  解析时根 kind 错误 —— 这是译出算法中真正的 round-trip 缺陷,而不
+  只是措辞缺口。
+- **RU/ZH § 5.6 —— 恢复缺失的 LIFO 配对句子**(「多行字符串体
+  MUST NOT 跨越另一个复合值的边界:开启行与关闭行通过解析器的 LIFO
+  栈无歧义地配对。」),两个译本均完全缺失。
+- **RU/ZH § 5.8.4 —— 移除捏造的「SHOULD 低于 64 层」深度限制。**
+  英文原文未设定任何规范性深度限制,只说「SHOULD 避免病态的深度
+  嵌套」 —— RU 和 ZH 各自编造了一个权威英文文本中并不存在的具体
+  数字。
 
 ## [0.6.4] —— 2026-08-23
 

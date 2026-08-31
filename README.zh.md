@@ -331,14 +331,16 @@ timeout: null
 不认识的类别会得到假绿色结果，比该类别完全没有 fixture 还糟。
 
 - **`boundary-fixtures.json`**（*0.7 起,并非 fixture 类别*）——一份
-  已知会探测数值域边界的 `valid/` fixture 路径的扁平清单(spec
-  § 5.2、§ 8.1、§ 8.2),例如 i64 溢出或 Float 溢出的字面量。它位于
-  `tests/` 根目录、而非 `valid/` 之内,正是为了让按
-  `valid/**/*.json` 枚举 fixture 的 runner 永远不会把它误认为一个
-  fixture。在其中列出某个 fixture 并不说明更宽域的实现必须输出
-  什么——只是说明这类实现豁免于逐字节匹配该 fixture 的
-  `.json`/`.canonical.ktav`;最小域的实现仍 MUST 精确匹配它,与其他
-  任何 fixture 一样。
+  叶级清单,列出本属正常 `valid/` fixture 内、已知会探测数值域边界的
+  单个 Object 字段(spec § 5.2、§ 8.1、§ 8.2),例如 i64 溢出或 Float
+  溢出的字面量,并标注它探测的轴(`integer_range`、`float_range`、
+  `float_underflow`、`float_precision`)。它位于 `tests/` 根目录、
+  而非 `valid/` 之内,正是为了让按 `valid/**/*.json` 枚举 fixture 的
+  runner 永远不会把它误认为一个 fixture。在其中列出某个叶并不说明
+  更宽域的实现在该字段处必须输出什么——只是说明实现豁免于逐字节
+  匹配,且仅当它在该特定轴上确实支持宽于最小域的域;同一 fixture 的
+  其他任何字段,以及未列出的任何 fixture 或字段,不对任何实现给予
+  豁免。
 - **`valid/`**——可解析的文档。每个用例是
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` 三元组：
   `.ktav` 是输入;`.json` 是期望解析出的 `Value`,按 1:1 映射
@@ -364,8 +366,14 @@ timeout: null
   具体 API 形式(异常、error enum 等)是 implementation-defined;
   规范性的只是原因代码的名称。
 
-若实现通过该版本套件中每个存在类别的全部测试,则视为符合该版本。
-可以把目录作为 git submodule 引入(或直接拷贝)。
+通过该版本测试套件中每个存在类别的全部测试,是通过发布的必要门槛,
+但本身并不足以证明合规:`boundary-fixtures.json`(0.7 起)告诉共享
+语料库,对在该叶的轴上数值域宽于最小域的实现,跳过特定叶的精确
+字节/Value 检查——spec § 8.1 / § 8.2 定义了这类实现在那里的正确性
+实际取决于什么(§ 5、§ 5.9),而共享语料库并不验证它。声明更宽
+数值域的实现 MUST 额外针对 § 5 / § 5.9 验证其自身在其所声称域上的
+行为,超出本语言无关测试套件所检查的范围。可以把目录作为 git
+submodule 引入(或直接拷贝)。
 
 ## 版本方案
 

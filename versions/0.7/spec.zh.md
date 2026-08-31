@@ -1230,21 +1230,29 @@ path\\to: x
 Parser-conforming 实现:
 
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
-- 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与
-  对应 `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需
-  数值域上(i64 Integer、binary64 Float)。
+- 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与对应
+  `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需数值域上
+  (i64 Integer、binary64 Float)。
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
-  列出了已知探测数值域边界(§ 5.2)的 fixture 路径 —— 例如
-  `numbers/integer/i64_overflow_to_string`,其体被最小域分类为
-  String,而更宽域 MAY 将其分类为 Integer。仅支持最小域的实现
-  MUST 与这些 fixture 中的每一个精确匹配,与任何其他 `valid/`
-  fixture 相同。支持更宽域的实现则豁免于对所列 fixture 的
-  `name.json` 逐字节匹配 —— 该语料并不固定其 Value 在此必须是
-  什么;§ 5.2 已陈述一般规则(域相同 ⇒ kind 相同,域不同 ⇒ MAY
-  在被越过的边界处不同),而该 Value 就是实现自己对 fixture 的体
-  正确应用 § 5 的规则 13–14 所产生的结果。未列入
-  `boundary-fixtures.json` 的 fixture 对任何实现、任何域均不带
-  此种豁免。
+  列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
+  fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如
+  `big_overflow_to_string` 的 `tiny` 字段在每个符合规范的域中都是
+  普通的 `Integer(1)`,而其 `big` / `bigger` 字段则不是),且仅被
+  列出的叶被豁免 —— 该 fixture 的其他每个字段 MUST 仍然精确匹配。
+  每个条目指明一个 `boundary_class`:`integer_range`(超出强制的
+  i64 范围)、`float_range`(在 binary64 上溢出为非有限值)、
+  `float_underflow`(在 binary64 下溢为零)、或 `float_precision`
+  (binary64 会对该值舍入或缩短,而更高精度的域则不会)。实现仅当
+  其切实支持沿该叶特定 `boundary_class` *宽于最小域的域* 时,才
+  豁免于对该叶的值进行匹配 —— 支持 BigInt 但仅 plain binary64 的
+  实现在 `integer_range` 叶上豁免,而在任何 `float_*` 叶上不豁免;
+  支持 Float 但仅 plain i64 的实现则相反;支持一个轴并不豁免其在
+  另一个轴上的要求。对被豁免的叶,该语料并不固定其 Value 必须是
+  什么 —— § 5.2 已陈述一般规则(域相同 ⇒ kind 相同,域不同 ⇒ MAY
+  在被越过的边界处不同),而该 Value 就是实现自己对叶的体正确应用
+  § 5 的规则 13–14 所产生的结果。`boundary-fixtures.json` 未列出
+  叶的每个字段,在每个 fixture 中,对任何域的任何实现均不带任何
+  豁免。
 - 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
 
@@ -1255,18 +1263,21 @@ Writer-conforming 实现:
 - 满足 § 5.9 所有规范性 MUST / MUST NOT 声明。
 - 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
-  字节相同的输出;例外情形是:该 fixture 已被列入
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json),且实现支持的数值域宽于
-  § 5 规定的最小域 —— 依 § 8.1,这样的实现对该 fixture 的体
-  可能持有不同于最小域 `.json` oracle 所描述的 Value(例如一个
-  `i64_overflow_to_string` 的体被持有为 Integer 而非 String)。
-  恰对此类 fixture,该语料同样不固定确切的必需字节序列:实现的
-  输出 MUST 是它实际持有的 Value 的正确规范形式(§ 5.9)——
-  例如 Integer 以不带 raw 标记的裸形式规范写出(§ 5.9.5)——
-  并对其自身的域保持内部一致与确定,但对于最小域之外的域,那
-  究竟是哪些确切字节,并不是这个共享的、语言无关的语料所验证的。
-  仅支持最小域的实现 MUST 与每个 `boundary-fixtures.json` 条目的
-  `.canonical.ktav` 精确匹配,与任何其他 `valid/` fixture 相同。
+  字节相同的输出,UNLESS 该实现沿一个或多个叶的 `boundary_class`
+  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  为该 fixture 所列出的条目,支持宽于最小域的域 —— 依 § 8.1,
+  这样的实现在该叶的路径处可能持有不同于最小域 `.json` oracle 所
+  描述的 Value(例如 `i64_overflow_to_string` 的 `/overflow`
+  字段被持有为 Integer 而非 String),而同一 fixture 的其他每个
+  字段仍持有最小域 Value,且 MUST 仍按最小域 writer 将其渲染的
+  方式精确出现在输出中。恰对此类 fixture,该语料同样不固定被豁免
+  叶自身对输出贡献的确切字节序列:它 MUST 是实现实际持有的 Value
+  的正确规范形式(§ 5.9)(例如 Integer 值以不带 raw 标记的裸形式
+  规范写出,§ 5.9.5),并对其自身的域保持内部一致与确定 —— 但对
+  最小域之外的域,那究竟是哪些确切字节,并不是这个共享的、语言
+  无关的语料所验证的。仅支持最小域的实现 MUST 与每个 `valid/`
+  fixture 的 `.canonical.ktav` 精确、完整地匹配,包括
+  `boundary-fixtures.json` 为其列出叶的每个字段。
 - 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
