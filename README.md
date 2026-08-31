@@ -396,9 +396,9 @@ pin to a version directory by path.
     └── <version>/
         ├── spec.md        the specification document
         └── tests/         language-agnostic conformance suite
-            ├── README.md
             ├── valid/
-            └── invalid/
+            ├── invalid/
+            └── unrepresentable/   (0.7+)
 ```
 
 ## Implementations
@@ -414,9 +414,11 @@ pin to a version directory by path.
 | Python         | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                |
 
 The Rust crate is the reference parser; every other binding ships a
-prebuilt `ktav_cabi` (the C ABI wrapper) and exposes the same Ktav
-0.1 surface — the language-agnostic `tests/` suite below runs against
-all of them on every release.
+prebuilt `ktav_cabi` (the C ABI wrapper). All bindings expose the
+same C ABI function surface, unchanged since 0.1, and parse whatever
+format version the underlying Rust core supports (currently 0.6.4
+stable); the language-agnostic `tests/` suite below runs against all
+of them on every release.
 
 Building a new implementation? Start with your target version's
 [`spec.md`](versions/0.6/spec.md) (section 8 — Compliance) and run

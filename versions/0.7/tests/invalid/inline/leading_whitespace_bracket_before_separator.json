@@ -1,0 +1,1 @@
+{"expected_error": "UnterminatedInlineCompound", "note": "Same situation as leading_bracket_before_separator, but with two leading spaces before the bracket: § 5.0.1 precedence is defined over the trimmed first content line, so leading whitespace does not disable the diagnosis -- the trimmed line still begins with `[`, and the line is never considered as a pair candidate."}

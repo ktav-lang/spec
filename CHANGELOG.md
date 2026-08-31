@@ -195,11 +195,32 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   an unterminated/malformed inline-compound attempt (§ 5.2 rules 8–9)
   before rule 6 is ever considered — confirmed against the reference
   parser, which reports `UnterminatedInlineCompound` for `[bad]: 1`,
-  not `InvalidKey`. Only applies when the bracket/brace is the line's
-  first byte; elsewhere (`a{b: 1`) rule 6 proceeds normally and yields
-  `InvalidKey`. Fixture `invalid_key/bracket_in_key` renamed to
+  not `InvalidKey`. Only applies when the bracket/brace is the first
+  non-whitespace code point of the trimmed line; elsewhere (`a{b: 1`)
+  rule 6 proceeds normally and yields `InvalidKey`. Fixture
+  `invalid_key/bracket_in_key` renamed to
   `invalid/inline/leading_bracket_before_separator` with its
   `expected_error` corrected to match.
+- **§ 5.0.1 — the bracket-precedence sentence now reads "the first
+  non-whitespace code point of the trimmed line"** (was "the line's
+  first byte", which in isolation read as the raw, untrimmed line and
+  gave the wrong answer for `  [bad]: 1` — leading whitespace before
+  the bracket). The rule, like every rule in § 5.0.1, operates on the
+  trimmed first content line; behaviour confirmed against the
+  reference parser. New fixture
+  `invalid/inline/leading_whitespace_bracket_before_separator` locks
+  the leading-whitespace case in. The same correction applied to the
+  RU and ZH translations of the paragraph.
+- **§ 5.9.8 — restored to the RU and ZH translations the final
+  sentence of the binary64 paragraph** ("implementations using
+  arbitrary-precision decimal MAY produce different output only where
+  their Value domain differs"), which both had dropped; EN unchanged.
+- **README (en/ru/zh) — the Layout tree no longer lists a nonexistent
+  `tests/README.md` and now shows `unrepresentable/` (0.7+); the
+  bindings paragraph now states explicitly that the C ABI's function
+  surface is unchanged since 0.1 and that bindings parse whatever
+  format version the underlying Rust core supports (currently 0.6.4
+  stable)**, instead of the ambiguous "Ktav 0.1 surface".
 
 ## [0.6.4] — 2026-08-23
 

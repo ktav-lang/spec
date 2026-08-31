@@ -409,9 +409,9 @@ timeout: null
     └── <version>/
         ├── spec.md        the specification document
         └── tests/         language-agnostic conformance suite
-            ├── README.md
             ├── valid/
-            └── invalid/
+            ├── invalid/
+            └── unrepresentable/   (0.7+)
 ```
 
 ## Реализации
@@ -427,9 +427,11 @@ timeout: null
 | Python           | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                 |
 
 Rust crate — эталонный парсер; каждый из остальных биндингов поставляет
-сборку `ktav_cabi` (C-ABI обёртка) и предоставляет тот же Ktav
-интерфейс — language-agnostic набор `tests/` ниже прогоняется на всех
-из них при каждом релизе.
+сборку `ktav_cabi` (C-ABI обёртка). Все биндинги предоставляют один и
+тот же набор функций C ABI, не менявшийся с 0.1, и разбирают ту версию
+формата, которую поддерживает ядро Rust (сейчас — стабильная 0.6.4);
+language-agnostic набор `tests/` ниже прогоняется на всех из них при
+каждом релизе.
 
 Строите новую реализацию? Начните со `spec.md` целевой версии
 ([`spec.ru.md`](versions/0.6/spec.ru.md), раздел 8 — Compliance)

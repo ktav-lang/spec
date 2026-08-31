@@ -141,8 +141,8 @@
   闭合符,也非单独开启符),则诊断为格式错误或未闭合的 inline
   复合值尝试(§ 5.2 规则 8–9),该诊断先于规则 6 生效 —— 已针对
   参考解析器验证:`[bad]: 1` 报告 `UnterminatedInlineCompound`,
-  而非 `InvalidKey`。仅当方括号/花括号是该行第一个字节时适用;
-  出现在行内其他位置时(如 `a{b: 1`)规则 6 照常生效,产生
+  而非 `InvalidKey`。仅当方括号/花括号是该行经 trim 后的首个非空白
+  码点时适用;出现在行内其他位置时(如 `a{b: 1`)规则 6 照常生效,产生
   `InvalidKey`。fixture `invalid_key/bracket_in_key` 已重命名为
   `invalid/inline/leading_bracket_before_separator`,并修正了
   `expected_error`。
@@ -161,6 +161,19 @@
   非行终止符」这一条:0.5.0 规范自身的 § 3.2 陈述的是相反的事实
   (「`CR` 字节在解析时绝不作为内容字节出现」),说明该条描述的是
   从未发生过的变更。
+- **§ 5.0.1 —— 括号优先级措辞改为「该行经 trim 后的首个非空白码点」**,
+  原先「该行第一个字节」孤立地读会被理解为原始行,对 `  [bad]: 1`
+  (括号前有前导空白)给出错误结论。该规则与 § 5.0.1 的所有规则一样
+  作用于 trim 后的首条内容行;行为已针对参考解析器验证。新增 fixture
+  `invalid/inline/leading_whitespace_bracket_before_separator` 锁定
+  前导空白情形。规范的 ZH 翻译(与 RU 翻译)同步修正。
+- **§ 5.9.8 —— 补回 RU 与 ZH 翻译中 binary64 段落缺失的最后一句**
+  (「使用任意精度 decimal 的实现 MAY 产生不同输出,但仅限于其
+  Value 域有所不同之处」);英文原文未变。
+- **README(en/ru/zh)—— Layout 树不再列出并不存在的 `tests/README.md`,
+  并补上 `unrepresentable/`(0.7+);绑定段落改为明确陈述 C ABI 函数
+  接口自 0.1 起未变,且绑定解析底层 Rust 核心所支持的格式版本(当前
+  为稳定版 0.6.4)**,取代含混的「相同的 Ktav 接口」。
 
 ## [0.6.4] —— 2026-08-23
 

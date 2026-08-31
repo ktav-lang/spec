@@ -393,9 +393,9 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
    `MalformedInlineCompound`,§ 6.11 / § 6.12)。此诊断优先于下方
    规则 6:即使该行后面还含有未 escape 的 `:`(例如
    `[bad]: 1`),也绝不会被当作 pair 候选行处理。此优先级仅在
-   `[` 或 `{` 是该行第一个字节时适用 —— 若出现在行内其他位置
-   (例如 `a{b: 1`),该字节只是普通的被禁止的 `<key-char>`,规则
-   6 照常生效,校验时产生 `InvalidKey`。
+   `[` 或 `{` 是该行经 trim 后的首个非空白码点时适用 —— 若出现
+   在行内其他位置(例如 `a{b: 1`),该字节只是普通的被禁止的
+   `<key-char>`,规则 6 照常生效,校验时产生 `InvalidKey`。
 6. 否则,若首条内容行经 trim 后是 **pair 候选行** —— 即具备
    § 5.3 pair 行的*形状*(`key: …` / `key:: …`,含点分键):
    按 § 4 的分隔符扫描规则存在首个**未 escape** 的 `:`(或
@@ -975,7 +975,8 @@ SHOULD NOT 在同时需要修剪后恰为 `))` 的段的多行 String 内容中
 
   使用相同 Float 表示(binary64)的两个 writer-conforming 实现
   对同一 Value MUST 产生相同输出。fixture `*.canonical.ktav`
-  假定 binary64 语义。
+  假定 binary64 语义。使用任意精度 decimal 的实现 MAY 产生
+  不同输出,但仅限于其 Value 域有所不同之处。
 
 #### 5.9.9 关键词
 

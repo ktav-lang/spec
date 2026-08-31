@@ -584,10 +584,11 @@ the first matching rule wins.
    § 6.11 / § 6.12). This diagnosis takes precedence over rule 6
    below: such a line is never treated as a pair candidate, even if
    it also contains an unescaped `:` later on (e.g. `[bad]: 1`).
-   This precedence only applies when `[` or `{` is the line's first
-   byte — elsewhere in the line (e.g. `a{b: 1`) the byte is just an
-   ordinary forbidden `<key-char>`, and rule 6 proceeds normally,
-   yielding `InvalidKey` on validation.
+   This precedence only applies when `[` or `{` is the first
+   non-whitespace code point of the trimmed line — elsewhere in the
+   line (e.g. `a{b: 1`) the byte is just an ordinary forbidden
+   `<key-char>`, and rule 6 proceeds normally, yielding
+   `InvalidKey` on validation.
 6. Otherwise, if the first content line trimmed is a **pair
    candidate** — it has the *shape* of a pair line under § 5.3
    (`key: …` / `key:: …`, including dotted keys): a first

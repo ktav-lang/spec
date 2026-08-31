@@ -375,9 +375,9 @@ timeout: null
     └── <version>/
         ├── spec.md        the specification document
         └── tests/         language-agnostic conformance suite
-            ├── README.md
             ├── valid/
-            └── invalid/
+            ├── invalid/
+            └── unrepresentable/   (0.7+)
 ```
 
 ## 实现
@@ -393,7 +393,9 @@ timeout: null
 | Python          | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                  |
 
 Rust crate 是参考解析器;其他每个绑定都附带一份预构建的 `ktav_cabi`
-(C-ABI 包装)并暴露相同的 Ktav 接口 —— 下面与语言无关的
+(C-ABI 包装)。所有绑定暴露相同的 C ABI 函数接口(自 0.1 起未变),
+并解析底层 Rust 核心所支持的格式版本(当前为稳定版 0.6.4);
+下面与语言无关的
 `tests/` 套件每次发布时都会针对所有实现运行。
 
 打算写新实现?请先读目标版本的 `spec.md`
