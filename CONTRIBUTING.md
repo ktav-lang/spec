@@ -53,6 +53,12 @@ Breaking changes land in a new `versions/(x+1).0/` directory.
 Previous majors remain published forever — implementations targeting
 them are not obsoleted.
 
+**Pre-1.0 exception:** while `MAJOR` is `0`, a breaking change MAY
+instead land as a `MINOR` bump in a new `versions/0.(y+1)/` directory
+(0.7.0 does this over 0.6.x) — there is no `0.x` to increment to
+otherwise. Once the format reaches `1.0`, breaking changes strictly
+require the new-`MAJOR`-directory process above.
+
 ## What doesn't belong here
 
 - **Parser tricks** — if it's not expressible in the spec document,

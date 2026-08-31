@@ -348,6 +348,11 @@ Spec versions use `MAJOR.MINOR.PATCH`:
 | `x.y → x.(y+1)`   | Backward-compatible extension (new keyword, new primitive form).                             |
 | `x.y → (x+1).0`   | Breaking change in grammar or semantics.                                                     |
 
+**Pre-1.0 exception:** while `MAJOR` is `0`, a `MINOR` bump MAY carry
+a breaking change instead of requiring a `MAJOR` bump (0.7.0 does
+this over 0.6.x). Once the format reaches `1.0`, breaking changes
+strictly require a `MAJOR` bump as the table states.
+
 Within any stable `MAJOR`, an implementation targeting `x.0` MUST
 parse every document valid under any later `x.y.z` identically up to
 the subset it supports.

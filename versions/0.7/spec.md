@@ -1306,16 +1306,25 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   whitespace byte itself. Interior whitespace needs no escaping.
 - If the key's raw text (the first segment, as written on the
   line) begins with the two-byte sequence `##`, the writer MUST
-  escape exactly the first `#` as `\u0023` and leave every
-  other byte of the segment — including the second `#` —
-  unescaped: left unescaped, § 5.1 rule 2 reads the line as a
-  comment (§ 3.4) and drops it silently — a byte is neither in
-  `<key-char>`'s exclusion list nor at a trimmed edge, yet still
-  needs escaping, because this hazard operates at the
-  line-dispatch layer, above § 4's key-segment grammar entirely.
-  Escaping exactly this one byte is both necessary and sufficient:
-  two writer-conforming implementations MUST produce the identical
-  `\u0023#…` prefix, never `\u0023\u0023…` or any other variant.
+  additionally escape exactly the first `#` as `\u0023` — on
+  top of, not instead of, whatever bullets 1–3 above already
+  require for every other code point in the same segment. A
+  structural byte or edge-whitespace code point elsewhere in a
+  `##`-prefixed key is still escaped exactly as it would be in
+  any other key: for example the key `##a:b` is emitted as
+  `\u0023#a\:b` — the leading `#` escaped by this bullet, the `:`
+  escaped by bullet 1 regardless of it. Left unescaped, the
+  leading `##` makes § 5.1 rule 2 read the line as a comment
+  (§ 3.4) and drop it silently — this hazard operates at the
+  line-dispatch layer, above § 4's key-segment grammar entirely,
+  so it applies even though `#` is itself an ordinary,
+  unexcluded `<key-char>` that bullets 1–3 never require escaping
+  on their own. Escaping exactly the first `#` is necessary and
+  sufficient for this one hazard: the second `#` needs no escape
+  of its own (once the first is escaped, the line no longer
+  begins with `##`), so two writer-conforming implementations
+  MUST produce the identical `\u0023#…` prefix, never `\u0023\u0023…` or any
+  other variant.
 
 This ensures that the canonical output round-trips: unescaped dots
 in the canonical key are path separators only, structural bytes
