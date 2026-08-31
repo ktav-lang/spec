@@ -145,6 +145,44 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   line terminator" bullet: the 0.5.0 spec's own § 3.2 states the
   opposite ("a `CR` byte never appears as a content byte at parse
   time"), so the bullet described a change that never happened.
+- **§ 5.0.1 rule 6 — root-kind detection is now explicitly shape-based
+  ("pair candidate").** The old wording ("a **pair line** under § 5.3")
+  read as if the first line's key had to be fully grammatically valid
+  before an Object root could be selected, contradicting the
+  `InvalidKey` fixtures under `tests/invalid/invalid_key/` (e.g.
+  `a,b: 1` as the entire document). Rule 6 now specifies a two-phase
+  test: phase 1 is a purely lexical shape check (first unescaped `:` /
+  `::` separator with a non-empty raw prefix, `<sep-end>` satisfied for
+  a plain `:`); phase 2 is uniform § 5.3 / § 5.3.1 key validation,
+  identical to any pair line inside an established Object (§ 5.1
+  rule 8). Matching the reference parser, a glued plain-`:` first line
+  (`a,b:1`) is not a pair candidate and falls to rule 7 (one-item
+  Array), while a glued `::` line is a pair candidate and reports
+  `MissingSeparatorSpace`.
+- **§ 5.3 / § 5.3.1 — removed the unreachable `InvalidKey`-for-`##`
+  claim.** § 5.1 rule 2 consumes any line whose trimmed form begins
+  with `##` as a comment unconditionally, before pair-line processing,
+  so a raw `##`-prefixed line can structurally never reach key
+  validation. Both sections now state this and point to § 5.9.10's
+  writer-side escape (escape the leading `#`) as the actual mechanism
+  preventing the collision.
+- **§ 5.3 / § 5.3.1 — error precedence made explicit:** for a
+  dispatched pair line, checks run `MissingSeparator` (§ 6.6) →
+  `EmptyKey` (§ 6.5, empty prefix) → `MissingSeparatorSpace` (§ 6.10)
+  → key-segment validation; a key defect (e.g. `b,c:1` inside an
+  established Object) therefore reports `MissingSeparatorSpace`, not
+  `InvalidKey`, matching the reference parser.
+- **§ 5.0.1 — a leading `[` / `{` pre-empts pair-candidate detection.**
+  A first content line starting with `[` or `{` that matches none of
+  rules 2–5 (no matching closer, not a lone opener) is diagnosed as
+  an unterminated/malformed inline-compound attempt (§ 5.2 rules 8–9)
+  before rule 6 is ever considered — confirmed against the reference
+  parser, which reports `UnterminatedInlineCompound` for `[bad]: 1`,
+  not `InvalidKey`. Only applies when the bracket/brace is the line's
+  first byte; elsewhere (`a{b: 1`) rule 6 proceeds normally and yields
+  `InvalidKey`. Fixture `invalid_key/bracket_in_key` renamed to
+  `invalid/inline/leading_bracket_before_separator` with its
+  `expected_error` corrected to match.
 
 ## [0.6.4] — 2026-08-23
 
