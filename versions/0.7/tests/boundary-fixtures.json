@@ -1,13 +1,16 @@
 {
-    "$comment": "Flat list of valid/ fixture paths (relative to valid/, without extension) that are known to probe a numeric-domain boundary named in Sec 5 / Sec 8.1 / Sec 8.2. This file lives outside valid/ so a runner enumerating valid/**/*.json as fixtures never mistakes it for one (Sec 8.1, Sec 8.2). Listing a fixture here does NOT define what a wider-domain implementation's output must be -- it only tells the shared corpus runner that an implementation supporting a domain wider than the minimum (Sec 5) is exempt from matching this fixture's own <name>.json / <name>.canonical.ktav byte-for-byte. Such an implementation's correctness on these specific inputs is governed directly by Sec 5 (which numeric value and kind it holds) and Sec 5.9 (how it canonically writes whatever Value it actually holds), not by a pinned alternative oracle in this corpus. A minimum-domain-only implementation MUST match every fixture listed here exactly, the same as any other valid/ fixture -- for such an implementation these fixtures are in no way special.",
-    "boundary_dependent_fixtures": [
-        "numbers/integer/i64_overflow_to_string",
-        "numbers/float/positive_overflow_to_string",
-        "numbers/float/negative_overflow_to_string",
-        "numbers/float/just_above_max_finite_to_string",
-        "numbers/float/underflow_to_zero",
-        "numbers/float/negative_underflow_to_negative_zero",
-        "numbers/float/half_min_subnormal_underflow_to_zero",
-        "numbers/float/decimal_rounding_tie"
+    "$comment": "Leaf-level list of valid/ fixture Values known to probe a numeric-domain boundary named in Sec 5 / Sec 8.1 / Sec 8.2. This file lives outside valid/ so a runner enumerating valid/**/*.json as fixtures never mistakes it for one. Each entry names exactly one leaf -- the Object field at 'path' (a JSON Pointer, RFC 6901, relative to the fixture's own root Value) inside fixture '<fixture>.json' / '<fixture>.canonical.ktav' -- NOT the whole fixture: a fixture may mix boundary-dependent leaves with ordinary ones (e.g. big_overflow_to_string's 'tiny' field is an ordinary Integer(1) in every conforming domain, while its 'big'/'bigger' fields are not), and only the listed leaf is exempt. 'boundary_class' names which numeric-domain axis the leaf probes: 'integer_range' (exceeds the mandatory i64 range), 'float_range' (overflows to non-finite on binary64), 'float_underflow' (underflows to zero on binary64), or 'float_precision' (binary64 rounds or shortens the value; a higher-precision domain would not). An implementation is exempt from matching a listed leaf's value/byte-form ONLY if it genuinely supports a domain wider than the minimum ALONG THAT SPECIFIC boundary_class for that specific leaf -- e.g. a BigInt-but-plain-binary64 implementation is exempt on 'integer_range' leaves but not on any 'float_*' leaf, and vice versa. Every field of a fixture NOT listed here, and every fixture not appearing here at all, carries no exemption for any implementation of any domain -- it MUST match its <name>.json / <name>.canonical.ktav exactly, the same as any other valid/ fixture. This file does not define what a wider-domain implementation's output must be for an exempt leaf -- only that the shared corpus does not pin it; correctness there is governed directly by Sec 5 (which value and kind the implementation holds) and Sec 5.9 (how it canonically writes whatever it holds).",
+    "boundary_dependent_leaves": [
+        {"fixture": "numbers/integer/i64_overflow_to_string", "path": "/overflow", "boundary_class": "integer_range"},
+        {"fixture": "numbers/integer/big_overflow_to_string", "path": "/big", "boundary_class": "integer_range"},
+        {"fixture": "numbers/integer/big_overflow_to_string", "path": "/bigger", "boundary_class": "integer_range"},
+        {"fixture": "numbers/float/positive_overflow_to_string", "path": "/overflow", "boundary_class": "float_range"},
+        {"fixture": "numbers/float/negative_overflow_to_string", "path": "/overflow", "boundary_class": "float_range"},
+        {"fixture": "numbers/float/just_above_max_finite_to_string", "path": "/overflow", "boundary_class": "float_range"},
+        {"fixture": "numbers/float/underflow_to_zero", "path": "/underflow", "boundary_class": "float_underflow"},
+        {"fixture": "numbers/float/negative_underflow_to_negative_zero", "path": "/underflow", "boundary_class": "float_underflow"},
+        {"fixture": "numbers/float/half_min_subnormal_underflow_to_zero", "path": "/underflow", "boundary_class": "float_underflow"},
+        {"fixture": "numbers/float/decimal_rounding_tie", "path": "/tie", "boundary_class": "float_precision"},
+        {"fixture": "numbers/float/min_positive_subnormal", "path": "/min_subnormal", "boundary_class": "float_precision"}
     ]
 }

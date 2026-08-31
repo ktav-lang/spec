@@ -371,6 +371,49 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   from before the fixture existed) and that
   `unrepresentable/non_finite_float.json` had been added, in the same
   "Unreleased" section describing one coherent draft state.
+- **`boundary-fixtures.json` is now leaf-level, not fixture-level, and
+  gained two previously-omitted entries.** The flat fixture-path list
+  had two problems: it omitted two fixtures that already existed and
+  are genuinely domain-dependent (`numbers/integer/big_overflow_to_string`,
+  whose `big`/`bigger` fields exceed i64; `numbers/float/min_positive_subnormal`,
+  whose exact input value an arbitrary-precision decimal domain keeps
+  in full, where binary64 shortens it to `5e-324`) — leaving a
+  conforming BigInt or exact-decimal implementation unable to pass
+  § 8.1 / § 8.2 on them; and it exempted a whole fixture even when only
+  some of its fields were domain-dependent (`big_overflow_to_string`'s
+  `tiny` field is an ordinary `Integer(1)` in every domain — a
+  fixture-level exemption would have stopped checking it too). Each
+  entry now names a JSON Pointer `path` to one specific leaf plus a
+  `boundary_class` (`integer_range` / `float_range` /
+  `float_underflow` / `float_precision`), so an implementation's
+  exemption is scoped to the exact leaf and axis it actually supports
+  a wider domain for — an implementation with a wider Integer domain
+  but plain binary64 Float is exempt on `integer_range` leaves only,
+  and vice versa. § 8.1 / § 8.2 rewritten to match.
+- **README — "passes the suite" is now stated as necessary but not
+  sufficient for conformance.** With `boundary-fixtures.json` leaves
+  now explicitly unverified by the shared corpus for a wider-domain
+  implementation, README's unqualified "an implementation conforms if
+  it passes every test" was no longer accurate — such an
+  implementation additionally has to verify its own § 5 / § 5.9
+  behaviour for the leaves this corpus exempts.
+- **RU/ZH § 5.9.3 — restored the missing empty-first-item wrap case.**
+  Both translations described only the non-empty-compound-opener wrap
+  (§ 5.0.1 rules 4/5) and RU explicitly claimed wrapping was needed
+  "only for a non-empty compound", omitting EN's equally-normative
+  empty-compound case (rules 2/3, `{}` / `[]`). A writer built strictly
+  from the RU or ZH text would emit an unwrapped Array root whose first
+  item is an empty Object/Array, which re-parses with the wrong root
+  kind — a real round-trip bug in the translated algorithm, not just a
+  wording gap.
+- **RU/ZH § 5.6 — restored the missing LIFO-pairing sentence** ("a
+  multi-line string body MUST NOT cross another compound boundary: the
+  opener and closer are unambiguously paired by the LIFO parser
+  stack"), absent from both translations entirely.
+- **RU/ZH § 5.8.4 — removed a fabricated "SHOULD stay below 64 levels"
+  depth limit.** EN sets no normative depth limit and says only
+  "SHOULD avoid pathologically deep nesting" — RU and ZH each invented
+  a specific number not present anywhere in the authoritative EN text.
 
 ## [0.6.4] — 2026-08-23
 

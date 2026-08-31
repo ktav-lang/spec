@@ -349,15 +349,19 @@ targets — silently skipping one it doesn't recognise reports
 false-green, which is worse than having no fixtures for it at all.
 
 - **`boundary-fixtures.json`** *(0.7+, not a fixture category)* — a
-  flat list of `valid/` fixture paths known to probe a numeric-domain
-  boundary (spec § 5.2, § 8.1, § 8.2), e.g. an i64-overflow or
-  Float-overflow literal. It lives at the `tests/` root, not inside
-  `valid/`, specifically so a runner enumerating `valid/**/*.json` as
-  fixtures never mistakes it for one. Listing a fixture there doesn't
-  say what a wider-domain implementation's output must be — only that
-  such an implementation is exempt from matching that one fixture's
-  `.json`/`.canonical.ktav` byte-for-byte; a minimum-domain
-  implementation MUST still match it exactly, like any other fixture.
+  leaf-level list of individual Object fields, inside otherwise-normal
+  `valid/` fixtures, known to probe a numeric-domain boundary (spec
+  § 5.2, § 8.1, § 8.2), e.g. an i64-overflow or Float-overflow
+  literal, tagged with which axis it probes (`integer_range`,
+  `float_range`, `float_underflow`, `float_precision`). It lives at
+  the `tests/` root, not inside `valid/`, specifically so a runner
+  enumerating `valid/**/*.json` as fixtures never mistakes it for one.
+  Listing a leaf there doesn't say what a wider-domain implementation's
+  output must be at that field — only that an implementation is exempt
+  from matching it byte-for-byte, and only if it genuinely supports a
+  domain wider than the minimum along that specific axis; every other
+  field of the same fixture, and every fixture or field not listed,
+  carries no exemption for any implementation.
 - **`valid/`** — parseable documents. Each case is a
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` triple:
   `.ktav` is the input; `.json` is the expected parsed `Value`,
@@ -385,8 +389,17 @@ false-green, which is worse than having no fixtures for it at all.
   writer uses to report the rejection (exception, error enum, ...) is
   implementation-defined; only the reason code names are normative.
 
-An implementation conforms to a version if it passes every test in
-every category present in that version's suite. Consume the
+Passing every test in every category present in that version's suite
+is a necessary release gate, but not by itself sufficient proof of
+conformance: `boundary-fixtures.json` (0.7+) tells the shared corpus
+to skip an exact byte/Value check on specific leaves for an
+implementation whose numeric domain is wider than the minimum along
+that leaf's axis — spec § 8.1 / § 8.2 define what such an
+implementation's correctness there actually depends on (§ 5, § 5.9),
+and the shared corpus does not verify it. An implementation that
+declares a wider numeric domain MUST additionally verify its own
+behaviour against § 5 / § 5.9 for the domain it claims, beyond what
+this language-agnostic suite checks. Consume the
 directory as a git submodule (or copy it).
 
 ## Version scheme

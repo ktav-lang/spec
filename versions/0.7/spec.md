@@ -1893,20 +1893,31 @@ A parser-conforming implementation:
   oracle. That equivalence is defined at the minimum-required
   numeric domain of § 5 (i64 Integer, binary64 Float).
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
-  lists the fixture paths known to probe a numeric-domain boundary
-  (§ 5.2) — e.g. `numbers/integer/i64_overflow_to_string`, whose body
-  the minimum domain classifies as a String but a wider domain MAY
-  classify as an Integer. An implementation supporting only the
-  minimum domain MUST match every one of these fixtures exactly, same
-  as any other `valid/` fixture. An implementation supporting a wider
-  domain is exempt from matching a listed fixture's `name.json`
-  byte-for-byte — this corpus does not pin what its Value must be
-  there; § 5.2 already states the general rule (same domain ⇒ same
+  lists the individual Object fields (leaves) known to probe a
+  numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
+  mix boundary-dependent leaves with ordinary ones (e.g.
+  `big_overflow_to_string`'s `tiny` field is an ordinary `Integer(1)`
+  in every conforming domain, while its `big` / `bigger` fields are
+  not), and only a listed leaf is exempt — every other field of that
+  same fixture MUST still match exactly. Each entry names a
+  `boundary_class`: `integer_range` (exceeds the mandatory i64 range),
+  `float_range` (overflows to non-finite on binary64),
+  `float_underflow` (underflows to zero on binary64), or
+  `float_precision` (binary64 rounds or shortens the value where a
+  higher-precision domain would not). An implementation is exempt from
+  matching a listed leaf's value only if it genuinely supports a
+  domain wider than the minimum *along that leaf's specific
+  `boundary_class`* — a BigInt-but-plain-binary64 implementation is
+  exempt on `integer_range` leaves but not on any `float_*` leaf, and
+  a wide-Float-but-plain-i64 implementation is exempt the other way
+  around; supporting one axis does not exempt an implementation on the
+  other. For an exempt leaf, this corpus does not pin what its Value
+  must be — § 5.2 already states the general rule (same domain ⇒ same
   kind, differing domain ⇒ MAY differ at the crossed boundary), and
   that Value is what the implementation's own correct application of
-  § 5's rules 13–14 to the fixture's body produces. A fixture not
-  listed in `boundary-fixtures.json` carries no such exemption for any
-  implementation, of any domain.
+  § 5's rules 13–14 to the leaf's body produces. Every field not
+  listed in `boundary-fixtures.json`, in every fixture, carries no
+  exemption for any implementation of any domain.
 - Rejects every fixture under `versions/0.7/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 
@@ -1917,22 +1928,27 @@ A writer-conforming implementation:
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
 - For each fixture under `versions/0.7/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
-  output equal to `name.canonical.ktav`, UNLESS the fixture is listed
-  in [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
-  and the implementation supports a numeric domain wider than the
-  minimum required by § 5 — per § 8.1, such an implementation may hold
-  a different Value for that fixture's body than the minimum-domain
-  `.json` oracle describes (e.g. an `i64_overflow_to_string` body held
-  as an Integer, not a String). For such a fixture, this corpus does
-  not pin an exact required byte sequence either: the implementation's
-  output MUST be the correct canonical form (§ 5.9) for the Value it
-  actually holds — e.g. an Integer value is canonically written bare,
-  without the raw marker (§ 5.9.5) — and remain internally consistent
-  and deterministic for its own domain, but which exact bytes that is
-  for a domain other than the minimum is not something this shared,
-  language-agnostic corpus verifies. An implementation supporting only
-  the minimum domain MUST match every `boundary-fixtures.json` entry's
-  `.canonical.ktav` exactly, same as any other `valid/` fixture.
+  output equal to `name.canonical.ktav`, UNLESS the implementation
+  supports a domain wider than the minimum along the `boundary_class`
+  of one or more leaves
+  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  lists for that fixture — per § 8.1, such an implementation may hold
+  a different Value at that leaf's path than the minimum-domain
+  `.json` oracle describes there (e.g. `i64_overflow_to_string`'s
+  `/overflow` field held as an Integer, not a String), while every
+  other field of the same fixture still holds its minimum-domain
+  Value and MUST still appear in the output exactly as the
+  minimum-domain writer would render it. For such a fixture, this
+  corpus does not pin the exact byte sequence for the exempt leaf's
+  own contribution to the output: it MUST be the correct canonical
+  form (§ 5.9) for the Value the implementation actually holds there
+  (e.g. an Integer value is canonically written bare, without the raw
+  marker, § 5.9.5), internally consistent and deterministic for its
+  own domain — but which exact bytes that is for a domain other than
+  the minimum is not something this shared, language-agnostic corpus
+  verifies. An implementation supporting only the minimum domain MUST
+  match every `valid/` fixture's `.canonical.ktav` exactly, in full,
+  including every field `boundary-fixtures.json` lists a leaf for.
 - For each fixture under `versions/0.7/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
