@@ -504,15 +504,18 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
 源文本重新送入分类:§ 3.7 的来源规则(escape 的结果永远不会被
 重新视为结构性内容)在此同样适用,因此形如 `\{value\}` 的体
 按字面字符 `{value}` 依规则 15(String)分类,而不是在解码出的
-`{` 处重新进入这些规则。数值域相同(§ 5, § 8.1)的两个
-parser-conforming 实现 MUST 对同一体产生相同的 Value kind。
-当数值域不同时,一个体可能越过其中一个实现的域边界而不越过
-另一个的 —— 超出范围的 Integer 或非有限的 Float 字面量,在较窄
-域下依规则 13–14 落入 String,在较宽域下则保持 Integer 或
-Float。这不是确定性规则的例外:
-[`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
-指名了允许此类域相关偏差的 fixture 的完整、封闭集合
-(§ 8.1, § 8.2);在该指名集合之外,同 kind 的保证无条件成立。
+`{` 处重新进入这些规则。数值域相同的两个
+parser-conforming 实现 MUST 对同一体产生相同的 Value kind。这是一条
+关于解析器可能看到的每个文档的一般规则,而不仅限于 § 8 合规语料中
+的 fixture。当两个实现的数值域不同时,一个数值越过其中一个实现的
+域边界而不越过另一个的体 MAY 在二者之间分类不同 —— 超出范围的
+Integer 或在该域上非有限的 Float 字面量,在较窄域下依规则 13–14
+落入 String,在较宽域下则保持 Integer 或 Float;对发生此种情形的
+*任何*体皆是如此,而不仅限于被特别指名或枚举的体。这不是确定性
+规则的例外:它直接源于每个实现把自己的域的规则 13–14 正确地应用于
+同一体,而同 kind 的保证本身就限定于同域的实现 —— 它从来不是跨域
+无条件的。§ 8.1 与 § 8.2 另行指名,专就共享合规语料而言,哪些
+fixture 已知确实探测这样的边界。
 
 ### 5.3 Pair 行
 
@@ -822,9 +825,13 @@ schema 下没有对应 fixture:作为该 schema 书写格式的 JSON 本身
 `"value"` 字段内使用一个规范性的逃生通道:一个原本没有 JSON
 编码的 Float,以带标签的对象 `{"$float": "NaN"}`、
 `{"$float": "Infinity"}` 或 `{"$float": "-Infinity"}` 的形式
-替代普通 JSON 数字写出。这种哨兵形式专为此情形保留 —— 没有
-其他原因代码,也没有 `valid/` 下的任何 fixture 需要它,因为
-§ 5 定义的每个其他 Value 都有直接的 JSON 映射。
+替代普通 JSON 数字写出。键名 `$float` 在 `unrepresentable/`
+fixture 的 `"value"` 树内被保留:一个恰好具有此形状(单个键字面名
+为 `$float`)的普通 JSON Object 不可能因任何其他原因出现在那里
+—— 没有其他原因代码,也没有 `valid/` 下的任何 fixture 需要此
+哨兵,因为 § 5 定义的每个其他 Value 都有直接的 JSON 映射。未来的
+`unrepresentable/` fixture MUST NOT 将带 `$float` 键的字面
+Object 用于此哨兵之外的任何用途。
 
 #### 5.9.1 空白、缩进、行尾
 
@@ -1213,16 +1220,18 @@ Parser-conforming 实现:
 - 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与
   对应 `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需
   数值域上(i64 Integer、binary64 Float)。
-  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
-  是完整、可机读的例外集合:恰好对其键所列的 fixture 路径,支持
-  更宽域的实现 MAY 转而产生该 fixture 的清单条目所指名的
-  `wider_domain_kind` / `wider_domain_value`,以替代最小域的
-  `name.json` oracle —— 例如一个 i64 溢出字面量,被最小域分类为
-  String(`i64_overflow_to_string.json`),而更宽域按该 fixture
-  的清单条目将其分类为 Integer。此清单之外的任何 fixture,以及
-  清单所指名之外的任何替代 Value,均不允许。这样的实现仍符合
-  parser-conforming,只要每处偏差都恰好是清单所列 fixture 的
-  清单所指名结果,而并非其他处的任意或未记录偏差。
+  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  列出了已知探测数值域边界(§ 5.2)的 fixture 路径 —— 例如
+  `numbers/integer/i64_overflow_to_string`,其体被最小域分类为
+  String,而更宽域 MAY 将其分类为 Integer。仅支持最小域的实现
+  MUST 与这些 fixture 中的每一个精确匹配,与任何其他 `valid/`
+  fixture 相同。支持更宽域的实现则豁免于对所列 fixture 的
+  `name.json` 逐字节匹配 —— 该语料并不固定其 Value 在此必须是
+  什么;§ 5.2 已陈述一般规则(域相同 ⇒ kind 相同,域不同 ⇒ MAY
+  在被越过的边界处不同),而该 Value 就是实现自己对 fixture 的体
+  正确应用 § 5 的规则 13–14 所产生的结果。未列入
+  `boundary-fixtures.json` 的 fixture 对任何实现、任何域均不带
+  此种豁免。
 - 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
 
@@ -1233,20 +1242,18 @@ Writer-conforming 实现:
 - 满足 § 5.9 所有规范性 MUST / MUST NOT 声明。
 - 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
-  字节相同的输出。该要求针对实现实际持有的 Value,而由于 § 8.1
-  将 fixture 等价性定义在 § 5 的最小必需数值域上(i64 Integer、
-  binary64 Float),这个 Value 可能合法地不同于 fixture 的
-  `.json` oracle 所描述的最小域 Value —— 且恰好只在
-  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
-  所列的 fixture 上(例如一个 `i64_overflow_to_string` 的体,被
-  最小域分类为 String,而更宽域按该 fixture 的清单条目将其
-  分类为 Integer)。恰恰对此类所列 fixture,更宽域实现的输出
-  MUST 改为与该 fixture 的 `wider_domain_canonical` 字段字节
-  完全相同 —— 例如 Integer 以不带 raw 标记的裸形式规范写出
-  (§ 5.9.5)—— 不存在由实现自由选择的第三种结果,那不符合
-  规范。这样的实现仍符合 writer-conforming,只要每处偏差都恰好
-  是清单所列 fixture 的清单所指名 `wider_domain_canonical`,而
-  并非其他处的任意或未记录偏差。
+  字节相同的输出;例外情形是:该 fixture 已被列入
+  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json),且实现支持的数值域宽于
+  § 5 规定的最小域 —— 依 § 8.1,这样的实现对该 fixture 的体
+  可能持有不同于最小域 `.json` oracle 所描述的 Value(例如一个
+  `i64_overflow_to_string` 的体被持有为 Integer 而非 String)。
+  恰对此类 fixture,该语料同样不固定确切的必需字节序列:实现的
+  输出 MUST 是它实际持有的 Value 的正确规范形式(§ 5.9)——
+  例如 Integer 以不带 raw 标记的裸形式规范写出(§ 5.9.5)——
+  并对其自身的域保持内部一致与确定,但对于最小域之外的域,那
+  究竟是哪些确切字节,并不是这个共享的、语言无关的语料所验证的。
+  仅支持最小域的实现 MUST 与每个 `boundary-fixtures.json` 条目的
+  `.canonical.ktav` 精确匹配,与任何其他 `valid/` fixture 相同。
 - 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过

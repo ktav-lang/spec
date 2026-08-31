@@ -125,8 +125,9 @@
   fixture 的 Value。** 七个原因代码:`ScalarRoot`、
   `EmptyKeyName`、`NonFiniteFloat`、`CRByte`、`BothFormsRequired`、
   `TrailingWhitespaceCollision`、`LeadingWhitespaceCollision` ——
-  其中六个有 fixture;`NonFiniteFloat` 仅有文字说明(fixture
-  oracle 所用的 JSON 格式没有可移植的 NaN/Infinity 字面量)。writer
+  现在七个都有 fixture(`NonFiniteFloat` 的 fixture 使用
+  `{"$float": ...}` 哨兵取代普通 JSON 数字,因为 JSON 没有可移植的
+  NaN/Infinity 字面量;见下文)。writer
   用以报告拒绝的 API 形式是 implementation-defined,规范性的只是
   代码名称。README(en/ru/zh)在既有 `valid/` / `invalid/` 旁记录了
   新类别,并要求 runner MUST 遍历每个存在的类别,而非静默跳过不
@@ -236,7 +237,7 @@
   在 binary64 下溢为 `±0.0`),以及 `decimal_rounding_tie`
   (`9007199254740993.0`,恰好位于两个 binary64 值的正中;binary64
   舍入到偶数邻居 `9007199254740992.0`,更宽的 decimal 域则精确
-  保留该字面量)。七个全部已针对 Rust 参考解析器/writer 独立验证。
+  保留该字面量)。
 - **§ 5.9.0 —— 「多于一个违反」许可现在覆盖当前节点与 Object 的
   键,而不仅是后代。** 旧措辞(「在 Value 的后代中」)使得同时满足
   两条冲突规则的 String,或同时有空键与另一处不可表示子节点的
@@ -246,6 +247,49 @@
   (`NonFiniteFloat`)如今有了 fixture:通过一个规范性
   `{"$float": "NaN"|"Infinity"|"-Infinity"}` 哨兵,专为此情形保留。
   README 在 `unrepresentable/` 其余 schema 之旁记录了该哨兵。
+- **§ 5.2 不再把一般语义规则与 fixture 清单混为一谈。**
+  同 kind 的 `MUST`(限定于相同数值域)现在作为关于解析器可能见到的
+  每一份文档的规则来陈述;§ 8.1 / § 8.2 则单独指名 —— 仅对共享一致性
+  语料库而言 —— 哪些 fixture 已知会探测此类边界。此前 § 5.2 自身声称
+  语料库的 fixture 清单就是*格式*中域相关分歧的完整集合,这是
+  错误的 —— 任意越域的体(如 `9223372036854775809`)跨越同一边界却
+  并非具名 fixture。
+- **边界 fixture 清单移动并简化:`versions/0.7/tests/valid/boundary-fixtures.json`
+  → `versions/0.7/tests/boundary-fixtures.json`,且现在是 fixture
+  路径的扁平列表,不再是每条目含 `wider_domain_kind` /
+  `wider_domain_value` / `wider_domain_canonical` 的记录。** 旧的
+  更丰富 schema 有两个问题:它描述的是一次裸标量替换,却无法说明该
+  标量*位于* fixture 完整 Object oracle 的何处(每个现存边界 fixture
+  恰好只有一个字段纯属偶然,而非 schema 所保证),并且它断言了恰好
+  一种「更宽」结果,而 § 5 开放式的「MAY 支持更宽表示」允许的 Float
+  profile(如指数范围更宽的、精度更高但仍有限的 decimal)与最小域
+  输出和精确任意精度输出二者都可能舍入不同。§ 8.1 / § 8.2 现在明确
+  陈述:更宽域的实现*豁免*于逐字节匹配所列 fixture,不受该语料库
+  固定的某个特定替代方案约束 —— 其在该处的正确性直接由 § 5 / § 5.9
+  管辖。把该文件移出 `valid/` 还意味着,以 `valid/**/*.json` 枚举
+  fixture 的 runner 不再可能把它误认为 fixture。
+- **`numbers/float/decimal_rounding_tie.canonical.ktav` 从 decimal
+  形式修正为科学形式**(`9007199254740992.0` →
+  `9.007199254740992e15`):§ 5.9.8 要求任何 `abs >= 1e7` 的非零
+  Float 使用科学形式,而该值(约 9×10^15)远超此界。错误的 decimal
+  形式此前是对照 `ktav::render::render()` 检验的,该函数并不应用
+  § 5.9.8 的记法阈值;`ktav::emit_canonical()` 才是真正实现该阈值的
+  函数,也是 writer-conforming 实现必须匹配的对象。已针对
+  `emit_canonical()` 重新验证全部七个新 Float fixture,以及既有的
+  `notation_boundaries` / `exponent` fixture —— 这是唯一的不匹配。
+- **README(en/ru/zh)—— 修正两处数值模型错误。** Float 溢出为
+  非有限值与 Integer 超出 i64 范围都会回退为 String,但 Float *下溢*
+  不会:它舍入为有限的带符号 `0.0` 并保持为 Float,此前的措辞没有
+  区分这一点。另外,`1e2` 的规范形式是 `100.0` 而非 `100` —— 裸的
+  `100` 会重解析为 Integer,破坏 Float 的 round-trip;§ 5.9.8 的
+  decimal 替代形式始终保留小数点。
+- **§ 5.9.0 —— `$float` 哨兵键现在被显式保留**于
+  `unrepresentable/` fixture 的 `value` 树内,从而消除了与恰好
+  带有单个 `$float` 键的普通 JSON Object 的形状碰撞。
+- **CHANGELOG —— 移除一处自相矛盾**:本节此前同时说
+  `NonFiniteFloat` 没有 fixture(过时信息,早于该 fixture 出现),
+  又说 `unrepresentable/non_finite_float.json` 已被添加 —— 二者都
+  出现在描述同一草稿状态的同一「未发布」节中。
 
 ## [0.6.4] —— 2026-08-23
 

@@ -111,9 +111,11 @@ motd: (
 格式按 body 的*形状*定型:裸整数成为 Integer,裸小数成为 Float,
 其余一切保持为 String。无需标记。任何只是*看起来*像数字、却并非
 裸数字的内容(版本号、标签)都不会被转换 —— 而 `::` 可在需要时
-强制一个真正的裸数字保持为字面字符串。唯一的边界例外:
-超出保证范围的裸数字(i64 对 Integer、binary64 对
-Float)同样保持为 String——仅凭形状并不能让它成为数字。
+强制一个真正的裸数字保持为字面字符串。两个边界例外:超出保证的
+i64 范围的裸整数,或者在 binary64 上溢出为非有限的裸小数,反而
+保持为 String——若值放不下,仅凭形状并不能让它成为数字。而
+*下溢*的小数(太接近零而无法表示)仍然成为 Float,舍入到带符号
+的 `0.0`,而非 String。
 
 ```text
 retries: 3
@@ -250,8 +252,11 @@ keyword_as_string:: true
 
 裸数字会被直接定型:`port: 8080` 给你 Integer,`ratio: 0.5` 给你
 Float。由 body 的形状决定:只有数字 → Integer;带小数点或指数 →
-Float;其余一切 → String——除非数字超出保证范围(i64 对 Integer、
-binary64 对 Float),那样它同样会保持为 String。
+Float;其余一切 → String——在数值边缘有两个例外:超出保证的
+i64 范围的整数,或者在 binary64 上溢出为非有限的小数,会保持为
+String,而不是回绕或抛出错误。而*下溢*的小数(太接近零而无法
+表示)仍然成为 Float,舍入到带符号的 `0.0`——它不会退回为
+String。
 
 ```text
 port:    8080
@@ -262,10 +267,11 @@ eps:     1.5e-10
 
 数字是携带数值的 Value,并不保留书写时的原文——写出时采用规范化
 的规范形式（规范文档 5.9.8 节），因此 `0.50` 回来会变成 `0.5`,
-`1e2` 变成 `100`。保证范围内的裸整数作为 Integer 精确往返;
+`1e2` 变成 `100.0`(即便是整数值的 Float,小数点也保留,这样
+重新解析不会把它变成 Integer)。保证范围内的裸整数作为 Integer 精确往返;
 i64（对 Integer）与 binary64（对 Float）是每个实现都保证的可移植
 下限——实现可以支持更宽的域（任意精度/十进制），超出其所支持范围
-的字面量会落入 String,而不会悄悄回绕或在解析时抛出异常。类型化
+的溢出字面量会落入 String。类型化
 语言的消费方（Rust + serde、Go）在自己那边收窄到所需的原生类型;
 若要让看起来像数字的值——无论多大——保持为文本,用 `::` 强制
 （`zip:: 01007`）。
@@ -319,10 +325,20 @@ timeout: null
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.6/tests/)，最多分为三个顶层
-类别。一致性 runner MUST 遍历目标版本中存在的每个类别——静默跳过
+[`versions/<v>/tests/`](versions/0.6/tests/)，最多分为三个 fixture
+类别外加一个顶层元数据文件。一致性 runner MUST 遍历目标版本中存在的
+每个 fixture 类别——静默跳过
 不认识的类别会得到假绿色结果，比该类别完全没有 fixture 还糟。
 
+- **`boundary-fixtures.json`**（*0.7 起,并非 fixture 类别*）——一份
+  已知会探测数值域边界的 `valid/` fixture 路径的扁平清单(spec
+  § 5.2、§ 8.1、§ 8.2),例如 i64 溢出或 Float 溢出的字面量。它位于
+  `tests/` 根目录、而非 `valid/` 之内,正是为了让按
+  `valid/**/*.json` 枚举 fixture 的 runner 永远不会把它误认为一个
+  fixture。在其中列出某个 fixture 并不说明更宽域的实现必须输出
+  什么——只是说明这类实现豁免于逐字节匹配该 fixture 的
+  `.json`/`.canonical.ktav`;最小域的实现仍 MUST 精确匹配它,与其他
+  任何 fixture 一样。
 - **`valid/`**——可解析的文档。每个用例是
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` 三元组：
   `.ktav` 是输入;`.json` 是期望解析出的 `Value`,按 1:1 映射
@@ -331,10 +347,6 @@ timeout: null
   body 映射为 JSON 整数,小数 body 映射为 JSON 浮点数,其余标量
   保持为字符串,`::` 强制字面字符串);`.canonical.ktav` 是该同一
   `Value` 期望的字节级精确 writer 输出。对象字段顺序是有意义的。
-  少数 fixture 探测数值域边界(例如 i64 溢出字面量):在这类边界
-  上,更宽域的实现被允许合法地偏离 `.json`/`.canonical.ktav` 对;
-  同目录下的 `boundary-fixtures.json` 是可机读的封闭清单,精确
-  列出是哪些 fixture、其替代结果是什么(spec § 8.1、§ 8.2)。
 - **`invalid/`**——conforming 解析器 MUST 拒绝的文档。每个用例是
   `<name>.ktav` + `<name>.json` 一对;`.json` 在 `expected_error`
   字段中指明期望的错误类别。
@@ -344,7 +356,9 @@ timeout: null
   用例是单一的 `<name>.json`,含三个字段:`value`(该 `Value`,
   与 `valid/` 相同的 JSON 映射,唯一例外是 `NonFiniteFloat`
   fixture:由于 plain JSON 没有这样的字面量,非有限 Float 写作
-  `{"$float": "NaN"|"Infinity"|"-Infinity"}`)、
+  `{"$float": "NaN"|"Infinity"|"-Infinity"}`——`$float` 是
+  `unrepresentable/` 的 `value` 树内保留的键名,绝不会作为任何其他
+  用途的字面 Object 字段)、
   `unrepresentable_reason`(规范
   定义的原因代码)以及 `note`(原因说明)。writer 用以报告拒绝的
   具体 API 形式(异常、error enum 等)是 implementation-defined;
