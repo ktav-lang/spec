@@ -340,7 +340,12 @@ for it at all.
   a JSON float, every other scalar stays a string, `::` forces a
   literal string); `.canonical.ktav` is the expected byte-exact
   writer output for that same `Value`. Object field order is
-  significant.
+  significant. A handful of fixtures probe a numeric-domain boundary
+  (e.g. an i64-overflow literal) where a wider-domain implementation
+  is allowed to legitimately diverge from the `.json`/`.canonical.ktav`
+  pair; `boundary-fixtures.json` in the same directory is the
+  machine-readable, closed list of exactly which fixtures those are
+  and what their alternative outcome is (spec § 8.1, § 8.2).
 - **`invalid/`** — documents a conforming parser MUST reject. Each
   case is a `<name>.ktav` + `<name>.json` pair; the `.json` names the
   expected error category in its `expected_error` field.
@@ -349,9 +354,11 @@ for it at all.
   is no `.ktav` input: most of these `Value`s can only be constructed
   programmatically, never produced by parsing. Each case is a single
   `<name>.json` with three fields — `value` (the `Value`, same JSON
-  mapping as `valid/`), `unrepresentable_reason` (a spec-defined
-  reason code), and `note` (why). The exact API shape a writer uses
-  to report the rejection (exception, error enum, ...) is
+  mapping as `valid/`, except the one `NonFiniteFloat` fixture, which
+  spells a non-finite Float as `{"$float": "NaN"|"Infinity"|"-Infinity"}`
+  since plain JSON has no such literal), `unrepresentable_reason` (a
+  spec-defined reason code), and `note` (why). The exact API shape a
+  writer uses to report the rejection (exception, error enum, ...) is
   implementation-defined; only the reason code names are normative.
 
 An implementation conforms to a version if it passes every test in

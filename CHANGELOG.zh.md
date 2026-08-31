@@ -397,4 +397,4 @@
 `InlineNonEmptyCompound`、`InvalidTypedScalar`、
 `MissingSeparatorSpace`。
 
-目录: [`versions/0.1/`](versions/0.1/).
+目录: [`versions/0.1/`](https://github.com/ktav-lang/spec/tree/1d5dc09/versions/0.1/) — 已从当前树中移除（`c9593e8`）；此链接指向该目录仍存在的最后一次提交。

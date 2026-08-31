@@ -517,4 +517,4 @@ Array. Документы, написанные под 0.1.1, могут не п
 `PathConflict`, `InvalidKey`, `EmptyKey`, `OrphanLine`,
 `InlineNonEmptyCompound`, `InvalidTypedScalar`, `MissingSeparatorSpace`.
 
-Каталог: [`versions/0.1/`](versions/0.1/).
+Каталог: [`versions/0.1/`](https://github.com/ktav-lang/spec/tree/1d5dc09/versions/0.1/) — удалён из текущего дерева в `c9593e8`; ссылка ведёт на последний коммит, где он ещё существовал.

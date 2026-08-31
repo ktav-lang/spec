@@ -530,7 +530,15 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
 - **Float** — a numeric scalar carrying a numeric value. The
   implementation MUST support at least the range and precision of
   IEEE 754 binary64 and MAY support a wider representation (e.g.
-  arbitrary-precision decimal). The internal representation beyond
+  arbitrary-precision decimal). Converting a decimal float literal
+  (§ 3.6) to this minimum binary64 representation MUST follow IEEE
+  754's `roundTiesToEven` rounding-direction attribute, and the
+  minimum representation MUST include subnormal (gradual-underflow)
+  values down to binary64's smallest positive subnormal
+  (2^-1074 ≈ 4.9406564584124654 × 10^-324) — an implementation that
+  flushes subnormals to zero early, or rounds ties away from even,
+  does not meet this floor even though it never produces a non-finite
+  Float. The internal representation beyond
   that minimum is implementation-defined. The canonical
   textual form (§ 5.9) MUST be used by writer-conforming
   implementations. The Value does **not** preserve the textual form
@@ -742,8 +750,17 @@ as if they were raw, unescaped source: § 3.7's provenance rule (an
 escape's output is never re-examined as structural) applies here too,
 so a body like `\{value\}` classifies by the literal characters
 `{value}` under rule 15 (String), not by re-entering these rules at
-the decoded `{`. Two parser-conforming implementations MUST produce
-the same Value kind for the same body.
+the decoded `{`. Two parser-conforming implementations that support
+the same numeric domain (§ 5, § 8.1) MUST produce the same Value kind
+for the same body. Where their numeric domains differ, a body may
+cross one implementation's domain boundary but not the other's — an
+out-of-range Integer or non-finite Float literal falls through to
+String under rules 13–14 for the narrower domain but stays Integer or
+Float for the wider one. This is not an exception to determinism:
+[`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
+names the complete, closed set of fixtures where such domain-dependent
+divergence is permitted (§ 8.1, § 8.2); outside that named set the
+same-kind guarantee holds unconditionally.
 
 ### 5.3 Pair Lines
 
@@ -1168,19 +1185,30 @@ When a Value violates more than one case at once, the checks are
 ordered: the document-root constraint (Object-or-Array) is evaluated
 first, and only if it passes is node-representability checked
 recursively. If node-representability then finds more than one
-violation among a Value's descendants (e.g. two Array items each
-non-representable for a different reason), an implementation MAY
-report any one of them: this specification does not mandate a
-specific traversal order or a deterministic "first" violation —
-that question belongs to the still-open structured-error contract
-(rust#12).
+applicable violation — whether on the Value itself, on an Object
+pair's key, or among descendants (e.g. a String satisfying two
+collision rules at once, an Object with both an empty key and a
+separately non-representable child, or two Array items each
+non-representable for a different reason) — an implementation MAY
+report any one of the applicable reason codes: this specification
+does not mandate a specific traversal order or a deterministic
+"first" violation — that question belongs to the still-open
+structured-error contract (rust#12).
 
-Of these, `NonFiniteFloat` has no `unrepresentable/` fixture: JSON,
-the format the `.json` fixture oracle is written in, has no portable
-literal for NaN or Infinity (implementations that accept the bare
-tokens `NaN` / `Infinity` as an extension disagree on round-tripping
-them), so this case is documented here in prose only, not pinned by
-a machine-checkable fixture.
+Of these, `NonFiniteFloat` has no fixture under the ordinary
+`<name>.json` schema every other reason code uses: JSON, the format
+that schema is written in, has no portable literal for NaN or
+Infinity (implementations that accept the bare tokens `NaN` /
+`Infinity` as an extension disagree on round-tripping them). To still
+pin this case with a machine-checkable fixture,
+`versions/0.7/tests/unrepresentable/non_finite_float.json` uses one
+normative escape hatch inside its `"value"` field: a Float that would
+otherwise have no JSON encoding is written as the tagged object
+`{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
+`{"$float": "-Infinity"}` in place of an ordinary JSON number. This
+sentinel form is reserved for exactly this situation — no other
+reason code, and no fixture under `valid/`, ever needs it, since
+every other Value § 5 defines has a direct JSON mapping.
 
 #### 5.9.1 Whitespace, indentation, line endings
 
@@ -1851,16 +1879,21 @@ A parser-conforming implementation:
 - Accepts every fixture under `versions/0.7/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
   oracle. That equivalence is defined at the minimum-required
-  numeric domain of § 5 (i64 Integer, binary64 Float): an
-  implementation supporting a wider domain MAY produce a different,
-  wider-domain-correct Value for exactly those fixtures whose
-  expected Value depends on the minimum-domain boundary — e.g. an
-  i64-overflow literal, classified as a String by the minimum
-  domain (`i64_overflow_to_string.json`) but as an Integer by a
-  wider one. Such an implementation remains parser-conforming
-  provided the divergence is confined to these boundary-probing
-  fixtures, and is not an arbitrary or undocumented divergence
-  elsewhere.
+  numeric domain of § 5 (i64 Integer, binary64 Float).
+  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
+  is the complete, machine-readable set of exceptions: for exactly
+  the fixture paths listed as its keys, an implementation supporting
+  a wider domain MAY instead produce the `wider_domain_kind` /
+  `wider_domain_value` that fixture's manifest entry names, in place
+  of the minimum-domain `name.json` oracle — e.g. an i64-overflow
+  literal, classified as a String by the minimum domain
+  (`i64_overflow_to_string.json`) but as an Integer by a wider one,
+  per that fixture's manifest entry. No fixture outside this manifest,
+  and no alternative Value other than the one the manifest names, is
+  permitted. Such an implementation remains parser-conforming provided
+  every divergence is exactly the manifest-named outcome for a
+  manifest-listed fixture, and is not an arbitrary or undocumented
+  divergence elsewhere.
 - Rejects every fixture under `versions/0.7/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 
@@ -1876,18 +1909,19 @@ A writer-conforming implementation:
   § 8.1 defines fixture equivalence at the minimum-required numeric
   domain of § 5 (i64 Integer, binary64 Float) — may legitimately
   differ from the minimum-domain Value the fixture's `.json` oracle
-  describes, exactly on the boundary-probing fixtures § 8.1 names
+  describes, exactly for the fixtures listed in
+  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
   (e.g. an `i64_overflow_to_string` body, classified as a String by
-  the minimum domain but as an Integer by a wider one). For exactly
-  such a fixture, a wider-domain implementation MAY produce output
-  different from that fixture's fixed `name.canonical.ktav` — e.g.
-  an Integer value is canonically written bare, without the raw
-  marker (§ 5.9.5) — provided that output is the correct canonical
-  form (§ 5.9) for the Value it actually holds, and remains
-  internally correct and deterministic for its own domain. Such an
-  implementation remains writer-conforming provided the divergence
-  is confined to the same boundary-probing fixtures § 8.1 names,
-  and is not an arbitrary or undocumented divergence elsewhere.
+  the minimum domain but as an Integer by a wider one, per that
+  fixture's manifest entry). For exactly such a listed fixture, a
+  wider-domain implementation's output MUST instead be byte-exact
+  equal to that fixture's `wider_domain_canonical` field — e.g. an
+  Integer value is canonically written bare, without the raw marker
+  (§ 5.9.5) — no third outcome, freely chosen by the implementation,
+  is conforming. Such an implementation remains writer-conforming
+  provided every divergence is exactly the manifest-named
+  `wider_domain_canonical` for a manifest-listed fixture, and is not
+  an arbitrary or undocumented divergence elsewhere.
 - For each fixture under `versions/0.7/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`

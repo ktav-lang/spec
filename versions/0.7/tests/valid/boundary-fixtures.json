@@ -1,0 +1,45 @@
+{
+    "$comment": "Machine-readable list of the ONLY valid/ fixtures where a numeric-domain divergence permitted by Sec 5, Sec 8.1, and Sec 8.2 is allowed to replace the minimum-domain outcome in this fixture's own <name>.json / <name>.canonical.ktav. A conformance runner MUST accept a wider-domain implementation's output for a listed fixture if, and only if, it matches the named wider_domain_kind/wider_domain_value/wider_domain_canonical exactly -- no other fixture, and no other alternative outcome, is permitted. wider_domain_value is always a decimal-digit string, regardless of wider_domain_kind, to avoid precision loss when this manifest itself is parsed as JSON.",
+    "fixtures": {
+        "numbers/integer/i64_overflow_to_string": {
+            "wider_domain_kind": "Integer",
+            "wider_domain_value": "9223372036854775808",
+            "wider_domain_canonical": "overflow: 9223372036854775808\n"
+        },
+        "numbers/float/positive_overflow_to_string": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "1e9999",
+            "wider_domain_canonical": "overflow: 1e9999\n"
+        },
+        "numbers/float/negative_overflow_to_string": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "-1e9999",
+            "wider_domain_canonical": "overflow: -1e9999\n"
+        },
+        "numbers/float/just_above_max_finite_to_string": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "1.7976931348623159e308",
+            "wider_domain_canonical": "overflow: 1.7976931348623159e308\n"
+        },
+        "numbers/float/underflow_to_zero": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "1e-9999",
+            "wider_domain_canonical": "underflow: 1e-9999\n"
+        },
+        "numbers/float/negative_underflow_to_negative_zero": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "-1e-9999",
+            "wider_domain_canonical": "underflow: -1e-9999\n"
+        },
+        "numbers/float/half_min_subnormal_underflow_to_zero": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "2.4703282292062327e-324",
+            "wider_domain_canonical": "underflow: 2.4703282292062327e-324\n"
+        },
+        "numbers/float/decimal_rounding_tie": {
+            "wider_domain_kind": "Float",
+            "wider_domain_value": "9007199254740993.0",
+            "wider_domain_canonical": "tie: 9007199254740993.0\n"
+        }
+    }
+}

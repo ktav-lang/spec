@@ -270,6 +270,52 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   `trailing_whitespace_collision`, `leading_whitespace_collision`)
   are rewrapped as `{"s": <string>}` so each now exercises exactly
   its named reason code.
+- **§ 5.2 — the cross-implementation "same Value kind" `MUST` is now
+  scoped to implementations sharing the same numeric domain.** The
+  unconditional wording contradicted § 5 / § 8.1's own domain-widening
+  allowance: an i64-only and a bignum-capable parser legitimately
+  classify `9223372036854775808` differently (String vs. Integer), so
+  both could simultaneously honour their own domain rules and violate
+  the old blanket `MUST`. The guarantee now holds unconditionally only
+  outside the closed set of fixtures named in the new
+  `versions/0.7/tests/valid/boundary-fixtures.json` manifest.
+- **New `versions/0.7/tests/valid/boundary-fixtures.json` manifest**
+  gives the numeric-domain divergence § 8.1 / § 8.2 permit a
+  machine-readable contract: exactly the fixture paths listed as its
+  keys may diverge from their `.json` / `.canonical.ktav` oracle, and
+  only to the `wider_domain_kind` / `wider_domain_value` /
+  `wider_domain_canonical` the entry names — not to an arbitrary
+  "wider-domain-correct" value a runner would have to re-derive
+  itself. § 8.1 and § 8.2 now reference this manifest instead of
+  describing the exception in prose.
+- **§ 5 — the binary64 floor now specifies conversion semantics, not
+  just range and precision.** Converting a decimal float literal to
+  the minimum binary64 representation MUST use IEEE 754
+  `roundTiesToEven`, and the minimum representation MUST support
+  subnormal (gradual-underflow) values. Seven new fixtures cover the
+  floor: `max_finite`, `min_positive_normal`, `min_positive_subnormal`
+  (unambiguous at any supported domain), plus four boundary-dependent
+  fixtures added to the new manifest —
+  `just_above_max_finite_to_string` (finite in a wider decimal domain,
+  overflows to String at binary64), `negative_underflow_to_negative_zero`
+  and `half_min_subnormal_underflow_to_zero` (both finite in a wider
+  domain, underflow to `±0.0` at binary64), and `decimal_rounding_tie`
+  (`9007199254740993.0`, exactly halfway between two binary64 values;
+  binary64 rounds to the even neighbour `9007199254740992.0`, a wider
+  decimal domain keeps the literal exactly). All seven independently
+  verified against the Rust reference parser/writer.
+- **§ 5.9.0 — the "more than one violation" allowance now covers the
+  current node and an Object's key, not only descendants.** The old
+  wording ("among a Value's descendants") left a String satisfying two
+  collision rules at once, or an Object with both an empty key and a
+  separately non-representable child, technically uncovered, since a
+  key is not itself a Value descendant.
+- **`versions/0.7/tests/unrepresentable/non_finite_float.json`** — the
+  one reason code (`NonFiniteFloat`) that plain JSON cannot encode a
+  fixture for now has one, via a normative `{"$float": "NaN"|
+  "Infinity"|"-Infinity"}` sentinel reserved for exactly this case.
+  README documents the sentinel alongside the rest of the
+  `unrepresentable/` schema.
 
 ## [0.6.4] — 2026-08-23
 
@@ -517,4 +563,4 @@ for Ktav 0.1.0.
 `PathConflict`, `InvalidKey`, `EmptyKey`, `OrphanLine`,
 `InlineNonEmptyCompound`, `InvalidTypedScalar`, `MissingSeparatorSpace`.
 
-Directory: [`versions/0.1/`](versions/0.1/).
+Directory: [`versions/0.1/`](https://github.com/ktav-lang/spec/tree/1d5dc09/versions/0.1/) — removed from the current tree at `c9593e8`; this links to the last commit where it still existed.
