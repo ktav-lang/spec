@@ -89,6 +89,27 @@
   oracle(如 `i64_overflow_to_string.json`),而不丧失
   parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
   在该 fixture 上不满足 § 8.1。
+- **§ 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节 fixture
+  要求现在带有镜像 § 8.1 的数值域警告。** 恰在 § 8.1 所指名的
+  探测边界的 fixture 上,更宽域实现从 `name.ktav` 解析出的 Value
+  可能合法地不同于 fixture 的 `.json` oracle 所描述的最小域
+  Value,因此其输出 MAY 不同于该 fixture 固定的 `canonical.ktav`
+  —— 只要该输出对其真正持有的 Value 是正确的规范形式(§ 5.9)。
+  此前 § 5 明确允许的任意精度实现会按原文本在
+  `i64_overflow_to_string` 上不满足 § 8.2:它把体解析为 Integer
+  并会以裸形式规范写出(无 raw 标记),而 fixture 固定的
+  `canonical.ktav` 不允许这样。
+- **§ 5(Float)/ § 5.2 规则 14 —— Float 域现在有规范性下限与
+  溢出回退。** 实现 MUST 至少支持 IEEE 754 binary64 的范围与
+  精度(MAY 支持更宽表示),且在实现 Float 域内解析值非有限的
+  浮点字面量(如 binary64 上的 `1e9999`)回退为 String —— 与
+  规则 13 中超出范围的 Integer 完全一致 —— 因此 0.7.0 兼容解析器
+  MUST NOT 永远产生非有限 Float,这使 § 5.9.0「§ 3.6 的任何
+  字面量语法都不产生非有限 Float」的断言真正成立。新 fixture
+  `float/positive_overflow_to_string`、
+  `float/negative_overflow_to_string` 与
+  `float/underflow_to_zero` 将边界锁定;最后一个 fixture 记录
+  下溢到 `0.0`(有限)是普通 Float,而非回退为 String 的情形。
 
 ### 新增
 
