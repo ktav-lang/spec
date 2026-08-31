@@ -353,7 +353,13 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
 - **Float** —— 数值标量,携带数值。实现 MUST 至少支持 IEEE 754
   binary64 的范围与精度,且 MAY 支持更宽的表示(如任意精度
-  decimal)。超出该最小值的内部表示由实现定义。规范文本形式
+  decimal)。将 decimal 的 Float 字面量(§ 3.6)转换为此最小
+  binary64 表示时,MUST 遵循 IEEE 754 的 `roundTiesToEven` 舍入
+  方向属性,且该最小表示 MUST 包含次正规(gradual-underflow)值,
+  一直下探到 binary64 的最小正次正规值 (2^-1074 ≈
+  4.9406564584124654 × 10^-324) —— 一个过早将次正规值冲刷为零、
+  或将中间值舍入到远离偶数一侧的实现,即便从不产生非有限的
+  Float,也不满足此下限。超出该最小值的内部表示由实现定义。规范文本形式
   (§ 5.9) MUST 由 writer-conforming 实现使用。Value **不**保留
   写入的文本形式;下划线、`e` vs `E` 的选择、前导 `+` 不属于
   Value。
@@ -498,8 +504,15 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
 源文本重新送入分类:§ 3.7 的来源规则(escape 的结果永远不会被
 重新视为结构性内容)在此同样适用,因此形如 `\{value\}` 的体
 按字面字符 `{value}` 依规则 15(String)分类,而不是在解码出的
-`{` 处重新进入这些规则。两个 parser-conforming 实现 MUST 对同一
-体产生相同的 Value kind。
+`{` 处重新进入这些规则。数值域相同(§ 5, § 8.1)的两个
+parser-conforming 实现 MUST 对同一体产生相同的 Value kind。
+当数值域不同时,一个体可能越过其中一个实现的域边界而不越过
+另一个的 —— 超出范围的 Integer 或非有限的 Float 字面量,在较窄
+域下依规则 13–14 落入 String,在较宽域下则保持 Integer 或
+Float。这不是确定性规则的例外:
+[`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
+指名了允许此类域相关偏差的 fixture 的完整、封闭集合
+(§ 8.1, § 8.2);在该指名集合之外,同 kind 的保证无条件成立。
 
 ### 5.3 Pair 行
 
@@ -792,15 +805,26 @@ MAY 采用任意形式(异常类、error enum、tagged union 等)——
 
 当一个 Value 同时违反多种情形时,检查有先后:先评估文档根约束
 (Object 或 Array),仅在其通过后才递归评估节点可表示性。若节点
-可表示性随后在 Value 的后代中发现多于一个违反(例如两个 Array
-项各自因不同原因不可表示),实现 MAY 报告其中任意一个 —— 本规范
-不规定具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决
-的结构化错误契约(rust#12)。
+可表示性随后发现多于一个适用的违反 —— 无论是在 Value 自身、
+Object 对的键上,还是在后代中(例如一个 String 同时满足两条
+冲突规则,一个 Object 同时有空键和另一处
+不可表示的子节点,或两个 Array 项各自因不同原因不可表示)
+—— 实现 MAY 报告其中任意一个适用的原因代码:本规范不规定
+具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
+结构化错误契约(rust#12)。
 
-其中 `NonFiniteFloat` 没有对应 fixture:fixture oracle 所用的
-JSON 格式本身没有可移植的 NaN 或 Infinity 字面量(接受裸
-`NaN` / `Infinity` 标记作为扩展的实现,在其 round-trip 行为上也不
-一致),因此该情形仅在此以文字说明,不设可机检的 fixture。
+其中 `NonFiniteFloat` 在其余原因代码共用的普通 `<name>.json`
+schema 下没有对应 fixture:作为该 schema 书写格式的 JSON 本身
+没有可移植的 NaN 或 Infinity 字面量(接受裸 `NaN` /
+`Infinity` 标记作为扩展的实现,对其 round-trip 行为也不一致)。
+为了仍以可机检的 fixture 固定此情形,
+`versions/0.7/tests/unrepresentable/non_finite_float.json` 在其
+`"value"` 字段内使用一个规范性的逃生通道:一个原本没有 JSON
+编码的 Float,以带标签的对象 `{"$float": "NaN"}`、
+`{"$float": "Infinity"}` 或 `{"$float": "-Infinity"}` 的形式
+替代普通 JSON 数字写出。这种哨兵形式专为此情形保留 —— 没有
+其他原因代码,也没有 `valid/` 下的任何 fixture 需要它,因为
+§ 5 定义的每个其他 Value 都有直接的 JSON 映射。
 
 #### 5.9.1 空白、缩进、行尾
 
@@ -1188,12 +1212,17 @@ Parser-conforming 实现:
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
 - 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与
   对应 `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需
-  数值域上(i64 Integer、binary64 Float):支持更宽域的实现
-  MAY 对期望 Value 依赖最小域边界的那些 fixture 产生不同的、
-  更宽域下正确的 Value —— 例如 i64 溢出字面量,最小域将其分类
-  为 String(`i64_overflow_to_string.json`),更宽域则分类为
-  Integer。只要偏差仅限于这些探测边界的 fixture,且并非其他
-  处的任意或未记录偏差,该实现仍符合 parser-conforming。
+  数值域上(i64 Integer、binary64 Float)。
+  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
+  是完整、可机读的例外集合:恰好对其键所列的 fixture 路径,支持
+  更宽域的实现 MAY 转而产生该 fixture 的清单条目所指名的
+  `wider_domain_kind` / `wider_domain_value`,以替代最小域的
+  `name.json` oracle —— 例如一个 i64 溢出字面量,被最小域分类为
+  String(`i64_overflow_to_string.json`),而更宽域按该 fixture
+  的清单条目将其分类为 Integer。此清单之外的任何 fixture,以及
+  清单所指名之外的任何替代 Value,均不允许。这样的实现仍符合
+  parser-conforming,只要每处偏差都恰好是清单所列 fixture 的
+  清单所指名结果,而并非其他处的任意或未记录偏差。
 - 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
 
@@ -1207,16 +1236,17 @@ Writer-conforming 实现:
   字节相同的输出。该要求针对实现实际持有的 Value,而由于 § 8.1
   将 fixture 等价性定义在 § 5 的最小必需数值域上(i64 Integer、
   binary64 Float),这个 Value 可能合法地不同于 fixture 的
-  `.json` oracle 所描述的最小域 Value —— 且恰好只在 § 8.1 所
-  指名的探测边界的 fixture 上(例如 `i64_overflow_to_string`
-  的体,最小域分类为 String,更宽域分类为 Integer)。恰恰对此类
-  fixture,更宽域的实现 MAY 产生不同于该 fixture 固定的
-  `name.canonical.ktav` 的输出 —— 例如 Integer 以不带 raw
-  标记的裸形式规范写出(§ 5.9.5)—— 只要该输出对其真正持有的
-  Value 而言是正确的规范形式(§ 5.9),并且对其自身域保持内部
-  正确与确定。这样的实现仍符合 writer-conforming,只要偏差仅限
-  于 § 8.1 所指名的同一批探测边界的 fixture,且并非其他处的
-  任意或未记录偏差。
+  `.json` oracle 所描述的最小域 Value —— 且恰好只在
+  [`versions/0.7/tests/valid/boundary-fixtures.json`](tests/valid/boundary-fixtures.json)
+  所列的 fixture 上(例如一个 `i64_overflow_to_string` 的体,被
+  最小域分类为 String,而更宽域按该 fixture 的清单条目将其
+  分类为 Integer)。恰恰对此类所列 fixture,更宽域实现的输出
+  MUST 改为与该 fixture 的 `wider_domain_canonical` 字段字节
+  完全相同 —— 例如 Integer 以不带 raw 标记的裸形式规范写出
+  (§ 5.9.5)—— 不存在由实现自由选择的第三种结果,那不符合
+  规范。这样的实现仍符合 writer-conforming,只要每处偏差都恰好
+  是清单所列 fixture 的清单所指名 `wider_domain_canonical`,而
+  并非其他处的任意或未记录偏差。
 - 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
