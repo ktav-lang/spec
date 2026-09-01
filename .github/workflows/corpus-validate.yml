@@ -1,0 +1,26 @@
+name: corpus-validate
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate conformance corpus structure
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Validate corpus structure
+        run: |
+          python scripts/validate_corpus.py versions/0.6/tests
+          python scripts/validate_corpus.py versions/0.7/tests
