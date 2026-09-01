@@ -1203,7 +1203,133 @@ lone-`[` 根开启符(§ 5.0.1 规则 4–5)的匹配关闭行之后的非空白
 
 ## 7. 示例
 
-参见英文 `spec.md` § 7。
+### 7.1 最小示例
+
+```
+host: localhost
+port: 8080
+debug: true
+```
+
+→ `{host: "localhost", port: 8080, debug: true}`,其中 `port` 是
+`Integer(8080)`,`debug` 是 `Bool(true)`。
+
+### 7.2 嵌套 Object、Array 与关键词
+
+```
+server: {
+    host: 127.0.0.1
+    port: 8080
+    tls: true
+}
+admins: [
+    alice
+    bob
+]
+maintenance_window: null
+```
+
+混合的多行 Object、多行 Array、从标量字面形式推断的标量,
+以及 `null`。
+
+### 7.3 多种基数下的数字
+
+```
+color: 0xFFEE00
+permissions: 0o755
+mask: 0b1111_0000
+million: 1_000_000
+ratio: 0.5
+sci: 1.5e-3
+big: 99999999999999999999
+forced_string: :: 0xFF
+literal_hex: :: 0xFF
+```
+
+`color` 是 `Integer(16772608)`(0xFFEE00 的十进制),
+`permissions` 是 `Integer(493)`(0o755 的十进制),
+`mask` 是 `Integer(240)`(0b11110000 的十进制),
+`million` 是 `Integer(1000000)`,`ratio` 是 `Float(0.5)`,
+`sci` 是 `Float(1.5e-3)`,`big` 是
+`String("99999999999999999999")`(溢出 i64),
+`literal_hex` 是 `String("0xFF")`(raw 标记)。
+
+规范写入器(§ 5.9.8)将每个 Integer 以基-10 十进制输出
+(例如 `color: 16772608`),每个 Float 以规范文本形式输出
+(例如 `sci: 1.5e-3`)。十六进制 / 八进制 / 二进制 / 带下划线的
+输入形式被解析器接受,但规范写入器绝不输出。
+
+### 7.4 Inline 复合值
+
+```
+endpoint: {host: api.example, port: 443, tls: true}
+ports: [80, 443, 8080]
+users: [{name: alice, age: 30}, {name: bob, age: 25,}]
+```
+
+`endpoint` 是一个 inline Object;`ports` 是一个包含三个整数的
+inline Array;`users` 是一个包含两个 inline Object 的 inline
+Array。`25` 之后的尾部逗号是允许的。
+
+### 7.5 inline 值中的 escape 序列
+
+```
+tags: [hello\, world, line1\nline2, contains\}brace]
+path: {win: C:\\Users\\alice, unix: /home/alice}
+```
+
+`tags[0]` 是 `String("hello, world")`(逗号被 escape),
+`tags[1]` 是 `String("line1\nline2")`(内嵌换行),
+`tags[2]` 是 `String("contains}brace")`。两个 `path` 值都是
+字面路径。
+
+### 7.6 注释
+
+```
+## Sample configuration
+
+## --- Network ---
+host: localhost
+port: 8080
+
+## Authentication settings
+auth: {
+    enabled: true
+    realm: production
+}
+```
+
+每个以 `##` 为前缀的行都是注释,会被忽略。不在 `##` 对开头位置的
+`#` 字节只是一个普通字符。
+
+### 7.7 Raw String
+
+```
+literal_true:  :: true
+literal_zero:  :: 0
+literal_hex:   :: 0xFF
+literal_path:  :: /usr/local/bin
+literal_comma_only: :: just,a,comma,separated,plain,string
+```
+
+以上所有值都是 String,而非其推断出的类型。raw 标记无条件地
+强制按 String 分发。注意:在这种多行 raw 形式中**不**进行
+escape 处理 —— 体内的 `\n` 是 `\` 与 `n` 两个字符。
+
+### 7.8 顶层 inline
+
+首个(且唯一的)内容行是一个闭合 inline 复合值的文档:
+
+```
+{host: localhost, port: 8080, tags: [a, b, c]}
+```
+
+根 Value 就是该 inline Object —— 文档层不需要任何外层括号;
+inline 形式本身就是文档。顶层的 inline Array 同理:
+
+```
+[1, 2, 3, 4]
+```
 
 ### 7.9 键 escape
 
@@ -1325,7 +1451,100 @@ SHOULD 为 0.7.0。
 
 ## 10. 设计依据(非规范性)
 
-参见英文 `spec.md` § 10。
+### 10.1 为什么移除类型标记(`:i`、`:f`)?
+
+在 0.1.x 到 0.3.x 版本中,获得 Integer 或 Float Value 的唯一方式是书写类型标记
+`key:i 5` / `key:f 0.5`。普通 pair 形式 `key: 5` 产生 String。这些标记在语法上是
+Ktav 独有的,容易忘记,并且重复了词法层面已经掌握的信息(一串数字**就是**数字)。
+
+0.5.0 移除了这些标记,改为从标量体的词法形式推断数字/关键词 Value。raw 标记 `::`
+保留为显式的「强制 String」覆盖。
+
+这是一次 strict-break 变更:旧版本中以 `:i` / `:f` 书写的文档在 0.5.0 中解析结果
+不同(`:i` / `:f` 文本成为值的一部分,或依空白情况产生 `MissingSeparator` /
+`MissingSeparatorSpace` 错误)。不提供自动迁移。
+
+### 10.2 为什么要增加 inline 复合值?
+
+行式形式的一个常见烦恼是短对象变得冗长:
+
+```
+server: {
+    host: localhost
+    port: 8080
+}
+```
+
+四行只说了一件事。inline 形式
+
+```
+server: {host: localhost, port: 8080}
+```
+
+只有一行。其代价(以逗号作分隔符、闭合符必须同行出现)足够小,增加这一选项对
+紧凑性是明显的胜利。
+
+### 10.3 为什么注释用 `##`?
+
+单一 `#` 在 0.4.x 及之前被保留为注释标记。然而 `#` 在现实配置值中极为常见(话题
+标签、片段标识符、十六进制颜色、密码分隔符、……)。0.5.0 将标记加倍为 `##`,
+把单一 `#` 释放为普通字符。
+
+由于注释标记只在 trim 后的行首被识别(§ 3.4),值或键中间的字面两字节序列 `##`
+无歧义地就是两个 `#` 字符 —— 不需要也不定义任何 escape 序列。0.4.x 时代的 `#\#`
+escape 随其余单 `#` 机制一同移除;设计现在完全依赖位置消歧(仅行首),而不是值内
+escape。
+
+### 10.4 为什么采用最小 escape?
+
+Ktav 的值由人书写。繁重的 escape 规则是正确性上的陷阱。0.5.0 的 escape 集是
+inline 标量的最小闭合集。0.6.0 通过 `\.` 与 `\:` 将其扩展到键,共十个命名
+escape —— inline 形式中每个结构上有意义的字节(`,`、`}`、`]`、`{`、`[`)、键结构
+字节(`.`、`:`)、字面反斜杠(`\\`),外加两个用于嵌入换行的便利 escape(`\n`、
+`\r`)。0.7.0 增加第十一个 `\uXXXX`(§ 3.7.1),用于需要按编号指称任意码点而非直接
+键入的少见情形 —— 大多数字节值仍按字面书写,因为它们根本无需 escape。
+
+括号 escape 集完整且对称: `\}` / `\{` 与 `\]` / `\[`。`\{` 与 `\[` 只有作为
+inline 标量值的*第一个*字节时才与歧义相关(未转义的 `{` 或 `[` 在那里会打开嵌套
+复合值),但拥有全部四种形式免除了写入器的「这里要不要 escape?」疑问,并给出一条
+干净的规则:每个 inline 结构分隔符都有 escape 形式。
+
+制表符(`0x09`)与其他低 ASCII 控制字节刻意**没有专门的命名** escape(没有 `\t`)
+—— 没有任何字母值得为一个本来就能作为字面量合法出现的字节而保留。制表符在键与
+标量中是允许的字面字节(§ 4);控制字节是内容数据。包含此类字节的 String 可通过
+verbatim 多行形式表示(§ 5.6、§ 5.9.7),自 0.7.0 起也可通过 `\uXXXX`(§ 3.7.1)
+以 inline 方式表示,它能按编号指称其中任意一个 —— 多行形式能精确保留字节,
+`\uXXXX` 又以通用方式覆盖 inline 情形,为每个控制字节单设专门命名 escape 并无
+必要。
+
+多行标量值与多行字符串完全不做 escape 处理 —— 词法布局使 escape 在这些上下文中
+没有必要。(键在 0.6.0 获得了 escape 处理;见 § 3.7。)
+
+### 10.5 为什么 `{a:}` 合法而 `[,a]` 是错误?
+
+两种情形看似对称 —— 一个空的 inline 值,或作为 Object 中某键的值,或作为 Array
+中的项 —— 但处理方式不同(§ 5.8.2 与 § 5.8.3): `{a:}` 产生映射到空 String 的键
+`a`,而 `[,a]` 是 `MalformedInlineCompound` 错误。
+
+这种不对称是有意的。空的 pair 值有显式键作锚,故「键 X 的空值」意图明确;该形式
+简洁,适合表示例如被设为空字符串的环境变量。空数组项没有这样的锚,故 `[,a]` 更
+可能是笔误(前导或重复的逗号)而非有意的空 String 项。强制写入器为有意的空 String
+使用 `["", a]` 使意图显式,并在解析时捕获常见笔误。
+
+### 10.6 为什么要规范形式?
+
+该格式在输入上刻意宽容 —— 注释、inline 复合值、多种基数的数字字面量、下划线、
+混合的 escape 风格 —— 但**输出上严格**。为每个**可表示** Value 定义了唯一的规范
+序列化(§ 5.9)。
+
+这种分离让人以最自然的形式书写 Ktav(紧凑 inline、显式多行、注释、混合基数),而
+机器交换确定性的字节序列。字节确定性输出也使 Ktav 适合作为生成配置的目标:任何
+两个 writer-conforming 实现对同一 Value 产生相同字节,因此生成文件之上的 diff
+保持稳定。
+
+合规语料双向测试:输入多样性经 `name.ktav` fixture(读取侧),输出确定性经
+`name.canonical.ktav` fixture(写入侧),以及与 `name.json` oracle 的等价性
+(Value 模型)。
 
 ## 11. 参考文献
 
