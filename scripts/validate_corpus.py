@@ -9,15 +9,18 @@ Purpose:
       2. Every fixture under valid/ forms a complete sibling triple
          (<name>.ktav, <name>.json, <name>.canonical.ktav).
       3. Every fixture under invalid/ forms a sibling pair (<name>.ktav,
-         <name>.json) and each .json has a non-empty string `expected_error`.
-      4. unrepresentable/ (optional) contains only .json objects with `value`,
-         `note`, and `unrepresentable_reason` from the known reason-code set.
-      5. boundary-fixtures.json (optional) entries reference existing valid/
-         triples, contain syntactically valid and resolvable RFC 6901 JSON
-         Pointers, use known boundary classes, and have no duplicates.
+         <name>.json) and each .json has an `expected_error` drawn from the
+         version's closed set of error categories (Sec 6).
+      4. unrepresentable/ contains only .json objects with `value`, `note`, and
+         `unrepresentable_reason` from the known reason-code set (optional
+         unless --require-unrepresentable is passed).
+      5. boundary-fixtures.json entries reference existing valid/ triples,
+         contain syntactically valid and resolvable RFC 6901 JSON Pointers, use
+         known boundary classes, and have no duplicates (optional unless
+         --require-boundary is passed).
 
 Usage:
-    python scripts/validate_corpus.py <tests_dir>
+    python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable] [--require-boundary]
 
 Exit codes:
     0  all checks passed (or were legitimately skipped)
@@ -39,6 +42,28 @@ UNREPRESENTABLE_REASONS = {
     "TrailingWhitespaceCollision",
     "LeadingWhitespaceCollision",
 }
+
+# Closed set of expected_error category names, per spec version.
+# Derived from versions/0.6/spec.md and versions/0.7/spec.md Sec 6 headings.
+# Sec 6.7 and 6.9 are RESERVED: InlineNonEmptyCompound and InvalidTypedScalar
+# are historical names implementations MUST NOT emit, so they are absent.
+ERROR_CATEGORIES_V0_6 = frozenset({
+    "UnbalancedBracket", "UnclosedCompound",        # 6.1
+    "DuplicateKey",                                 # 6.2
+    "KeyPathConflict",                              # 6.3
+    "InvalidKey",                                   # 6.4
+    "EmptyKey",                                     # 6.5
+    "MissingSeparator",                             # 6.6
+    "Io",                                           # 6.8
+    "MissingSeparatorSpace",                        # 6.10
+    "UnterminatedInlineCompound",                   # 6.11
+    "MalformedInlineCompound",                      # 6.12
+    "BadEscapeSequence",                            # 6.13
+    "OrphanLineAfterTopLevelInline",                # 6.14
+})
+ERROR_CATEGORIES_V0_7 = ERROR_CATEGORIES_V0_6 | {"InvalidUtf8"}  # 6.15
+ERROR_CATEGORIES_BY_VERSION = {"0.6": ERROR_CATEGORIES_V0_6, "0.7": ERROR_CATEGORIES_V0_7}
+DEFAULT_ERROR_CATEGORIES = ERROR_CATEGORIES_V0_7  # == union of all versions (0.6 is a subset)
 
 BOUNDARY_CLASSES = {
     "integer_range",
@@ -76,6 +101,25 @@ def is_deliberately_invalid_utf8(rpath):
             and rpath.endswith(".ktav"))
 
 
+def _reject_json_constant(name):
+    raise ValueError("non-finite constant '%s' is not allowed in strict JSON" % name)
+
+
+def _reject_duplicate_keys(pairs):
+    obj = {}
+    for key, value in pairs:
+        if key in obj:
+            raise ValueError("duplicate object key '%s' is not allowed in strict JSON" % key)
+        obj[key] = value
+    return obj
+
+
+def loads_strict(text):
+    """json.loads that rejects NaN/Infinity/-Infinity and duplicate object keys."""
+    return json.loads(text, parse_constant=_reject_json_constant,
+                      object_pairs_hook=_reject_duplicate_keys)
+
+
 def check_utf8_json(tests_dir, results):
     """Check 1: strict UTF-8 decode for every file; json.loads for every .json.
     Exception: invalid/invalid_utf8/*.ktav is deliberately not valid UTF-8
@@ -107,8 +151,12 @@ def check_utf8_json(tests_dir, results):
             if fname.endswith(".json"):
                 n_json += 1
                 try:
-                    parsed[rel(path, tests_dir)] = json.loads(text)
+                    parsed[rel(path, tests_dir)] = loads_strict(text)
                 except json.JSONDecodeError as e:
+                    results.fail(category, "%s: invalid JSON: %s"
+                                 % (rel(path, tests_dir), e))
+                    parsed[rel(path, tests_dir)] = None
+                except ValueError as e:
                     results.fail(category, "%s: invalid JSON: %s"
                                  % (rel(path, tests_dir), e))
                     parsed[rel(path, tests_dir)] = None
@@ -181,7 +229,18 @@ def check_valid(tests_dir, results):
     results.set_count(category, n_fixtures=n_fixtures)
 
 
-def check_invalid(tests_dir, results, parsed):
+def select_error_categories(tests_dir):
+    """Pick the closed expected_error set for a corpus, by its version path
+    segment (the in-repo layout is versions/<v>/tests). Unknown layouts get
+    the default (0.7) set, which is the union of all version sets."""
+    parts = tests_dir.replace("\\", "/").split("/")
+    for i in range(len(parts) - 1):
+        if parts[i] == "versions" and parts[i + 1] in ERROR_CATEGORIES_BY_VERSION:
+            return ERROR_CATEGORIES_BY_VERSION[parts[i + 1]]
+    return DEFAULT_ERROR_CATEGORIES
+
+
+def check_invalid(tests_dir, results, parsed, error_categories):
     """Check 3: .ktav/.json pairs under invalid/ with expected_error strings."""
     category = "invalid/ pairs"
     invalid_dir = os.path.join(tests_dir, "invalid")
@@ -226,14 +285,22 @@ def check_invalid(tests_dir, results, parsed):
             if not isinstance(err, str) or err == "":
                 results.fail(category, "%s: 'expected_error' must be a "
                              "non-empty string" % rpath)
+            elif err not in error_categories:
+                results.fail(category, "%s: unknown 'expected_error' %r "
+                             "(must be one of: %s)"
+                             % (rpath, err, ", ".join(sorted(error_categories))))
     results.set_count(category, n_fixtures=n_fixtures)
 
 
-def check_unrepresentable(tests_dir, results, parsed):
-    """Check 4: optional unrepresentable/ category: .json objects with reason codes."""
+def check_unrepresentable(tests_dir, results, parsed, require=False):
+    """Check 4: unrepresentable/ category: .json objects with reason codes.
+    With require=True a missing directory is a failure instead of a skip."""
     category = "unrepresentable/"
     unrep_dir = os.path.join(tests_dir, "unrepresentable")
     if not os.path.isdir(unrep_dir):
+        if require:
+            results.fail(category, "unrepresentable/ directory not present (required)")
+            return False
         results.set_count(category, skipped=True)
         return False
     n_fixtures = 0
@@ -318,11 +385,28 @@ def resolve_pointer(doc, pointer):
     return node, None
 
 
-def check_boundary_fixtures(tests_dir, results, parsed):
-    """Check 5: optional boundary-fixtures.json manifest."""
+def _is_within(child, parent):
+    """True if realpath(child) is parent itself or lies under realpath(parent)."""
+    child = os.path.realpath(child)
+    parent = os.path.realpath(parent)
+    try:
+        rel = os.path.relpath(child, parent)
+    except ValueError:
+        # Windows cross-drive paths can never be within the tree.
+        return False
+    return rel == os.curdir or not (rel == os.pardir or rel.startswith(os.pardir + os.sep))
+
+
+def check_boundary_fixtures(tests_dir, results, parsed, require=False):
+    """Check 5: boundary-fixtures.json manifest. With require=True a missing
+    manifest is a failure instead of a skip, and an empty
+    'boundary_dependent_leaves' list is also a failure."""
     category = "boundary-fixtures.json"
     manifest_path = os.path.join(tests_dir, "boundary-fixtures.json")
     if not os.path.isfile(manifest_path):
+        if require:
+            results.fail(category, "boundary-fixtures.json not present (required)")
+            return False
         results.set_count(category, skipped=True)
         return False
     rpath = rel(manifest_path, tests_dir)
@@ -337,6 +421,10 @@ def check_boundary_fixtures(tests_dir, results, parsed):
     if not isinstance(leaves, list):
         results.fail(category, "%s: 'boundary_dependent_leaves' must be a list" % rpath)
         return True
+    if require and not leaves:
+        results.fail(category, "%s: 'boundary_dependent_leaves' must not be empty: "
+                     "a required manifest must name at least one boundary-dependent "
+                     "leaf" % rpath)
     seen = {}
     n_ok = 0
     for i, entry in enumerate(leaves):
@@ -348,9 +436,10 @@ def check_boundary_fixtures(tests_dir, results, parsed):
             results.fail(category, "%s: entry %d: 'fixture' must be a non-empty "
                          "string" % (rpath, i))
             fixture = None
-        elif fixture.startswith("/"):
-            results.fail(category, "%s: entry %d: 'fixture' must not start "
-                         "with '/'" % (rpath, i))
+        elif "\\" in fixture or any(seg in ("", ".", "..") for seg in fixture.split("/")):
+            results.fail(category, "%s: entry %d: 'fixture' must be a '/'-separated "
+                         "path of plain name segments under valid/ (no '..', '.', "
+                         "empty segments, or backslashes): %r" % (rpath, i, fixture))
             fixture = None
         ptr = entry.get("path")
         if not isinstance(ptr, str):
@@ -364,7 +453,13 @@ def check_boundary_fixtures(tests_dir, results, parsed):
                          % (rpath, i, bclass, ", ".join(sorted(BOUNDARY_CLASSES))))
         if fixture is not None:
             base = os.path.join(tests_dir, "valid", *fixture.split("/"))
+            valid_root = os.path.join(tests_dir, "valid")
             triples = [base + ".ktav", base + ".json", base + ".canonical.ktav"]
+            if not all(_is_within(p, valid_root) for p in triples):
+                results.fail(category, "%s: entry %d: fixture %r resolves outside "
+                             "<tests_dir>/valid/" % (rpath, i, fixture))
+                fixture = None
+        if fixture is not None:
             missing = [rel(p, tests_dir) for p in triples if not os.path.isfile(p)]
             if missing:
                 results.fail(category, "%s: entry %d: fixture %r missing file(s): %s"
@@ -394,6 +489,12 @@ def main(argv):
         description="Validate the structure of a Ktav conformance corpus.")
     parser.add_argument("tests_dir", help="path to a tests directory, e.g. "
                         "versions/0.7/tests")
+    parser.add_argument("--require-unrepresentable", action="store_true",
+                        help="treat a missing unrepresentable/ directory as a "
+                        "failure instead of a skip")
+    parser.add_argument("--require-boundary", action="store_true",
+                        help="treat a missing or empty boundary-fixtures.json "
+                        "manifest as a failure instead of a skip")
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
@@ -405,9 +506,11 @@ def main(argv):
     results = Results()
     parsed = check_utf8_json(tests_dir, results)
     check_valid(tests_dir, results)
-    check_invalid(tests_dir, results, parsed)
-    has_unrep = check_unrepresentable(tests_dir, results, parsed)
-    has_boundary = check_boundary_fixtures(tests_dir, results, parsed)
+    check_invalid(tests_dir, results, parsed, select_error_categories(tests_dir))
+    has_unrep = check_unrepresentable(tests_dir, results, parsed,
+                                      require=args.require_unrepresentable)
+    has_boundary = check_boundary_fixtures(tests_dir, results, parsed,
+                                           require=args.require_boundary)
 
     failures = {}
     for category, message in results.problems:
@@ -444,8 +547,8 @@ def main(argv):
     order = ["UTF-8/JSON validity", "valid/ triples", "invalid/ pairs",
              "unrepresentable/", "boundary-fixtures.json"]
     skipped_map = {
-        "unrepresentable/": not has_unrep,
-        "boundary-fixtures.json": not has_boundary,
+        "unrepresentable/": not has_unrep and not args.require_unrepresentable,
+        "boundary-fixtures.json": not has_boundary and not args.require_boundary,
     }
     overall = "PASS"
     for category in order:
