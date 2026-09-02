@@ -9,9 +9,10 @@
 **演练场：** 在浏览器中互转 JSON / YAML / TOML / INI ⇄ Ktav — **[ktav-lang.github.io](https://ktav-lang.github.io/)**。
 
 > 一种朴素的配置格式。沿用 JSON 的形态——标量、数组、对象、
-> `null`、`true`、`false`——但不带 JSON 的任何标点。字符串不加引号，
-> 不用逗号，没有转义表。以点分键表达嵌套，以显式的可见标记声明
-> 字面字符串和多行字符串。
+> `null`、`true`、`false`——但不带 JSON 的任何标点。常见情形下
+> 不用逗号、不用引号：逗号只出现在单行 inline 复合值内作分隔符，
+> 封闭的 11 项转义表只覆盖真正需要 escape 的少见字节。以点分键
+> 表达嵌套，以显式的可见标记声明字面字符串和多行字符串。
 
 本仓库是 Ktav 格式的**规范正文**。任何编程语言的实现都应当符合
 其所针对的版本。
@@ -195,6 +196,8 @@ key: value             — scalar pair; bare number → Integer/Float,
 key:: value            — scalar pair; value is ALWAYS a literal string
 key: { ... }           — multi-line object; `}` closes on its own line
 key: [ ... ]           — multi-line array; `]` closes on its own line
+key: { a: 1, b: 2 }    — inline object, one line, comma-separated
+key: [ 1, 2 ]          — inline array, one line, comma-separated
 key: {}   /   key: []  — empty compound, inline
 key: ( ... )           — multi-line string; common indent stripped
 key: (( ... ))         — multi-line string; verbatim (no stripping)
@@ -202,9 +205,10 @@ value                  — inside an array: bare item (typed by form)
 :: value               — inside an array: literal-string item
 ```
 
-整个语言就这些。没有逗号、没有引号、没有转义表——唯一的「转义」
-是 `::` 标记，它出现在分隔符里（用于键值对）或行首前缀里（用于数组
-元素）。
+整个语言就这些。常见情形下无需逗号与引号 —— 逗号只作为单行
+inline 复合值内的分隔符出现 —— 另有一条封闭的 11 项转义表，
+只覆盖真正需要 escape 的少见字节。`::` 标记（出现在分隔符里
+用于键值对，或行首前缀里用于数组元素）强制取字面字符串。
 
 ### 点分键
 
@@ -407,13 +411,19 @@ submodule 引入(或直接拷贝)。
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
+├── scripts/               corpus validation script
+├── .github/workflows/     CI running the corpus validation
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
+        ├── spec.ru.md     Russian translation of the spec
+        ├── spec.zh.md     Chinese translation of the spec
         └── tests/         language-agnostic conformance suite
             ├── valid/
             ├── invalid/
-            └── unrepresentable/   (0.7+)
+            ├── unrepresentable/   (0.7+)
+            └── boundary-fixtures.json   (0.7+) leaf-level numeric-
+                        domain exemptions, not a fixture category
 ```
 
 ## 实现

@@ -81,7 +81,11 @@ ordinary English.
 
 A Ktav document is a sequence of Unicode code points encoded as UTF-8.
 Implementations MUST reject documents that are not valid UTF-8, with
-an `InvalidUtf8` error (§ 6.15).
+an `InvalidUtf8` error (§ 6.15). A byte-order mark (U+FEFF) at the
+very start of the document, before any other byte, MAY be skipped by
+the implementation (matching RFC 8259 § 8.1's treatment for JSON). A
+U+FEFF code point anywhere else in the document is ordinary content —
+§ 3.3 does not classify it as whitespace.
 
 ### 3.2 Lines
 
@@ -516,13 +520,11 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   minimum i64 domain for scalar classification (§ 5.2 rule 13): an
   integer literal outside the i64 range is a String for a
   minimum-domain implementation, so `i64_overflow_to_string.json`
-  expects the String `"9223372036854775808"`. An implementation
-  supporting a wider domain MAY instead produce the
-  wider-domain-correct Integer for exactly such boundary-probing
-  fixtures; it remains parser-conforming (§ 8.1) provided the
-  divergence is confined to fixtures whose expected Value depends
-  on the minimum-domain boundary, and is not an arbitrary or
-  undocumented divergence. The canonical textual form of an Integer
+  expects the String `"9223372036854775808"`. § 8.1 / § 8.2 and
+  `versions/0.7/tests/boundary-fixtures.json` define, at the level
+  of individual leaves, exactly where and how a wider-domain
+  implementation MAY legitimately diverge from a minimum-domain
+  fixture oracle. The canonical textual form of an Integer
   is a base-10
   decimal string with no underscores and no leading zeros (except
   the literal `0`); a leading `+` is dropped; signed-zero literals
@@ -1106,7 +1108,13 @@ If a `(` or `((` byte appears as the first non-whitespace code point of an
 inline scalar value, it is treated as the start of an inline scalar
 (per § 5.8.1). Because no inline terminator (`,`, `}`, `]`) follows
 on the same line, this raises `UnterminatedInlineCompound` (§ 6.11).
-Multi-line string openers are not permitted inside inline compounds.
+When an inline terminator instead follows immediately on the same
+line (e.g. `{a: (, b: 1}`), the value is complete before end-of-line
+and is read as the ordinary one-byte String `"("` — not an error;
+the `UnterminatedInlineCompound` case above is specifically the
+common situation where nothing else appears on the line after the
+`(`/`((`. Multi-line string openers are not permitted inside inline
+compounds.
 
 The following document is therefore an error:
 
@@ -1709,15 +1717,16 @@ error.
 
 ### 6.5 Empty Key
 
-A pair line whose key portion (before `:`) is empty is an
-`EmptyKey` error.
+A key segment that is empty after trimming — whether the entire key
+(a pair line with nothing before the separator) or one segment of a
+dotted key (e.g. `a..b`) — is an `EmptyKey` error (§ 5.3.1).
 
 ### 6.6 Missing Separator
 
-A line dispatched to pair-line mode that contains no `:` separator
-is a `MissingSeparator` error. This applies inside the body of an
-open multi-line Object, or at the top level when the root is an
-Object.
+A line dispatched to pair-line mode that contains no
+**unescaped** `:` separator is a `MissingSeparator` error. This
+applies inside the body of an open multi-line Object, or at the
+top level when the root is an Object.
 
 ### 6.7 (RESERVED)
 
@@ -1858,8 +1867,7 @@ million: 1_000_000
 ratio: 0.5
 sci: 1.5e-3
 big: 99999999999999999999
-forced_string: :: 0xFF
-literal_hex: :: 0xFF
+literal_hex:: 0xFF
 ```
 
 `color` is `Integer(16772608)` (0xFFEE00 decimal),
@@ -1922,11 +1930,11 @@ is not at the start of a `##` pair is just a character.
 ### 7.7 Raw Strings
 
 ```
-literal_true:  :: true
-literal_zero:  :: 0
-literal_hex:   :: 0xFF
-literal_path:  :: /usr/local/bin
-literal_comma_only: :: just,a,comma,separated,plain,string
+literal_true:: true
+literal_zero:: 0
+literal_hex:: 0xFF
+literal_path:: /usr/local/bin
+literal_comma_only:: just,a,comma,separated,plain,string
 ```
 
 All values above are Strings, not their inferred types. The raw
@@ -2070,8 +2078,9 @@ such a Value with an error rather than serialise it (§ 5.9.0).
 Implementations MAY claim parser-only, writer-only, or both
 levels of conformance. An implementation MAY support older Ktav
 format versions in parallel (e.g. 0.1.1) under a configuration
-flag, but the default behaviour for documents without a
-version-pragma SHOULD be 0.7.0.
+flag, but MUST treat a document as 0.7.0 by default unless the
+caller explicitly selects a different target version — this
+specification defines no in-document version marker.
 
 ## 9. Security Considerations
 
@@ -2188,16 +2197,21 @@ there opens a nested compound), but having all four forms removes
 a "may I escape this here?" question for the writer and gives a
 clean rule: every inline structural delimiter has an escape form.
 
-Tab (`0x09`) and other low-ASCII control bytes intentionally have
-no **dedicated named** escape (no `\t`) — no letter is worth
-reserving for a byte that is legal as a literal in the first
-place. Tab is a permitted literal byte in keys and scalars (§ 4);
-control bytes are content data. A String containing such bytes is
-representable through verbatim multi-line form (§ 5.6, § 5.9.7),
-or, since 0.7.0, inline via `\uXXXX` (§ 3.7.1), which can name any
-of them by number — there is no need for a dedicated named escape
-for each one when the multi-line form preserves the byte exactly
-and `\uXXXX` covers the inline case generically.
+Tab (`0x09`) and other low-ASCII control bytes other than `LF` and
+`CR` (which already have their own dedicated escapes, `\n` and `\r`)
+intentionally have no **dedicated named** escape — no letter is worth
+reserving for a byte that is legal as a literal in the first place.
+Tab is a permitted literal byte in keys and scalars (§ 4); control
+bytes are content data. A String containing such a byte is
+representable through verbatim multi-line form (§ 5.6, § 5.9.7), or,
+since 0.7.0, inline via `\uXXXX` (§ 3.7.1), which can name any of
+them by number — there is no need for a dedicated named escape for
+each one when the multi-line form preserves the byte exactly and
+`\uXXXX` covers the inline case generically. A raw `CR` byte is a
+separate case, not covered by either mechanism: it is never
+representable as String content at all (§ 5.9.7), since a bare `CR`
+is always a line terminator (§ 3.2) and can only enter a String's
+logical content through the `\r` escape itself.
 
 Multi-line scalars and multi-line strings have no escape processing
 at all — the lexical layout makes escape unnecessary in those
@@ -2342,7 +2356,7 @@ The conformance suite tests both directions: input variety via
   that fixture as written.
 - **Changed:** § 8.2 (with § 5.9.5) — the writer-conforming
   byte-exact requirement gets the mirror-image numeric-domain
-  caveat to § 8.1's: exactly on the boundary-probing fixtures § 8.1
+  caveat to § 8.1's: exactly on the leaves `boundary-fixtures.json`
   names, a wider-domain implementation's parsed Value may
   legitimately differ, and its output MAY differ from the fixture's
   fixed `canonical.ktav`, provided that output is the correct
