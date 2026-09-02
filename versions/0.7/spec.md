@@ -101,8 +101,9 @@ A document MAY have a final line without a trailing terminator.
 
 A `CR` byte never appears as a content byte at parse time: it is
 always a terminator (alone or paired with a following `LF`). A
-String value can carry a `CR` byte only via the `\r` escape sequence
-inside an inline scalar (§ 3.7, § 5.8); such a Value is not
+String value can carry a `CR` byte via the `\r` escape sequence, or
+via the generic `\uXXXX` escape naming code point 000D, inside an
+inline scalar (§ 3.7, § 3.7.1, § 5.8); such a Value is not
 representable in canonical form (§ 5.9.7).
 
 Inside an inline compound (§ 5.8), the parser MUST NOT cross a line
@@ -1220,8 +1221,9 @@ Representability is deliberately narrower than parseability.
 Parsing never yields a scalar root (§ 5.0.1) or an empty pair name
 (§ 4, § 6.5), and no literal grammar yields a non-finite Float
 (§ 3.6) — but it can yield a String that § 5.9.7 excludes, since a
-`CR` byte enters a String through an inline-compound `\r` escape
-(§ 3.7). Such a document is accepted by a parser-conforming
+`CR` byte enters a String through an inline-compound `\r` escape or
+the generic `\uXXXX` escape naming code point 000D (§ 3.7, § 3.7.1).
+Such a document is accepted by a parser-conforming
 implementation, while serialising the resulting Value MUST fail —
 which is why non-representable Values sit outside the round-trip
 identity of § 8.3.
@@ -1494,8 +1496,9 @@ Let *body* be the byte sequence of a String Value.
   closer `))` is emitted on its own line at the current indent.
 - **Contains a `CR` byte (`0x0D`):** the Value is **not
   representable** in canonical form. A `CR` byte in a String can
-  only be produced through the `\r` escape inside an inline
-  compound (§ 3.7), and canonical form never emits inline
+  only be produced through the `\r` escape or the generic `\uXXXX`
+  escape naming code point 000D, inside an inline compound
+  (§ 3.7, § 3.7.1), and canonical form never emits inline
   compounds for non-empty scalars. A writer-conforming
   implementation MUST reject such a Value with an error rather
   than serialise it; it is outside the scope of the round-trip
@@ -2211,8 +2214,9 @@ each one when the multi-line form preserves the byte exactly and
 `\uXXXX` covers the inline case generically. A raw `CR` byte is a
 separate case, not covered by either mechanism: it is never
 representable as String content at all (§ 5.9.7), since a bare `CR`
-is always a line terminator (§ 3.2) and can only enter a String's
-logical content through the `\r` escape itself.
+is always a line terminator (§ 3.2) and can enter a String's logical
+content only through the `\r` escape or the generic `\uXXXX` escape
+naming code point 000D.
 
 Multi-line scalars and multi-line strings have no escape processing
 at all — the lexical layout makes escape unnecessary in those
