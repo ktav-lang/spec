@@ -1,0 +1,1 @@
+{"expected_error": "EmptyKey", "note": "An empty quoted segment (opening delimiter immediately followed by the closing delimiter, no content) is EmptyKey (Sec 5.3.3), same category as an empty bare key -- contrast `\" \": 1`, which is a valid one-space key since quoted content is never trimmed."}

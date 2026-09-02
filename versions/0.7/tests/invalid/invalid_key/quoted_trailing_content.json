@@ -1,0 +1,1 @@
+{"expected_error": "InvalidKey", "note": "After a quoted segment's closing delimiter, only whitespace may appear before the next dot or the pair separator (Sec 5.3.3). `b` immediately after the closing `\"` is neither, so this is InvalidKey, not a successfully parsed key `\"a\"b`."}

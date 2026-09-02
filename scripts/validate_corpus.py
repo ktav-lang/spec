@@ -68,7 +68,10 @@ ERROR_CATEGORIES_V0_6 = frozenset({
     "BadEscapeSequence",                            # 6.13
     "OrphanLineAfterTopLevelInline",                # 6.14
 })
-ERROR_CATEGORIES_V0_7 = ERROR_CATEGORIES_V0_6 | {"InvalidUtf8"}  # 6.15
+ERROR_CATEGORIES_V0_7 = ERROR_CATEGORIES_V0_6 | {
+    "InvalidUtf8",          # 6.15
+    "UnterminatedQuotedKey",  # 6.16
+}
 ERROR_CATEGORIES_BY_VERSION = {"0.6": ERROR_CATEGORIES_V0_6, "0.7": ERROR_CATEGORIES_V0_7}
 DEFAULT_ERROR_CATEGORIES = ERROR_CATEGORIES_V0_7  # == union of all versions (0.6 is a subset)
 
