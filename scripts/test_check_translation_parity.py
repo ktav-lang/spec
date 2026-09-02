@@ -175,6 +175,42 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertNotIn("Sec 9.9", out)
         self.assertEqual(code, 0, out)
 
+    # -- dropped plain paragraph (no keyword, no fence) --------------------
+
+    def test_dropped_plain_paragraph_fails(self):
+        en = self.write("spec.md", EN_DOC)
+        ru_broken = RU_DOC_OK.replace("Немного вводного текста.\n\n", "")
+        ru = self.write("spec.ru.md", ru_broken)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 1", out)
+        self.assertIn("paragraph count mismatch (EN=1, translation=0)", out)
+
+    # -- translation-only section -------------------------------------------
+
+    def test_translation_only_section_fails(self):
+        en = self.write("spec.md", EN_DOC)
+        ru_broken = RU_DOC_OK + "### 9.9 Лишний раздел\n\nНовый текст с MUST здесь.\n"
+        ru = self.write("spec.ru.md", ru_broken)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 9.9", out)
+        self.assertIn("translation-only section", out)
+
+    # -- duplicate section number -------------------------------------------
+
+    def test_duplicate_section_number_fails(self):
+        en = self.write("spec.md", EN_DOC)
+        ru_broken = RU_DOC_OK + "### 2.2 Дубликат\n\nЗначение MUST NOT быть пустым.\n"
+        ru = self.write("spec.ru.md", ru_broken)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 2.2", out)
+        self.assertIn("duplicate section number", out)
+
 
 if __name__ == "__main__":
     unittest.main()

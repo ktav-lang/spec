@@ -27,3 +27,9 @@ jobs:
 
       - name: Run validator unit tests
         run: python scripts/test_validate_corpus.py
+
+      - name: Check EN/RU/ZH translation parity
+        run: python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md
+
+      - name: Run translation parity checker unit tests
+        run: python scripts/test_check_translation_parity.py
