@@ -67,23 +67,39 @@ class Results:
         self.counts[category] = kwargs
 
 
+def is_deliberately_invalid_utf8(rpath):
+    """True for the one fixture class allowed to fail the UTF-8 check: a
+    .ktav input under invalid/invalid_utf8/ whose whole point is to be
+    invalid UTF-8 (Sec 6.15). Its sibling .json is NOT exempt."""
+    parts = rpath.split("/")
+    return (len(parts) >= 2 and parts[0] == "invalid" and parts[1] == "invalid_utf8"
+            and rpath.endswith(".ktav"))
+
+
 def check_utf8_json(tests_dir, results):
-    """Check 1: strict UTF-8 decode for every file; json.loads for every .json."""
+    """Check 1: strict UTF-8 decode for every file; json.loads for every .json.
+    Exception: invalid/invalid_utf8/*.ktav is deliberately not valid UTF-8
+    (see is_deliberately_invalid_utf8)."""
     category = "UTF-8/JSON validity"
     n_files = 0
     n_json = 0
+    n_exempt = 0
     parsed = {}  # relpath -> parsed object (or None on failure)
     for root, _dirs, files in os.walk(tests_dir):
         for fname in files:
             path = os.path.join(root, fname)
             n_files += 1
+            rpath = rel(path, tests_dir)
             try:
                 with open(path, "rb") as f:
                     raw = f.read()
                 text = raw.decode("utf-8", errors="strict")
             except UnicodeDecodeError as e:
+                if is_deliberately_invalid_utf8(rpath):
+                    n_exempt += 1
+                    continue
                 results.fail(category, "%s: invalid UTF-8 at byte offset %d: %s"
-                             % (rel(path, tests_dir), e.start, e.reason))
+                             % (rpath, e.start, e.reason))
                 continue
             except OSError as e:
                 results.fail(category, "%s: unreadable: %s" % (rel(path, tests_dir), e))
@@ -96,7 +112,8 @@ def check_utf8_json(tests_dir, results):
                     results.fail(category, "%s: invalid JSON: %s"
                                  % (rel(path, tests_dir), e))
                     parsed[rel(path, tests_dir)] = None
-    results.set_count(category, n_files=n_files, n_json=n_json, parsed=parsed)
+    results.set_count(category, n_files=n_files, n_json=n_json, n_exempt=n_exempt,
+                       parsed=parsed)
     return parsed
 
 
@@ -406,8 +423,10 @@ def main(argv):
 
     def detail(category, c):
         if category == "UTF-8/JSON validity":
-            return "%d files scanned, %d .json parsed" % (c.get("n_files", 0),
-                                                          c.get("n_json", 0))
+            n_exempt = c.get("n_exempt", 0)
+            suffix = (", %d invalid_utf8/ fixture(s) exempt" % n_exempt) if n_exempt else ""
+            return "%d files scanned, %d .json parsed%s" % (c.get("n_files", 0),
+                                                          c.get("n_json", 0), suffix)
         if category == "valid/ triples":
             return "%d fixtures complete" % c.get("n_fixtures", 0)
         if category == "invalid/ pairs":

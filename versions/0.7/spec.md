@@ -80,7 +80,8 @@ ordinary English.
 ### 3.1 Character Set
 
 A Ktav document is a sequence of Unicode code points encoded as UTF-8.
-Implementations MUST reject documents that are not valid UTF-8.
+Implementations MUST reject documents that are not valid UTF-8, with
+an `InvalidUtf8` error (§ 6.15).
 
 ### 3.2 Lines
 
@@ -1787,6 +1788,17 @@ Allowing further content would either silently extend the root
 retroactively (forbidden by § 5.0.1). The error gives a precise
 explanation for documents that mistakenly continue past the root.
 
+### 6.15 Invalid UTF-8
+
+A document whose raw bytes are not valid UTF-8 (§ 3.1, § 9.3) is an
+`InvalidUtf8` error. This check happens before any line-oriented or
+grammar-level processing — a document that fails it MUST NOT also be
+diagnosed with any other category in this section, since none of the
+byte-oriented rules those categories depend on (line terminators,
+`<key-char>`, escape sequences, ...) are well-defined over a byte
+sequence that isn't valid UTF-8 to begin with. The error span SHOULD
+point at the byte offset of the first invalid sequence.
+
 ## 7. Examples
 
 ### 7.1 Minimal
@@ -2075,8 +2087,8 @@ responsible for choosing how to handle the textual form.
 ### 9.3 Encoding
 
 Input MUST be valid UTF-8. Implementations MUST reject malformed
-UTF-8 sequences with an explicit error rather than silently
-substituting replacement characters.
+UTF-8 sequences with an explicit `InvalidUtf8` error (§ 6.15) rather
+than silently substituting replacement characters.
 
 ## 10. Rationale (Non-normative)
 
