@@ -1085,7 +1085,23 @@ content quoted once.
   the quoted key is ordinary content, not the inline object's closing
   brace, because it is read while still inside the `<dq-segment>`
   before the key-position scan ever reaches the position where an
-  inline-object-closing `}` would be recognised.
+  inline-object-closing `}` would be recognised. This is the same
+  opacity the separator/dot scan already has (§ 4) applied to the
+  bracket-balance test every "is this line a **closed** inline
+  compound, or **unterminated**" determination already performs — the
+  first-content-line shape test of § 5.0.1 rules 2–3, and the general
+  balanced-content check behind `UnterminatedInlineCompound` /
+  `MalformedInlineCompound` (§ 5.8.5, § 6.11, § 6.12) — all of which
+  already treat an escaped bracket (`\{`, `\}`, `\[`, `\]`) as
+  non-structural; a bracket inside a quoted key segment is opaque to
+  bracket-balance counting for the identical reason an escaped one is:
+  it is read as ordinary content, before the scan reaches a position
+  where it could be recognised as a structural delimiter at all. A
+  top-level `{"a}b": 1, c: 2}` is therefore still `§ 5.0.1` rule 2's
+  closed inline object (the `}` inside the quoted key does not
+  prematurely close it), and its canonical form is the fully expanded
+  root-level pair list of § 5.9.3, exactly as any other top-level
+  inline object's would be.
 
 ### 5.4 Array-Item Lines
 
@@ -1805,19 +1821,23 @@ dotted form).
 A key segment is emitted in one of two forms — **bare** or
 **quoted** (§ 5.3.3) — decided by one rule: emit **bare** (the
 re-escape recipe below) unless (a) bare form would require escaping
-at least one **structural** byte — `.`, `:`, `,`, `{`, `}`, `[`, or
-`]` (bullet 1 below, excluding `\`) — or the `##`-prefix escape
-(bullet 4 below) or an edge-whitespace escape (bullet 3 below); or
-(b) the segment's decoded content begins with `"`, `'`, or `` ` ``
-(a leading quote character in bare form would be misread as opening
-a `<quoted-segment>` on re-parse, so it always forces quoted form
-even though nothing else in the segment needs escaping). A need to
-escape a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
-`\\`/`\n`/`\r` entries and bullet 2 below — does NOT by itself trigger
-quoted form: a `<quoted-segment>` excludes and escapes each of these
-exactly as a `<bare-segment>` does (§ 5.3.3), so quoting buys nothing
-for them, and bare remains the simpler, equally-escaped choice.
-Otherwise (quoted form selected) the delimiter is `"` unconditionally
+at least one byte that a `<quoted-segment>` (§ 4) admits as literal,
+unescaped content — the structural bytes `.`, `:`, `,`, `{`, `}`,
+`[`, `]` (bullet 1 below, excluding `\`), or `(` / `)` (part of
+bullet 2 below, since neither opens a multi-line string at a
+key-segment position) — or the `##`-prefix escape (bullet 4 below)
+or an edge-whitespace escape (bullet 3 below); or (b) the segment's
+decoded content begins with `"`, `'`, or `` ` `` (a leading quote
+character in bare form would be misread as opening a
+`<quoted-segment>` on re-parse, so it always forces quoted form even
+though nothing else in the segment needs escaping). A need to escape
+a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
+`\\`/`\n`/`\r` entries and the control-byte/DEL part of bullet 2 —
+does NOT by itself trigger quoted form: a `<quoted-segment>` excludes
+and escapes each of these exactly as a `<bare-segment>` does
+(§ 4's `<dq-char>` / `<sq-char>` / `<bt-char>`, § 5.3.3), so quoting
+buys nothing for them, and bare remains the simpler, equally-escaped
+choice. Otherwise (quoted form selected) the delimiter is `"` unconditionally
 — the choice of delimiter is fixed, not content-dependent, so the
 writer never needs to scan the content against all three candidates
 first. Either form parses back to the same key (§ 5.3.3), but which
@@ -1881,8 +1901,8 @@ content between two `"` characters, escaping only:
   which STRUCTURAL bytes need escaping, not the format's separate
   prohibition on raw invisible bytes in a key (§ 5.3.3).
 
-`.`, `:`, `,`, `{`, `}`, `[`, `]`, `'`, and `` ` `` need no escaping
-in quoted form, and neither does edge whitespace: a
+`.`, `:`, `,`, `{`, `}`, `[`, `]`, `(`, `)`, `'`, and `` ` `` need no
+escaping in quoted form, and neither does edge whitespace: a
 `<quoted-segment>`'s content is never trimmed on re-parse (§ 5.3.3),
 so bare form's bullet above — escaping edge whitespace to survive
 re-parse trimming — has nothing to guard against here. A leading
@@ -2096,7 +2116,15 @@ inline-pair position (§ 5.8.2). This diagnosis takes precedence over
 the generic `MissingSeparator` (§ 6.6) that a colon-free line would
 otherwise raise, mirroring how an unterminated `[` / `{` already
 takes precedence over a generic pair-candidate read at § 5.0.1
-rule 6. This never applies to the document's first content line
+rule 6. It likewise takes precedence over `UnterminatedInlineCompound`
+(§ 6.11) when both would otherwise apply to the same inline compound:
+an unclosed quoted key at an inline-pair position (e.g. `{"a: 1}`)
+necessarily swallows the rest of the line — including whatever would
+have been the compound's own closing `}` / `]` — so the compound
+being unterminated is a *consequence* of the unclosed quote, not an
+independent defect; naming the quote is the more specific and more
+actionable diagnosis of the two. This never applies to the document's
+first content line
 itself: § 5.0.1 rule 6 uses this same separator-scanning rule for its
 own phase-1 shape test, so on that UNDECIDED first line the same
 underlying fact — no separator found — is not an error at all: it is
@@ -2739,13 +2767,14 @@ shorter output (§ 10.4).
   point of a segment, exactly where it was already unrestricted
   literal content before). The canonical writer (§ 5.9.10) now
   prefers quoted form (delimiter `"`) over bare-with-escape whenever
-  escaping a structural byte, a `##`-prefix, or edge whitespace would
-  otherwise be needed (escaping only a backslash, LF, CR, a control
-  byte, or DEL does NOT switch the form, since quoting does not
-  remove that escape) — this changes the canonical bytes of every key
-  previously requiring `\.` / `\:` / a bracket / comma escape, or a
-  `##`-prefix escape (e.g. `a\.b: 1` now canonicalises to `"a.b": 1`,
-  not `a\.b: 1`); existing `valid/key_escaping/*.canonical.ktav`
+  escaping a structural byte (`.` `:` `,` `{` `}` `[` `]`), `(` / `)`,
+  a `##`-prefix, or edge whitespace would otherwise be needed
+  (escaping only a backslash, LF, CR, a control byte, or DEL does NOT
+  switch the form, since quoting does not remove that escape) — this
+  changes the canonical bytes of every key previously requiring
+  `\.` / `\:` / a bracket / comma / paren escape, or a `##`-prefix
+  escape (e.g. `a\.b: 1` now canonicalises to `"a.b": 1`, not
+  `a\.b: 1`); existing `valid/key_escaping/*.canonical.ktav`
   fixtures update accordingly (tracked separately from this text
   change). New error category
   `UnterminatedQuotedKey` (§ 6.16), reported when a quote opens a key
