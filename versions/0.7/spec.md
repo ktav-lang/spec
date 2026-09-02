@@ -751,7 +751,20 @@ as if they were raw, unescaped source: § 3.7's provenance rule (an
 escape's output is never re-examined as structural) applies here too,
 so a body like `\{value\}` classifies by the literal characters
 `{value}` under rule 15 (String), not by re-entering these rules at
-the decoded `{`. Two parser-conforming implementations that support
+the decoded `{`. More generally: an inline scalar body containing at
+least one recognised escape sequence (§ 3.7) is always classified as
+String (rule 15), regardless of what its decoded bytes would otherwise
+resemble — a body like `\u0031` (decoding to the single digit `1`) or
+`\u0074rue` (decoding to `true`) is `String("1")` / `String("true")`,
+never `Integer` or `Bool`. This closes an ambiguity § 3.7's provenance
+rule alone left open: that rule's enumeration of "structural" bytes
+(the delimiters `.`, `:`, `,`, `{`, `}`, `[`, `]`) does not by itself
+say whether an *escaped* digit, letter, or parenthesis is likewise
+exempt from rules 10–14's number/keyword/paren-shortcut detection —
+this sentence makes that exemption explicit and total: the presence of
+any recognised escape sequence anywhere in the body is sufficient to
+force String, full stop.
+Two parser-conforming implementations that support
 the same numeric domain MUST produce the same Value kind for the same
 body. This is a general rule about every document a parser might see,
 not just about the fixtures in § 8's conformance corpus. Where two
@@ -945,9 +958,14 @@ a line whose trimmed content is exactly `)` (for stripped) or `))`
   editor's "trim trailing whitespace on save" silently mutate string
   content with no visible signal. As of 0.7, the stripped form's name
   matches its behaviour on both edges of each line.
-- **Verbatim form (`(( … ))`)**: the parser joins the content lines
-  byte-for-byte with single `\n` bytes; no whitespace stripping —
-  leading or trailing — is performed on any line.
+- **Verbatim form (`(( … ))`)**: every line between the opener and the
+  closer — including a blank line and a whitespace-only line — is a
+  content line. The parser joins them byte-for-byte with single `\n`
+  bytes; no whitespace stripping — leading or trailing — is performed on
+  any line, and no line is dropped as having "no effect" the way an
+  ordinary blank line elsewhere in the document does (§ 5.1 rule 1):
+  inside a verbatim block, a blank line contributes an empty string to
+  the joined result, exactly as it already does for the stripped form.
 
 A multi-line string body MUST NOT cross another compound boundary:
 the opener line and closer line are unambiguously paired by the
