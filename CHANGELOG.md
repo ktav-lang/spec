@@ -280,15 +280,6 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   the old blanket `MUST`. The guarantee now holds unconditionally only
   outside the closed set of fixtures named in the new
   `versions/0.7/tests/valid/boundary-fixtures.json` manifest.
-- **New `versions/0.7/tests/valid/boundary-fixtures.json` manifest**
-  gives the numeric-domain divergence § 8.1 / § 8.2 permit a
-  machine-readable contract: exactly the fixture paths listed as its
-  keys may diverge from their `.json` / `.canonical.ktav` oracle, and
-  only to the `wider_domain_kind` / `wider_domain_value` /
-  `wider_domain_canonical` the entry names — not to an arbitrary
-  "wider-domain-correct" value a runner would have to re-derive
-  itself. § 8.1 and § 8.2 now reference this manifest instead of
-  describing the exception in prose.
 - **§ 5 — the binary64 floor now specifies conversion semantics, not
   just range and precision.** Converting a decimal float literal to
   the minimum binary64 representation MUST use IEEE 754
@@ -325,24 +316,6 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   domain-dependent divergence in the *format*, which is false — an
   arbitrary out-of-domain body (e.g. `9223372036854775809`) crosses the
   same boundary without being a named fixture.
-- **The boundary-fixture manifest moved and simplified: `versions/0.7/tests/valid/boundary-fixtures.json`
-  → `versions/0.7/tests/boundary-fixtures.json`, and it is now a flat
-  list of fixture paths, not a per-entry `wider_domain_kind` /
-  `wider_domain_value` / `wider_domain_canonical` record.** The old
-  richer schema had two problems: it described a bare scalar
-  replacement with no way to say *where* in a fixture's full Object
-  oracle that scalar belongs (accidental, not schema-guaranteed, that
-  every current boundary fixture has exactly one field), and it
-  asserted exactly one "wider" outcome where § 5's open-ended "MAY
-  support a wider representation" allows Float profiles (e.g. a
-  higher-but-finite-precision decimal with a wider exponent range)
-  that round differently from both the minimum-domain output and an
-  exact-arbitrary-precision one. § 8.1 / § 8.2 now state plainly that
-  a wider-domain implementation is *exempt* from byte-matching a
-  listed fixture, not bound to one specific alternative this corpus
-  pins — its correctness there is governed by § 5 / § 5.9 directly.
-  Moving the file out of `valid/` also means a runner enumerating
-  `valid/**/*.json` as fixtures can no longer mistake it for one.
 - **`numbers/float/decimal_rounding_tie.canonical.ktav` corrected from
   decimal to scientific notation** (`9007199254740992.0` →
   `9.007199254740992e15`): § 5.9.8 requires scientific notation for
@@ -371,25 +344,31 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   from before the fixture existed) and that
   `unrepresentable/non_finite_float.json` had been added, in the same
   "Unreleased" section describing one coherent draft state.
-- **`boundary-fixtures.json` is now leaf-level, not fixture-level, and
-  gained two previously-omitted entries.** The flat fixture-path list
-  had two problems: it omitted two fixtures that already existed and
-  are genuinely domain-dependent (`numbers/integer/big_overflow_to_string`,
-  whose `big`/`bigger` fields exceed i64; `numbers/float/min_positive_subnormal`,
-  whose exact input value an arbitrary-precision decimal domain keeps
-  in full, where binary64 shortens it to `5e-324`) — leaving a
-  conforming BigInt or exact-decimal implementation unable to pass
-  § 8.1 / § 8.2 on them; and it exempted a whole fixture even when only
-  some of its fields were domain-dependent (`big_overflow_to_string`'s
-  `tiny` field is an ordinary `Integer(1)` in every domain — a
-  fixture-level exemption would have stopped checking it too). Each
-  entry now names a JSON Pointer `path` to one specific leaf plus a
+- **`boundary-fixtures.json` (`versions/0.7/tests/boundary-fixtures.json`,
+  outside `valid/` so a runner enumerating `valid/**/*.json` never
+  mistakes it for a fixture) gives the numeric-domain divergence
+  § 8.1 / § 8.2 permit a machine-readable contract, letting a
+  wider-numeric-domain implementation diverge from certain fixture
+  oracles without failing conformance.** The manifest is leaf-level,
+  not fixture-level: each entry names a `fixture`, a JSON Pointer
+  `path` (RFC 6901) to one specific leaf inside it, and a
   `boundary_class` (`integer_range` / `float_range` /
   `float_underflow` / `float_precision`), so an implementation's
   exemption is scoped to the exact leaf and axis it actually supports
   a wider domain for — an implementation with a wider Integer domain
   but plain binary64 Float is exempt on `integer_range` leaves only,
-  and vice versa. § 8.1 / § 8.2 rewritten to match.
+  and vice versa. Leaf-level scoping means a fixture mixing
+  boundary-dependent and ordinary fields is only partly exempt:
+  `big_overflow_to_string`'s `big`/`bigger` fields (exceeding i64) are
+  listed, but its `tiny` field (an ordinary `Integer(1)` in every
+  domain) stays checked. The manifest also lists
+  `numbers/float/min_positive_subnormal`'s leaf, whose exact input
+  value an arbitrary-precision decimal domain keeps in full, where
+  binary64 shortens it to `5e-324`. A wider-domain implementation is
+  exempt from byte-matching a listed leaf, not bound to one specific
+  alternative this corpus pins — its correctness there is governed by
+  § 5 / § 5.9 directly. § 8.1 / § 8.2 reference this manifest, at the
+  leaf level, instead of describing the exception in prose.
 - **README — "passes the suite" is now stated as necessary but not
   sufficient for conformance.** With `boundary-fixtures.json` leaves
   now explicitly unverified by the shared corpus for a wider-domain

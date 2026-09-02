@@ -218,13 +218,6 @@
   可以同时遵守各自的域规则却又违反旧的笼统 `MUST`。现在该保证
   只在新清单 `versions/0.7/tests/valid/boundary-fixtures.json`
   所列封闭 fixture 集合之外无条件成立。
-- **新增 `versions/0.7/tests/valid/boundary-fixtures.json` 清单**
-  为 § 8.1 / § 8.2 所许可的数值域偏差提供了可机读契约:恰好只有
-  其键所列的 fixture 路径可以偏离其 `.json` / `.canonical.ktav`
-  oracle,且只能偏离到该条目所指名的 `wider_domain_kind` /
-  `wider_domain_value` / `wider_domain_canonical` —— 而不是
-  runner 需要自行推导的任意「更宽域下正确」的 Value。§ 8.1 与
-  § 8.2 现在引用此清单,取代以文字描述例外。
 - **§ 5 —— binary64 下限现在规定转换语义,而不仅是范围与精度。**
   把 decimal 的 Float 字面量转换为最小 binary64 表示 MUST 采用
   IEEE 754 的 `roundTiesToEven`,且最小表示 MUST 支持次正规
@@ -254,20 +247,6 @@
   语料库的 fixture 清单就是*格式*中域相关分歧的完整集合,这是
   错误的 —— 任意越域的体(如 `9223372036854775809`)跨越同一边界却
   并非具名 fixture。
-- **边界 fixture 清单移动并简化:`versions/0.7/tests/valid/boundary-fixtures.json`
-  → `versions/0.7/tests/boundary-fixtures.json`,且现在是 fixture
-  路径的扁平列表,不再是每条目含 `wider_domain_kind` /
-  `wider_domain_value` / `wider_domain_canonical` 的记录。** 旧的
-  更丰富 schema 有两个问题:它描述的是一次裸标量替换,却无法说明该
-  标量*位于* fixture 完整 Object oracle 的何处(每个现存边界 fixture
-  恰好只有一个字段纯属偶然,而非 schema 所保证),并且它断言了恰好
-  一种「更宽」结果,而 § 5 开放式的「MAY 支持更宽表示」允许的 Float
-  profile(如指数范围更宽的、精度更高但仍有限的 decimal)与最小域
-  输出和精确任意精度输出二者都可能舍入不同。§ 8.1 / § 8.2 现在明确
-  陈述:更宽域的实现*豁免*于逐字节匹配所列 fixture,不受该语料库
-  固定的某个特定替代方案约束 —— 其在该处的正确性直接由 § 5 / § 5.9
-  管辖。把该文件移出 `valid/` 还意味着,以 `valid/**/*.json` 枚举
-  fixture 的 runner 不再可能把它误认为 fixture。
 - **`numbers/float/decimal_rounding_tie.canonical.ktav` 从 decimal
   形式修正为科学形式**(`9007199254740992.0` →
   `9.007199254740992e15`):§ 5.9.8 要求任何 `abs >= 1e7` 的非零
@@ -290,21 +269,25 @@
   `NonFiniteFloat` 没有 fixture(过时信息,早于该 fixture 出现),
   又说 `unrepresentable/non_finite_float.json` 已被添加 —— 二者都
   出现在描述同一草稿状态的同一「未发布」节中。
-- **`boundary-fixtures.json` 现在是叶级而非 fixture 级,并补上了两个
-  此前遗漏的条目。** 扁平的边界 fixture 清单有两个问题:它遗漏了两个
-  已经存在且确实依赖数值域的 fixture(`numbers/integer/big_overflow_to_string`,
-  其 `big`/`bigger` 字段超出 i64;`numbers/float/min_positive_subnormal`,
-  任意精度 decimal 域会完整保留其精确输入值,而 binary64 会将其缩短为
-  `5e-324`)——使得一个合规的 BigInt 或精确 decimal 实现无法在它们上
-  通过 § 8.1 / § 8.2;而且即便只有部分字段依赖数值域,它也会豁免整个
-  fixture(`big_overflow_to_string` 的 `tiny` 字段在每个域中都是普通的
-  `Integer(1)` —— fixture 级的豁免会连它也停止检查)。现在每个条目
-  指向某个具体叶的 JSON 指针 `path`,外加一个 `boundary_class`
-  (`integer_range` / `float_range` / `float_underflow` /
-  `float_precision`),因此实现的豁免被限定在它真正支持更宽域的那个
-  确切叶与轴上 —— 一个拥有更宽 Integer 域但只有普通 binary64 Float
-  的实现仅在 `integer_range` 叶上豁免,反之亦然。§ 8.1 / § 8.2 已
-  相应重写。
+- **`boundary-fixtures.json`(`versions/0.7/tests/boundary-fixtures.json`,
+  位于 `valid/` 之外,使以 `valid/**/*.json` 枚举 fixture 的 runner
+  永远不会把它误认为 fixture)为 § 8.1 / § 8.2 所许可的数值域偏差
+  提供了可机读契约,使拥有更宽数值域的实现可以偏离某些 fixture
+  oracle 而不失去 conformance。** 该清单是叶级而非 fixture 级:每个
+  条目指名一个 `fixture`、一个指向其内部具体叶的 JSON 指针 `path`
+  (RFC 6901),以及一个 `boundary_class`(`integer_range` /
+  `float_range` / `float_underflow` / `float_precision`),因此实现的
+  豁免被限定在它真正支持更宽域的那个确切叶与轴上 —— 一个拥有更宽
+  Integer 域但只有普通 binary64 Float 的实现仅在 `integer_range` 叶上
+  豁免,反之亦然。叶级豁免意味着,若某 fixture 同时混有依赖数值域与
+  普通字段,也只有部分被豁免:`big_overflow_to_string` 的 `big`/
+  `bigger` 字段(超出 i64)被列入清单,而其 `tiny` 字段(在每个域中
+  都是普通的 `Integer(1)`)仍需被检查。该清单还列出了
+  `numbers/float/min_positive_subnormal` 的叶 —— 任意精度 decimal 域
+  会完整保留其精确输入值,而 binary64 会将其缩短为 `5e-324`。更宽域
+  的实现豁免于逐字节匹配所列的叶,不受该语料库固定的某个特定替代
+  方案约束 —— 其在该处的正确性直接由 § 5 / § 5.9 管辖。§ 8.1 / § 8.2
+  在叶级上引用此清单,取代以文字描述例外。
 - **README —— 「通过测试套件」现在被表述为合规的必要条件而非充分
   条件。** 随着 `boundary-fixtures.json` 的叶现在被显式声明为由共享
   语料不对更宽域实现进行验证,README 中不加限定的「实现通过全部测试
