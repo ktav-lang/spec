@@ -115,7 +115,15 @@ Purpose:
     numbered-section heading, EN being canonical, the run aborts with a
     fatal error (exit 1) before any translation is read or compared —
     a duplicated heading in the normative file must never silently pass
-    by being compared against only one of the two occurrences.
+    by being compared against only one of the two occurrences. The same
+    fatal-before-comparing treatment applies if the EN file itself ends
+    while still inside an unterminated ``` fence (unbalanced fence
+    delimiters): every section range and content count derived from a
+    parse with a dangling fence is untrustworthy, since the whole tail of
+    the file after the broken fence is silently mis-treated as excluded
+    (code) content. A translation ending inside an unterminated fence is
+    not fatal to the whole run (other translations are still checked) but
+    is reported as a per-translation [FAIL] that fails OVERALL.
 
     A mismatch in any metric for a section that exists in both files is a
     strong signal that normative content was dropped (or, more rarely,
@@ -184,7 +192,10 @@ VERSION_LINE_RE = re.compile(
     r'^\s*\*\*(?:Version|Версия|版本):\*\*\s*(\S.*?)\s*$')
 DATE_LINE_RE = re.compile(
     r'^\s*\*\*(?:Date|Дата|日期):\*\*\s*(\S.*?)\s*$')
-ISO_DATE_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
+# Digit-bounded on both sides so "2026-09-020" (an extra trailing digit)
+# is not mistaken for the valid date "2026-09-02" followed by an ignored
+# stray digit — plain '\d{4}-\d{2}-\d{2}' would substring-match it.
+ISO_DATE_RE = re.compile(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)')
 
 # Order matters for readability only: MUST NOT / SHOULD NOT use their own
 # literal patterns, while MUST / SHOULD use a negative lookahead so the
@@ -219,7 +230,8 @@ def heading_level(line):
 def parse_file(lines):
     """Single fence-aware pass over a file's lines.
 
-    Returns (sections, fence_opens, occurrences, levels, excluded, named):
+    Returns (sections, fence_opens, occurrences, levels, excluded, named,
+    unclosed_fence):
       sections: dict of section-number -> (start_idx, end_idx) text range,
         end_idx exclusive, keyed by the FIRST occurrence of that number.
       fence_opens: sorted list of line indices where a ``` fence OPENS
@@ -235,6 +247,13 @@ def parse_file(lines):
         heading (outside fences) that is NOT numbered and whose level is
         >= 2 (i.e. excluding the h1 document title); end_idx uses the
         same rule as numbered sections.
+      unclosed_fence: True if the file ends while still "in a fence"
+        (an odd number of ``` delimiter lines were seen). When True,
+        everything after the last real fence-open was silently treated
+        as excluded (code) content by this same pass, which corrupts the
+        paragraph/list/table/keyword counts for whatever section(s)
+        follow — callers MUST treat this as a fatal condition rather
+        than trusting section content counts derived from this parse.
 
     Lines matching a heading pattern while inside a fenced code block are
     not treated as headings (see module docstring).
@@ -287,7 +306,7 @@ def parse_file(lines):
                 end = h
                 break
         named[i] = (text, level, start, end)
-    return sections, fence_opens, occurrences, levels, excluded, named
+    return sections, fence_opens, occurrences, levels, excluded, named, in_fence
 
 
 def count_content(lines, start, end, excluded):
@@ -343,13 +362,31 @@ def extract_release_date(date_value):
     """Extract a release-status signal and, when present, the calendar
     date itself from a front-matter Date-line value.
 
-    Returns (status, date_or_none):
+    Returns (status, date_or_none, detail_or_none):
       status: "draft" if the value contains no YYYY-MM-DD-shaped
-        substring; "dated" if it contains one AND that substring is a
-        real calendar date; "invalid" if it contains a YYYY-MM-DD-shaped
-        substring that is NOT a real calendar date (e.g. "2026-13-45").
+        substring; "dated" if it contains EXACTLY ONE such substring and
+        that substring is a real calendar date; "invalid" if the value
+        contains a YYYY-MM-DD-shaped substring that is NOT a real
+        calendar date (e.g. "2026-13-45"), OR contains TWO OR MORE
+        date-shaped substrings at all (even if each is individually a
+        valid calendar date, and even if they are identical — a Date
+        line naming more than one date is itself a defect: either it
+        disagrees with itself about the release date, or it is a
+        copy-paste smell; either way "which one is authoritative" is not
+        a question this checker can answer, so it does not guess).
       date_or_none: the matched "YYYY-MM-DD" string when status is
         "dated", else None.
+      detail_or_none: a human-readable explanation of WHY status is
+        "invalid" (bad calendar date vs. wrong occurrence count), else
+        None. check_front_matter surfaces this verbatim in its [FAIL]
+        message so the two invalid cases are not confused with each
+        other.
+
+    A YYYY-MM-DD-shaped substring requires a non-digit (or start/end of
+    string) immediately before and after it, so "2026-09-020" (an extra
+    trailing digit) does NOT count as the valid date "2026-09-02" with a
+    silently-ignored stray digit tacked on — it counts as zero date-shaped
+    substrings ("draft"), same as if no date were present at all.
 
     The Date value is free prose that legitimately differs word-for-word
     across languages ("(unreleased — 0.7 draft ...)" vs
@@ -365,14 +402,18 @@ def extract_release_date(date_value):
     ("unreleased, planned 2026-10-01") reads as "dated" — but translations
     mirror the EN wording, so the signal (and, being copied, the date
     substring) still matches in all files together."""
-    m = ISO_DATE_RE.search(date_value)
-    if not m:
-        return "draft", None
+    matches = ISO_DATE_RE.findall(date_value)
+    if not matches:
+        return "draft", None, None
+    if len(matches) > 1:
+        return ("invalid", None,
+                "expected exactly one date-shaped occurrence, found %d: %s"
+                % (len(matches), ", ".join(matches)))
     try:
-        datetime.datetime.strptime(m.group(0), "%Y-%m-%d")
+        datetime.datetime.strptime(matches[0], "%Y-%m-%d")
     except ValueError:
-        return "invalid", None
-    return "dated", m.group(0)
+        return "invalid", None, "invalid calendar date ('%s')" % matches[0]
+    return "dated", matches[0], None
 
 
 def scan_front_matter(lines):
@@ -498,11 +539,11 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
               "value, found %d" % (en_path, len(scans[en_path][2])))
         n_fail += 1
     else:
-        en_status, en_date = extract_release_date(scans[en_path][2][0])
+        en_status, en_date, en_detail = extract_release_date(
+            scans[en_path][2][0])
         if en_status == "invalid":
-            print("[FAIL] %s: front matter: Date value contains an "
-                  "invalid calendar date ('%s')"
-                  % (en_path, scans[en_path][2][0]))
+            print("[FAIL] %s: front matter: Date value is invalid: %s"
+                  % (en_path, en_detail))
             n_fail += 1
     for path in translation_lines:
         t_dates = scans[path][2]
@@ -512,10 +553,10 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
                   "value, found %d" % (path, len(t_dates)))
             n_fail += 1
         elif en_status is not None:
-            t_status, t_date = extract_release_date(t_dates[0])
+            t_status, t_date, t_detail = extract_release_date(t_dates[0])
             if t_status == "invalid":
-                print("[FAIL] %s: front matter: Date value contains an "
-                      "invalid calendar date ('%s')" % (path, t_dates[0]))
+                print("[FAIL] %s: front matter: Date value is invalid: %s"
+                      % (path, t_detail))
                 n_fail += 1
             elif t_status != en_status:
                 print("[FAIL] %s: front matter: release-status mismatch "
@@ -560,13 +601,18 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
     as it goes; returns the count of sections (either direction) with any
     mismatch."""
     (t_sections, t_fence_opens, t_occurrences, t_levels,
-     t_excluded, t_named) = parse_file(t_lines)
+     t_excluded, t_named, t_unclosed_fence) = parse_file(t_lines)
     t_code_counts = count_code_blocks_per_section(t_sections, t_fence_opens)
     t_named_code_counts = count_code_blocks_per_section(
         {i: (start, end) for i, (_, _, start, end) in enumerate(t_named)},
         t_fence_opens)
 
     n_mismatch = 0
+    if t_unclosed_fence:
+        print("[FAIL] %s: unclosed fenced code block: file ends while "
+              "still inside a ``` block (unbalanced fence delimiters)"
+              % t_path)
+        n_mismatch += 1
     for num in en_numbers_sorted:
         en_start, en_end = en_sections[num]
         en_kw = count_keywords(en_lines, en_start, en_end, en_excluded)
@@ -712,7 +758,7 @@ def main(argv):
         return 2
 
     en_sections, en_fence_opens, en_occurrences, en_levels, en_excluded, \
-        en_named = parse_file(en_lines)
+        en_named, en_unclosed_fence = parse_file(en_lines)
     if not en_sections:
         print("error: no numbered sections (headings matching '#+ <number>') "
               "found in EN file %s" % args.en_path, file=sys.stderr)
@@ -726,6 +772,15 @@ def main(argv):
         print("error: EN file %s contains duplicate section number(s) %s; "
               "EN is canonical, so translations are not compared"
               % (args.en_path, ", ".join(dupes)), file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
+    if en_unclosed_fence:
+        print("[FAIL] %s: unclosed fenced code block: file ends while "
+              "still inside a ``` block (unbalanced fence delimiters)"
+              % args.en_path)
+        print("error: EN file %s ends inside an unterminated fenced code "
+              "block; EN is canonical, so translations are not compared"
+              % args.en_path, file=sys.stderr)
         print("OVERALL: FAIL")
         return 1
     en_code_counts = count_code_blocks_per_section(en_sections, en_fence_opens)
@@ -743,7 +798,7 @@ def main(argv):
             print("error: could not read translation file %s: %s" % (t_path, e),
                   file=sys.stderr)
             return 2
-        _, _, t_occ, _, _, _ = parse_file(translation_lines[t_path])
+        _, _, t_occ, _, _, _, _ = parse_file(translation_lines[t_path])
         t_occurrence_counts[t_path] = t_occ
 
     fm_failures = check_front_matter(args.en_path, en_lines,

@@ -438,6 +438,56 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("2026-13-40", out)
         self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
 
+    # -- front matter: Date line with two different valid dates -------------
+
+    def test_front_matter_two_dates_in_one_line_fails(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED.replace(
+            "**Дата:** 2026-09-02\n", "**Дата:** 2026-09-02 2027-01-01\n"))
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "expected exactly one date-shaped occurrence, found 2", out)
+        self.assertIn("2026-09-02", out)
+        self.assertIn("2027-01-01", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- front matter: Date line with a valid date plus an invalid one ------
+
+    def test_front_matter_valid_and_invalid_date_in_one_line_fails(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED.replace(
+            "**Дата:** 2026-09-02\n", "**Дата:** 2026-09-02 2026-13-40\n"))
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "expected exactly one date-shaped occurrence, found 2", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- front matter: an extra trailing digit is not a valid date ----------
+
+    def test_front_matter_date_extra_trailing_digit_not_accepted(self):
+        # "2026-09-020" must NOT be treated as the valid date "2026-09-02"
+        # with a silently-dropped stray digit; with digit-bounded matching
+        # it counts as no date at all, so the translation reads as "draft"
+        # while EN (a clean "2026-09-02") reads as "dated" -- a
+        # release-status mismatch, not a silent PASS.
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED.replace(
+            "**Дата:** 2026-09-02\n", "**Дата:** 2026-09-020\n"))
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("release-status mismatch", out)
+        self.assertIn("EN=dated", out)
+        self.assertIn("translation=draft", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
     # -- front matter: a bold paragraph with no colon/value is not a field --
 
     def test_front_matter_bold_prose_without_colon_fails(self):
@@ -495,6 +545,51 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("OVERALL: FAIL", out)
         self.assertIn("Sec 2.1", out)
         self.assertIn("MUST count mismatch (EN=1, translation=0)", out)
+
+    # -- unclosed fenced code block in a translation -------------------------
+
+    def test_unclosed_fence_in_translation_fails(self):
+        # Drop only the CLOSING ``` of Sec 2.1's existing code block; the
+        # rest of the file (including "### 2.2 ...") is then silently
+        # swallowed as fence content by parse_file, so Sec 2.2 also
+        # vanishes from RU -- but the checker must name the real defect
+        # (an unclosed fence), not just report a missing section.
+        en = self.write("spec.md", EN_DOC)
+        ru_broken = RU_DOC_OK.replace("example: 1\n```\n", "example: 1\n")
+        ru = self.write("spec.ru.md", ru_broken)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("spec.ru.md", out)
+        self.assertIn("unclosed fenced code block", out)
+
+    # -- unclosed fenced code block in the canonical EN file ------------------
+
+    def test_unclosed_fence_in_en_fails(self):
+        # Same mutation as above, applied to EN instead: this must be
+        # fatal BEFORE any translation is read or compared (mirroring the
+        # existing duplicate-section-in-EN fatal check), since every
+        # section range/content count derived from EN is untrustworthy
+        # once EN itself ends inside an unterminated fence.
+        en_broken = EN_DOC.replace("example: 1\n```\n", "example: 1\n")
+        en = self.write("spec.md", en_broken)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("spec.md", out)
+        self.assertIn("unclosed fenced code block", out)
+
+    # -- real spec files still balance their fences (protective, not gate) --
+
+    def test_real_files_fence_balance_unaffected_by_unclosed_check(self):
+        # Purely protective: a well-formed doc with a properly closed
+        # fence must never trip the new unclosed-fence check.
+        en = self.write("spec.md", EN_DOC)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("unclosed fenced code block", out)
 
     # -- stdout encoding safety ----------------------------------------------
 
