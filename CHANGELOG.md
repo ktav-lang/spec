@@ -35,6 +35,14 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   core, which already recognised the full set; breaking only for an
   implementation that took the old `MAY` at face value and stuck to
   ASCII space/tab.
+- **§ 3.1 — leading-BOM handling is now deterministic.** A
+  parser-conforming implementation MUST skip exactly one leading
+  byte-order mark (U+FEFF) if it is the very first code point of the
+  document, before any other byte; the canonical writer (§ 5.9)
+  MUST NOT emit a leading byte-order mark. A U+FEFF anywhere else in
+  the document is ordinary content — § 3.3 does not classify it as
+  whitespace. 0.6.4 was silent on the byte-order mark; an earlier
+  draft's non-deterministic `MAY skip` wording is gone.
 - **§ 4 — key-segment trimming widens from ASCII-only to the same
   25-code-point set**, resolving a standing contradiction between § 3.3
   (which already permitted Unicode whitespace) and § 4 (which mandated
@@ -71,6 +79,13 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 - **§ 6.13 `BadEscapeSequence`** — extended to cover malformed `\uXXXX`
   forms (fewer than four hex digits) and lone surrogates, alongside the
   existing unrecognised-`\X` case.
+- **§ 6.15 `InvalidUtf8` (new error category)** — documents that are
+  not valid UTF-8 (§ 3.1, § 9.3) now have an explicit § 6 category
+  name. § 3.1 already required rejecting them; this closes the gap
+  where § 6 had no matching category for that rejection. The check
+  happens before any line-oriented or grammar-level processing, and
+  the error span SHOULD point at the byte offset of the first invalid
+  sequence.
 - **§ 5.9.10's key re-escape rule** now enumerates every code point
   `<key-char>` excludes (not just `\`/`.`/`:`) and requires `\uXXXX` for
   edge whitespace and for structural bytes with no named form (`(`, `)`,
@@ -277,9 +292,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   allowance: an i64-only and a bignum-capable parser legitimately
   classify `9223372036854775808` differently (String vs. Integer), so
   both could simultaneously honour their own domain rules and violate
-  the old blanket `MUST`. The guarantee now holds unconditionally only
-  outside the closed set of fixtures named in the new
-  `versions/0.7/tests/valid/boundary-fixtures.json` manifest.
+  the old blanket `MUST`.
 - **§ 5 — the binary64 floor now specifies conversion semantics, not
   just range and precision.** Converting a decimal float literal to
   the minimum binary64 representation MUST use IEEE 754

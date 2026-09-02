@@ -2314,6 +2314,19 @@ The conformance suite tests both directions: input variety via
   and keys); not processed in multi-line scalars, multi-line string
   content, or comments. Purely additive to the escape table — no
   existing escape sequence's meaning changes.
+- **Added:** § 3.1 — leading byte-order mark handling is
+  deterministic: a parser-conforming implementation MUST skip exactly
+  one leading U+FEFF if it is the very first code point of the
+  document, before any other byte; the canonical writer (§ 5.9)
+  MUST NOT emit a leading byte-order mark. A U+FEFF anywhere else in
+  the document is ordinary content (§ 3.3 does not classify it as
+  whitespace). Unspecified in 0.6.4.
+- **Added:** § 6.15 `InvalidUtf8` — a new error category for
+  documents whose raw bytes are not valid UTF-8 (§ 3.1 already
+  required rejecting them; § 6 previously had no matching category
+  name for that rejection). The check happens before any
+  line-oriented or grammar-level processing; the error span SHOULD
+  point at the byte offset of the first invalid sequence.
 - **Changed:** § 6.13 `BadEscapeSequence` — extended to cover
   malformed `\uXXXX` forms (fewer than four hex digits) and lone
   surrogates, alongside the existing unrecognised-`\X` case.
