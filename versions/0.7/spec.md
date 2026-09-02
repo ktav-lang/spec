@@ -1304,9 +1304,11 @@ A pair separator is selected by the kind/content of its value:
   contains no `LF` and no `CR` byte, (b) has no leading or
   trailing whitespace (§ 3.3 — the fixed 25-code-point set, not
   ASCII-only), (c) contains no ASCII control byte
-  (0x00–0x1F other than 0x09 `TAB`), (d) is not a token the
-  parser would classify under § 5.2 as something other than a
-  String (number, `null`, `true`, `false`), (e) does not
+  (0x00–0x1F other than 0x09 `TAB`), (d) does not match the
+  integer or float literal grammar of § 3.6 — regardless of
+  whether its numeric value fits the implementation's own
+  supported domain (§ 5) — and is not exactly `null`, `true`, or
+  `false`, (e) does not
   start with `{` or `[` (which would cause § 5.2 to dispatch
   the body as an inline compound rather than a String), and
   (f) is not exactly `()`, `(())`, `(`, or `((` (the first two
@@ -1315,10 +1317,21 @@ A pair separator is selected by the kind/content of its value:
   a multi-line-string opener per § 4's `<value-start>` grammar,
   reinterpreted as opening a block rather than a one-byte or
   two-byte String — the same class of hazard as (e) above, and
-  resolved the same way, via the raw marker below).
+  resolved the same way, via the raw marker below). Condition (d)
+  is deliberately domain-independent: a String whose body merely
+  *looks* like a number to a wider-domain reader — e.g.
+  `9223372036854775808`, a String on a minimum (i64) domain but a
+  valid Integer literal on a wider one — still needs the raw
+  marker below, precisely so that a reader with a different
+  numeric domain does not silently reclassify it (§ 5.2's own
+  same-kind guarantee, § 5.2, is about domain-*consistent*
+  classification; the canonical writer of a String must not
+  depend on which domain happens to be doing the writing).
 - **`key:: <bytes>` (raw marker):** when the bytes are a non-empty
   one-line String that would otherwise be reinterpreted by § 5.2
-  if emitted with plain `:` — either as a number / `null` /
+  if emitted with plain `:` — either as matching the integer or
+  float literal grammar of § 3.6 (regardless of whether the value
+  fits the writer's own numeric domain), as exactly `null` /
   `true` / `false`, as an inline compound (a body starting
   with `{` or `[`), as a multi-line-string opener (a body of
   exactly `(` or `((`), as the empty String via § 5.7's shortcuts
@@ -1338,22 +1351,33 @@ A pair separator is selected by the kind/content of its value:
   `key: <bytes>` form of § 5.9.5 (including: does not start with
   `{` or `[`; is not exactly `(` or `((`), and — because an item
   line has no `key: ` prefix, making the entire line the body — is
-  additionally not exactly `}`, `]`, or `::`, and does not start
+  additionally not exactly `}` or `]`, does not start with the
+  two-byte sequence `::`, and does not start
   with the two-byte sequence `##`. A bare `}` or `]` line is
   unconditionally read by § 5.1's line-dispatch rules as closing
   the innermost open Object/Array (raising `UnbalancedBracket`,
   § 6.1, when the innermost open compound is actually an Array/Object);
-  a bare `::` line matches `<item-literal>`'s raw-marker-with-empty-body
-  form (§ 4) instead of the literal two-byte content; a body
+  a body starting with the two-byte sequence `::` matches
+  `<item-literal>`'s raw-marker form (§ 4) — consuming everything
+  from that point on as the raw-marker's own body, per `<sep-end>` —
+  rather than being read as literal content that happens to begin
+  with those two bytes (this excludes not just a body of exactly
+  `::`, but any body starting with it, e.g. `:: x` or `::x`: both
+  are captured by the raw-marker grammar — the former as a
+  raw-marker item with body `x`, the latter as `MissingSeparatorSpace`
+  — so neither can ever survive as bare content); a body
   starting with `##` is unconditionally read by § 5.1 rule 2 as a
   comment (§ 3.4), dropping the entire line silently rather than
   raising an error. When the item is the **first item of an Array
   root** (§ 5.9.3), the bare form is additionally not used if the
-  body would itself be recognised by § 5.0.1 rule 6 as a pair line
-  — that is, if it contains a `:` code point positioned so that
-  everything before it parses as one or more non-empty
-  `<key-token>+` segments (§ 4) separated by unescaped `.` (for
-  example `host: localhost`, or a bare `a:`). Only the Array root's
+  body would itself satisfy § 5.0.1 rule 6's phase-1 pair-candidate
+  test — a first unescaped `:` or `::` separator (§ 4's
+  separator-scanning rule) with a non-empty raw prefix before it,
+  where a plain `:` separator is satisfied by `<sep-end>`; the
+  prefix is not required to be a grammatically valid key at this
+  stage, exactly as rule 6 itself does not require one (a first
+  item like `a,b: 1` is a pair candidate here for the same reason
+  it is one for root detection). Only the Array root's
   first item is exposed to § 5.0.1's root-kind detection; every
   other item position is dispatched directly as an array-item line
   regardless of its shape (§ 5.1 rules 7–8), so this exclusion does
@@ -1363,9 +1387,11 @@ A pair separator is selected by the kind/content of its value:
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would
   otherwise collide with a line-level structural token (a body of
-  exactly `}`, `]`, or `::`, or starting with `##`), or (when the
-  item is the first item of an Array root) would otherwise be
-  recognised by § 5.0.1 rule 6 as a pair line. The raw-marker form
+  exactly `}` or `]`, or starting with `##` or with the two-byte
+  sequence `::`), or (when the
+  item is the first item of an Array root) would otherwise satisfy
+  § 5.0.1 rule 6's phase-1 pair-candidate test as described above.
+  The raw-marker form
   itself is immune to this last hazard: a line beginning `::` has
   no key segment before the separator, so it never matches
   `<pair-line>`'s grammar and is read as this Array's first item
@@ -1394,9 +1420,11 @@ Let *body* be the byte sequence of a String Value.
   colon) for a pair, or `::` (no body) for an array item.
 - **One-line printable, no edge-whitespace, no numeric/keyword
   collision:** emit as `key: <body>` (pair) or `<body>` (item).
-- **One-line, but would classify as Number / `null` / `true` /
-  `false`:** emit as `key:: <body>` (pair) or `:: <body>` (item),
-  using the raw marker.
+- **One-line, but matches the integer or float literal grammar of
+  § 3.6 (regardless of whether the value fits the writer's own
+  numeric domain — § 5) or is exactly `null` / `true` / `false`:**
+  emit as `key:: <body>` (pair) or `:: <body>` (item), using the
+  raw marker.
 - **Contains `LF`, leading/trailing whitespace, or any control byte
   (`0x00`–`0x1F` other than `0x09` `TAB` and `0x0A` `LF`, and not
   `0x0D` `CR`, which the next bullet handles separately):** emit
