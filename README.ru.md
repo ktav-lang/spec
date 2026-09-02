@@ -466,12 +466,12 @@ Runner соответствия MUST обходить каждую фиксту�
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
 ├── scripts/
-│   ├── validate_corpus.py                 structural validation of the conformance corpus
-│   ├── test_validate_corpus.py            unit tests for validate_corpus.py
-│   ├── check_translation_parity.py        EN/RU/ZH translation-parity checker
-│   ├── test_check_translation_parity.py   unit tests for check_translation_parity.py
-│   └── locks/                             boundary-fixtures manifest lock files
-├── .github/workflows/     CI: corpus validation, translation-parity check, and both unit test suites
+│   ├── validate_corpus.py                 структурная валидация корпуса соответствия
+│   ├── test_validate_corpus.py            модульные тесты для validate_corpus.py
+│   ├── check_translation_parity.py        проверка паритета переводов EN/RU/ZH
+│   ├── test_check_translation_parity.py   модульные тесты для check_translation_parity.py
+│   └── locks/                             lock-файлы манифеста boundary-fixtures
+├── .github/workflows/     CI: валидация корпуса, проверка паритета переводов и оба набора модульных тестов
 └── versions/
     └── <version>/
         ├── spec.md        the specification document

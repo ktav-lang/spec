@@ -412,12 +412,12 @@ submodule 引入(或直接拷贝)。
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
 ├── scripts/
-│   ├── validate_corpus.py                 structural validation of the conformance corpus
-│   ├── test_validate_corpus.py            unit tests for validate_corpus.py
-│   ├── check_translation_parity.py        EN/RU/ZH translation-parity checker
-│   ├── test_check_translation_parity.py   unit tests for check_translation_parity.py
-│   └── locks/                             boundary-fixtures manifest lock files
-├── .github/workflows/     CI: corpus validation, translation-parity check, and both unit test suites
+│   ├── validate_corpus.py                 一致性语料库的结构校验
+│   ├── test_validate_corpus.py            validate_corpus.py 的单元测试
+│   ├── check_translation_parity.py        EN/RU/ZH 翻译对等性检查工具
+│   ├── test_check_translation_parity.py   check_translation_parity.py 的单元测试
+│   └── locks/                             boundary-fixtures 清单锁文件
+├── .github/workflows/     CI:语料库校验、翻译对等性检查,以及两套单元测试
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
