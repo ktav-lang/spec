@@ -443,8 +443,13 @@ pin to a version directory by path.
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
-├── scripts/               corpus validation script
-├── .github/workflows/     CI running the corpus validation
+├── scripts/
+│   ├── validate_corpus.py                 structural validation of the conformance corpus
+│   ├── test_validate_corpus.py            unit tests for validate_corpus.py
+│   ├── check_translation_parity.py        EN/RU/ZH translation-parity checker
+│   ├── test_check_translation_parity.py   unit tests for check_translation_parity.py
+│   └── locks/                             boundary-fixtures manifest lock files
+├── .github/workflows/     CI: corpus validation, translation-parity check, and both unit test suites
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
