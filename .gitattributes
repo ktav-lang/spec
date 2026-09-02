@@ -17,3 +17,12 @@ versions/*/tests/valid/io/lone_cr_in_value.ktav -text
 versions/*/tests/valid/io/lone_cr_in_value.canonical.ktav -text
 versions/*/tests/valid/inline/escape/all_escapes.canonical.ktav -text
 versions/*/tests/valid/inline/escape/newline.canonical.ktav -text
+
+# Exception: this fixture intentionally contains a content line consisting
+# of a single space character (a whitespace-only line inside a verbatim
+# multi-line string, preserved byte-for-byte as regression coverage). A
+# plain `git diff --check` treats that as "trailing whitespace"; suppress
+# only that specific check for these two files so the pre-release
+# whitespace gate doesn't permanently red-flag correct fixture content.
+versions/*/tests/valid/multiline/verbatim_whitespace_only_line_in_middle.ktav whitespace=-trailing-space
+versions/*/tests/valid/multiline/verbatim_whitespace_only_line_in_middle.canonical.ktav whitespace=-trailing-space
