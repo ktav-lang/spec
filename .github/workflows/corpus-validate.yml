@@ -23,7 +23,7 @@ jobs:
       - name: Validate corpus structure
         run: |
           python scripts/validate_corpus.py versions/0.6/tests
-          python scripts/validate_corpus.py versions/0.7/tests --require-unrepresentable --require-boundary
+          python scripts/validate_corpus.py versions/0.7/tests --require-unrepresentable --require-boundary --boundary-manifest-lock versions/0.7/tests/boundary-fixtures.lock.json
 
       - name: Run validator unit tests
         run: python scripts/test_validate_corpus.py

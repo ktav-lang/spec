@@ -11,16 +11,23 @@ Purpose:
       3. Every fixture under invalid/ forms a sibling pair (<name>.ktav,
          <name>.json) and each .json has an `expected_error` drawn from the
          version's closed set of error categories (Sec 6).
+      3b. For every invalid/ fixture, the actual UTF-8 validity of its .ktav
+         bytes agrees, bidirectionally, with whether its sibling .json's
+         `expected_error` is "InvalidUtf8" -- regardless of directory naming
+         convention (Sec 6.15).
       4. unrepresentable/ contains only .json objects with `value`, `note`, and
          `unrepresentable_reason` from the known reason-code set (optional
          unless --require-unrepresentable is passed).
       5. boundary-fixtures.json entries reference existing valid/ triples,
          contain syntactically valid and resolvable RFC 6901 JSON Pointers, use
          known boundary classes, and have no duplicates (optional unless
-         --require-boundary is passed).
+         --require-boundary is passed). With --boundary-manifest-lock, the
+         entry set must also match a separate lock file exactly, catching a
+         silently deleted entry that leaves the rest individually well-formed.
 
 Usage:
-    python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable] [--require-boundary]
+    python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable]
+        [--require-boundary] [--boundary-manifest-lock <path>]
 
 Exit codes:
     0  all checks passed (or were legitimately skipped)
@@ -292,6 +299,64 @@ def check_invalid(tests_dir, results, parsed, error_categories):
     results.set_count(category, n_fixtures=n_fixtures)
 
 
+def check_invalid_utf8_oracle(tests_dir, results, parsed):
+    """Check 3b: bidirectional cross-check between a fixture's actual UTF-8
+    validity and its .json's expected_error, for every invalid/ fixture
+    (not just ones under invalid/invalid_utf8/ -- the invariant is about the
+    data and the oracle agreeing, not about directory naming).
+
+    - Invalid UTF-8 bytes but expected_error != "InvalidUtf8" -> FAIL.
+    - Valid UTF-8 bytes but expected_error == "InvalidUtf8" -> FAIL.
+    """
+    category = "invalid_utf8 oracle consistency"
+    invalid_dir = os.path.join(tests_dir, "invalid")
+    n_checked = 0
+    if not os.path.isdir(invalid_dir):
+        results.set_count(category, n_checked=n_checked)
+        return
+    for root, _dirs, files in os.walk(invalid_dir):
+        for fname in files:
+            if not fname.endswith(".json"):
+                continue
+            name = fname[: -len(".json")]
+            ktav_path = os.path.join(root, name + ".ktav")
+            if not os.path.isfile(ktav_path):
+                continue  # missing sibling already reported by check_invalid
+            json_path = os.path.join(root, fname)
+            jrpath = rel(json_path, tests_dir)
+            if jrpath not in parsed or parsed[jrpath] is None:
+                continue  # parse failure already reported in check 1
+            obj = parsed[jrpath]
+            if not isinstance(obj, dict):
+                continue  # already reported by check_invalid
+            err = obj.get("expected_error")
+            if not isinstance(err, str):
+                continue  # already reported by check_invalid
+            try:
+                with open(ktav_path, "rb") as f:
+                    raw = f.read()
+            except OSError as e:
+                results.fail(category, "%s: unreadable: %s"
+                             % (rel(ktav_path, tests_dir), e))
+                continue
+            n_checked += 1
+            krpath = rel(ktav_path, tests_dir)
+            try:
+                raw.decode("utf-8", errors="strict")
+                is_valid_utf8 = True
+            except UnicodeDecodeError:
+                is_valid_utf8 = False
+            if not is_valid_utf8 and err != "InvalidUtf8":
+                results.fail(category, "%s: bytes are not valid UTF-8, but "
+                             "sibling %s declares expected_error %r (must be "
+                             "'InvalidUtf8')" % (krpath, jrpath, err))
+            elif is_valid_utf8 and err == "InvalidUtf8":
+                results.fail(category, "%s: declares expected_error "
+                             "'InvalidUtf8', but sibling %s is actually valid "
+                             "UTF-8" % (jrpath, krpath))
+    results.set_count(category, n_checked=n_checked)
+
+
 def check_unrepresentable(tests_dir, results, parsed, require=False):
     """Check 4: unrepresentable/ category: .json objects with reason codes.
     With require=True a missing directory is a failure instead of a skip."""
@@ -397,14 +462,86 @@ def _is_within(child, parent):
     return rel == os.curdir or not (rel == os.pardir or rel.startswith(os.pardir + os.sep))
 
 
-def check_boundary_fixtures(tests_dir, results, parsed, require=False):
+def _boundary_record_key(entry):
+    """Hashable identity for a boundary_dependent_leaves entry (or a lock-file
+    record of the same shape), used for lock-file set comparison. Uses raw
+    field values -- even if malformed -- so a deletion is caught regardless
+    of whatever other per-entry validity problems are separately reported."""
+    if not isinstance(entry, dict):
+        return ("<non-object>", repr(entry))
+    return (entry.get("fixture"), entry.get("path"), entry.get("boundary_class"))
+
+
+def _boundary_record_repr(key):
+    fixture, ptr, bclass = key
+    return "{fixture: %r, path: %r, boundary_class: %r}" % (fixture, ptr, bclass)
+
+
+def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
+    """Compare the manifest's 'boundary_dependent_leaves' entries against a
+    lock file's entries as a multiset (order-independent, duplicate-aware),
+    so a silently deleted entry -- with every remaining entry still
+    individually well-formed -- is caught."""
+    category = "boundary-fixtures.json"
+    try:
+        with open(lock_path, "r", encoding="utf-8") as f:
+            lock_text = f.read()
+    except OSError as e:
+        results.fail(category, "--boundary-manifest-lock %s: unreadable: %s"
+                     % (lock_path, e))
+        return
+    try:
+        lock_data = loads_strict(lock_text)
+    except (json.JSONDecodeError, ValueError) as e:
+        results.fail(category, "--boundary-manifest-lock %s: invalid JSON: %s"
+                     % (lock_path, e))
+        return
+    if not isinstance(lock_data, list):
+        results.fail(category, "--boundary-manifest-lock %s: root must be a "
+                     "JSON array" % lock_path)
+        return
+
+    def counts(records):
+        c = {}
+        for entry in records:
+            key = _boundary_record_key(entry)
+            c[key] = c.get(key, 0) + 1
+        return c
+
+    expected = counts(lock_data)
+    actual = counts(leaves)
+    missing = []
+    extra = []
+    for key, cnt in expected.items():
+        shortfall = cnt - actual.get(key, 0)
+        if shortfall > 0:
+            missing.extend([key] * shortfall)
+    for key, cnt in actual.items():
+        surplus = cnt - expected.get(key, 0)
+        if surplus > 0:
+            extra.extend([key] * surplus)
+    if missing or extra:
+        parts = []
+        if missing:
+            parts.append("missing from %s (present in lock file): %s"
+                         % (rpath, "; ".join(_boundary_record_repr(k) for k in missing)))
+        if extra:
+            parts.append("unexpected in %s (absent from lock file): %s"
+                         % (rpath, "; ".join(_boundary_record_repr(k) for k in extra)))
+        results.fail(category, "--boundary-manifest-lock %s: manifest does not "
+                     "match lock file exactly; %s" % (lock_path, "; ".join(parts)))
+
+
+def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path=None):
     """Check 5: boundary-fixtures.json manifest. With require=True a missing
     manifest is a failure instead of a skip, and an empty
-    'boundary_dependent_leaves' list is also a failure."""
+    'boundary_dependent_leaves' list is also a failure. With lock_path set,
+    the manifest's entries must match that lock file's entries exactly (see
+    check_boundary_manifest_lock)."""
     category = "boundary-fixtures.json"
     manifest_path = os.path.join(tests_dir, "boundary-fixtures.json")
     if not os.path.isfile(manifest_path):
-        if require:
+        if require or lock_path is not None:
             results.fail(category, "boundary-fixtures.json not present (required)")
             return False
         results.set_count(category, skipped=True)
@@ -425,6 +562,8 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False):
         results.fail(category, "%s: 'boundary_dependent_leaves' must not be empty: "
                      "a required manifest must name at least one boundary-dependent "
                      "leaf" % rpath)
+    if lock_path is not None:
+        check_boundary_manifest_lock(results, rpath, leaves, lock_path)
     seen = {}
     n_ok = 0
     for i, entry in enumerate(leaves):
@@ -495,6 +634,11 @@ def main(argv):
     parser.add_argument("--require-boundary", action="store_true",
                         help="treat a missing or empty boundary-fixtures.json "
                         "manifest as a failure instead of a skip")
+    parser.add_argument("--boundary-manifest-lock", metavar="PATH", default=None,
+                        help="path to a lock file (a JSON array of "
+                        "{fixture, path, boundary_class} records) that "
+                        "boundary-fixtures.json's 'boundary_dependent_leaves' "
+                        "must match exactly; catches a silently deleted entry")
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
@@ -507,10 +651,12 @@ def main(argv):
     parsed = check_utf8_json(tests_dir, results)
     check_valid(tests_dir, results)
     check_invalid(tests_dir, results, parsed, select_error_categories(tests_dir))
+    check_invalid_utf8_oracle(tests_dir, results, parsed)
     has_unrep = check_unrepresentable(tests_dir, results, parsed,
                                       require=args.require_unrepresentable)
     has_boundary = check_boundary_fixtures(tests_dir, results, parsed,
-                                           require=args.require_boundary)
+                                           require=args.require_boundary,
+                                           lock_path=args.boundary_manifest_lock)
 
     failures = {}
     for category, message in results.problems:
@@ -534,6 +680,8 @@ def main(argv):
             return "%d fixtures complete" % c.get("n_fixtures", 0)
         if category == "invalid/ pairs":
             return "%d fixtures complete, expected_error OK" % c.get("n_fixtures", 0)
+        if category == "invalid_utf8 oracle consistency":
+            return "%d fixture(s) checked" % c.get("n_checked", 0)
         if category == "unrepresentable/":
             if c.get("skipped"):
                 return "directory not present"
@@ -545,10 +693,12 @@ def main(argv):
         return ""
 
     order = ["UTF-8/JSON validity", "valid/ triples", "invalid/ pairs",
-             "unrepresentable/", "boundary-fixtures.json"]
+             "invalid_utf8 oracle consistency", "unrepresentable/",
+             "boundary-fixtures.json"]
     skipped_map = {
         "unrepresentable/": not has_unrep and not args.require_unrepresentable,
-        "boundary-fixtures.json": not has_boundary and not args.require_boundary,
+        "boundary-fixtures.json": (not has_boundary and not args.require_boundary
+                                   and args.boundary_manifest_lock is None),
     }
     overall = "PASS"
     for category in order:

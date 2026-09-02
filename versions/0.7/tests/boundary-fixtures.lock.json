@@ -1,0 +1,57 @@
+[
+  {
+    "fixture": "numbers/integer/i64_overflow_to_string",
+    "path": "/overflow",
+    "boundary_class": "integer_range"
+  },
+  {
+    "fixture": "numbers/integer/big_overflow_to_string",
+    "path": "/big",
+    "boundary_class": "integer_range"
+  },
+  {
+    "fixture": "numbers/integer/big_overflow_to_string",
+    "path": "/bigger",
+    "boundary_class": "integer_range"
+  },
+  {
+    "fixture": "numbers/float/positive_overflow_to_string",
+    "path": "/overflow",
+    "boundary_class": "float_range"
+  },
+  {
+    "fixture": "numbers/float/negative_overflow_to_string",
+    "path": "/overflow",
+    "boundary_class": "float_range"
+  },
+  {
+    "fixture": "numbers/float/just_above_max_finite_to_string",
+    "path": "/overflow",
+    "boundary_class": "float_range"
+  },
+  {
+    "fixture": "numbers/float/underflow_to_zero",
+    "path": "/underflow",
+    "boundary_class": "float_underflow"
+  },
+  {
+    "fixture": "numbers/float/negative_underflow_to_negative_zero",
+    "path": "/underflow",
+    "boundary_class": "float_underflow"
+  },
+  {
+    "fixture": "numbers/float/half_min_subnormal_underflow_to_zero",
+    "path": "/underflow",
+    "boundary_class": "float_underflow"
+  },
+  {
+    "fixture": "numbers/float/decimal_rounding_tie",
+    "path": "/tie",
+    "boundary_class": "float_precision"
+  },
+  {
+    "fixture": "numbers/float/min_positive_subnormal",
+    "path": "/min_subnormal",
+    "boundary_class": "float_precision"
+  }
+]
