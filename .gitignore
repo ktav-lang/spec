@@ -1,6 +1,9 @@
 # Local working directories
 /docs_local
 
+# /wrush task worktrees — always created here, in-tree
+/worktrees/
+
 # Editors / IDEs
 .idea/
 .vscode/
