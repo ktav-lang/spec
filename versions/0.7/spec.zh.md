@@ -255,82 +255,165 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 
 ## 4. 语法
 
-(中文翻译省略详细 BNF,见英文 `spec.md` § 4。)
+语法以半形式化记法给出,每行一条规则。终结符放在双引号中;
+`<名称>` 表示非终结符;`*` 表示零个或多个,`+` 表示一个或多个,
+`?` 表示可选,`|` 表示候选。`(ws)` 表示零个或多个空白码点
+(§ 3.3 —— 固定的 25 码点集合,不仅是 ASCII)。
 
-要点:
-- 注释:`(ws) "##" (任意字节到行尾)`。
-- pair-line:`<key> ":" <sep-end> <value>` 或 `<key> "::" <sep-end> <value>`。
-- **`<sep-end>` 要求**:多行 pair-line 中 `:` / `::` 之后 MUST
-  紧跟至少一个空白码点(§ 3.3 —— 固定的 25 码点集合,不仅是
-  空格/制表符)**或**行末;`key:value` / `key::value`(无空白且
-  body 在同一行)是 `MissingSeparatorSpace` 错误(§ 6.10)。此规则
-  **不**适用于 inline 复合值(§ 5.8)内的对分隔符 —— 那里空白处处
-  可选。
-- `<key>` 语法现在 escape 感知:
-  ```
-  <key>           ::= <segment> ( <unescaped-dot> <segment> )*
-  <unescaped-dot> ::= 非由奇数个 "\" 前导的 "."
-  <segment>       ::= <key-token>+
-  <key-token>     ::= <key-escape> | <key-char>
-  <key-escape>    ::= "\" <escapable-byte>
-                     | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
-  <escapable-byte>::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
-                     | "." | ":"
-  <hex-digit>     ::= [0-9a-fA-F]
-  ```
-  `<key-char>`:任意 UTF-8 码点,但不允许 ASCII 控制字节 < 0x20
-  (§ 3.3 空白成员除外:制表符 0x09、VT 0x0B、FF 0x0C —— LF 0x0A
-  与 CR 0x0D 在下面作为行终止符单独排除,而非作为控制字节)、
-  DEL (0x7F)、行终止符、`[` `]` `{` `}`
-  `(` `)` `:` `,`、`\`(反斜杠 —— 现为 escape 前导,§ 3.7)、
-  `.`(点 —— 现为路径分隔符;用 `\.` 表示段内字面点)。
-  任意空白码点(§ 3.3)**允许**在键段内出现 —— 仅修剪边界处的
-  空白被移除,内部出现不受影响 —— 因此键 MAY 包含内部空白
-  (例如 `first name`)。
-- **键段修剪**:键段在 `<key-token>+` 校验前被**修剪**掉前后的
-  空白(§ 3.3 —— 固定的 25 码点集合,不仅是 ASCII)。段内空白
-  verbatim 保留。修剪后为空的段为 `EmptyKey`(§ 6.5)。仅在被修剪
-  的边界处以空白码点相区别的两个键,视为同一个键而发生碰撞
-  (§ 5.5)—— 修剪发生在重复检测之前,而非之后。
-- **键 escape 处理**:`<key-escape>` 规则处理与 § 3.7 相同的十一个
-  escape 序列,包括 `\uXXXX`(§ 3.7.1)。反斜杠 `\` 是 escape
-  前导;`\.` 产生字面点(不分割路径段);`\:` 产生字面冒号(不作为
-  对分隔符);`\\` 产生字面反斜杠;`\uXXXX` 产生对应的码点,同样
-  永远不会被重新视为结构性分隔符,无论它解码出的是哪个码点。键中
-  其他 `\X` 形式为 `BadEscapeSequence` 错误(§ 6.13)。
-- 对分隔符为从左到右扫描到的首个**未 escape** 的 `:`(或 `::`)。
-  escape 后的冒号 `\:` 属于键段,不是分隔符。
-- 点分路径分割仅在**未 escape** 的 `.` 字节处进行。键中的 `\.` 是
-  当前段内的字面点。
-- 示例:
-  - `a\.b: v`     → 键 "a.b",值 "v"(平坦,无嵌套)
-  - `a\:b: v`    → 键 "a:b",值 "v"
-  - `a\:: v`     → 键 "a:",值 "v"(escape 冒号,然后是普通的 `:` 分隔符)
-  - `x.y\.z: v`  → 路径 ["x", "y.z"],值 "v"({"x": {"y.z": "v"}})
-  - `path\\to: v` → 键 "path\to",值 "v"
-  - 以 `\u` 加 `U+002E` 的四位十六进制数字写出的点,与上面的 `\.`
-    解码结果相同(平坦键,无嵌套)—— § 3.7.1 中「任意已识别 escape
-    永远不会被重新视为结构性分隔符」的规则,无论解码出的字节来自
-    十一种形式中的哪一种,均一致适用
-- value-start 可为 `{}`、`[]`、`()`、`(())`、`{...}` (inline)、
-  `[...]` (inline)、`{`(多行打开)、`[`(多行打开)、`(`(多行字符串
-  stripped)、`((`(多行字符串 verbatim)、或 `<scalar-body>`。
-- inline-pair-list:`<inline-pair> ("," <inline-pair>)* ","?` —— 允许
-  尾部逗号。
-- inline-item-list:同上,但元素是 `<inline-value>`。
-- inline-scalar:延伸至首个未 escape 的 `,` / `}` / `]` 或行末。
-- `<inline-value>` 的判别按 inline 值位置上**首个非空白码点**:
-  `{` → 嵌套 inline 对象(MUST 同行 `}` 关闭);`[` → 嵌套 inline
-  数组;其他 → `<inline-scalar>`。决定一次性作出 —— 之后 inline
-  标量内的 `{` / `[` 字节均为字面数据(§ 5.8.5)。
-- multi-line content 不在 inline 内出现。
-- `<header-line>` 中 `)` / `))` 两个多行关闭分支是**上下文相关**的:
-  仅当多行字符串块处于打开状态(§ 5.6)且该行修剪后与**该块自身的**
-  终止符一致时才成立 —— stripped 形式对应 `)`,verbatim 形式对应
-  `))`。在块外,或在块内但与该终止符不匹配时,仅由 `)` 或 `))` 构成的
-  行**根本不是** `<header-line>`,而是普通文本,按 § 5.1 分发(打开
-  块内为规则 3;其余情况按数组项 / 对值文本,§ 5.2、§ 5.4)—— 见
-  § 6.1。
+```
+<document>      ::= <line>*
+<line>          ::= <comment> | <blank> | <header-line> | <pair-line>
+                  | <array-item-line> | <multiline-content-line>
+
+<comment>       ::= (ws) "##" (任意字节到行尾)
+<blank>         ::= (ws)
+
+<header-line>   ::= (ws) "{" (ws) eol                ; 对象开启
+                  | (ws) "}" (ws) eol                ; 对象关闭
+                  | (ws) "[" (ws) eol                ; 数组开启
+                  | (ws) "]" (ws) eol                ; 数组关闭
+                  | (ws) ")" (ws) eol                ; 多行关闭 (stripped)
+                  | (ws) "))" (ws) eol               ; 多行关闭 (verbatim)
+                    最后两个候选的上下文相关性:它们仅在多行字符串
+                    块处于打开状态(§ 5.6)且修剪后的行与该块自身的
+                    终止符一致时才成立 —— stripped 形式对应 ")",
+                    verbatim 形式对应 "))"。在此类块之外 —— 或在块内
+                    但与该块的终止符不匹配时 —— 仅由 ")" 或 "))" 构成的
+                    行根本不是 <header-line>:它是普通文本,按 § 5.1
+                    读取(打开块内为规则 3;其余情况为数组项 /
+                    对值文本 —— § 5.2、§ 5.4),与 § 6.1 的表述一致。
+
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; 默认形式,标量按 § 5.2 分发
+                  | <key> "::" <sep-end> <value-part-opt> eol    ; 字面 String
+
+<key>           ::= <segment> ( <unescaped-dot> <segment> )*
+<unescaped-dot> ::= 非由奇数个 "\" 前导的 "."
+<segment>       ::= <key-token>+
+<key-token>     ::= <key-escape> | <key-char>
+<key-escape>    ::= "\" <escapable-byte>
+                  | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+                   | "." | ":"
+<hex-digit>     ::= [0-9a-fA-F]
+<key-char>      ::= 任意 UTF-8 码点,但不允许:
+                    ASCII 控制字节 < 0x20(§ 3.3 的空白成员除外:
+                    制表符 0x09、VT 0x0B、FF 0x0C —— LF 0x0A 与
+                    CR 0x0D 在下面作为行终止符单独排除,而非作为
+                    控制字节),
+                    DEL (0x7F),
+                    行终止符 (LF 0x0A, CR 0x0D),
+                    "[", "]", "{", "}", "(", ")", ":", ",",
+                    "\"(反斜杠 —— 现为 escape 前导,§ 3.7),
+                    "."(点 —— 现为路径分隔符;用 "\." 表示段内的
+                    字面点)
+                    (注意:任意空白码点(§ 3.3)允许出现在键段内
+                    —— 仅修剪的边界被移除,内部出现不受影响 ——
+                    因此键 MAY 包含内部空白,例如
+                    "first name: alice";"#" 允许;仅当位于修剪行的
+                    行首时,"##" 两字节序列才成为注释标记,§ 3.4)
+
+                    键段修剪:键段在按 <key-token>+ 校验前被**修剪**
+                    掉前后空白(§ 3.3 —— 固定的 25 码点集合,不仅是
+                    ASCII)。段内空白 verbatim 保留。修剪后为空的段
+                    为 EmptyKey (§ 6.5)。仅在被修剪的边界处以空白码点
+                    相区别的两个键,视为同一个键而发生碰撞(§ 5.5)
+                    —— 修剪发生在重复名检查之前,而非之后。
+
+                    键 escape 处理:`<key-escape>` 规则处理与 § 3.7
+                    相同的十一个 escape 序列,包括 `\uXXXX`
+                    (§ 3.7.1)。反斜杠字节 `\` 是 escape 前导;`\.` 产生
+                    字面点(不分割路径段);`\:` 产生字面冒号
+                    (不作为对分隔符);`\\` 产生字面反斜杠;`\uXXXX`
+                    产生对应的码点,同样永远不会被重新视为结构性
+                    分隔符,无论它解码出的是哪个码点 —— 上面的
+                    `<key-char>` 排除项仅适用于原始、未 escape 的字节;
+                    解码出的 `\uXXXX` 码点(包括 `U+0000` 这样的控制
+                    码点)作为键内容被接受,仅受 § 3.7.1 代理规则的
+                    约束。键中其他 `\X` 形式为 `BadEscapeSequence`
+                    错误 (§ 6.13)。
+
+                    对分隔符为从左到右扫描到的首个**未 escape** 的 `:`
+                    (或 `::`)。escape 后的冒号 `\:` 属于键段,
+                    不是分隔符。
+
+                    点分路径分割仅在**未 escape** 的 `.` 字节处进行。
+                    键中的 `\.` 是当前段内的字面点。
+
+                    示例:
+                    - `a\.b: v`     → 键 "a.b",值 "v"(平坦,无嵌套)
+                    - `a\:b: v`    → 键 "a:b",值 "v"
+                    - `a\:: v`     → 键 "a:",值 "v"(escape 冒号,然后是普通的 `:` 分隔符)
+                    - `x.y\.z: v`  → 路径 ["x", "y.z"],值 "v"
+                                     ({"x": {"y.z": "v"}})
+                    - `path\\to: v` → 键 "path\to",值 "v"
+                    - 以 `\u` 加 `U+002E` 的四位十六进制数字写出的
+                      键段,与上面的 `\.` 解码结果相同(平坦键,
+                      无嵌套)—— § 3.7.1 中「任意已识别 escape 永远
+                      不会被重新视为结构性分隔符」的规则,无论字节
+                      来自十一种形式中的哪一种,均一致适用
+
+<sep-end>       ::= 1*ws | &eol                    ; ≥1 个空白码点,或行末
+<value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
+<value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
+                  | "[" (ws) "]" (ws)                ; 空 inline 数组
+                  | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
+                  | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
+                  | "{" (ws) &eol                    ; 对象开启(多行 body)
+                  | "[" (ws) &eol                    ; 数组开启(多行 body)
+                  | "(" (ws) &eol                    ; 多行字符串开启 (stripped)
+                  | "((" (ws) &eol                   ; 多行字符串开启 (verbatim)
+                  | "()" (ws)                        ; 空 inline(得到 "")
+                  | "(())" (ws)                      ; 空 inline(得到 "")
+                  | <scalar-body>                    ; 标量值,按 § 5.2 分发
+
+<scalar-body>   ::= (ws) any-chars-until-eol
+                    ; 修剪;按 § 5.2 解释
+
+<array-item-line> ::= <item-literal> | <item-inline> | <item-value>
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw 字符串项
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
+                  | (ws) "{}" (ws) eol
+                  | (ws) "[]" (ws) eol
+<item-value>    ::= <value-start> eol
+
+<inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
+<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
+                     | <key> (ws) "::" (ws) <inline-value> (ws)
+
+<inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
+                     | "[" (ws) <inline-item-list> (ws) "]"
+                     | "{" (ws) "}"
+                     | "[" (ws) "]"
+                     | <inline-scalar>
+<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或行末终止的
+                       字节序列(行末情况按 § 6.11 为错误);
+                       § 3.7 的 escape 序列被处理;周围空白在分发到
+                       § 5.2 前被修剪
+
+<multiline-content-line> ::= 打开的 <multiline> 内的任意行;
+                             终止符 (")" 或 "))") 关闭该块
+```
+
+关于该记法的说明:
+
+- `(ws)` 表示零个或多个空白码点(§ 3.3 —— 固定的 25 码点集合,
+  不仅是 ASCII)。
+- `1*ws` 表示**一个或多个**空白码点(§ 3.3)。
+- `<sep-end>` 表示「至少一个空白码点,或行末」。它用在多行
+  pair 分隔符(`:`、`::`)之后。写 `key:value`(分隔符后无空白、
+  无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
+  复合值(§ 5.8)中的对不要求 `:` / `::` 之后有空白。
+- `&eol` 是零宽正向先行断言 —— 它匹配行末而不消耗它,因此行末
+  仍然是行终止符。
+- `<inline-value>` 的各候选按 inline 值位置上**首个非空白码点**
+  从左到右检查。若该字节为 `{`,值是嵌套 inline 对象(匹配前两条
+  `{`-规则之一)且 MUST 在同一行以 `}` 关闭;若该字节为 `[`,
+  则是嵌套 inline 数组。任何其他首字节使值成为 `<inline-scalar>`。
+  决定一次性作出,位于 inline 值位置的开头;之后 inline 标量内的
+  `{` 或 `[` 字节均为字面数据(§ 5.8.5)。
 
 ## 5. 语义
 
@@ -644,7 +727,7 @@ inline 对象中同样展开:`{a.b: 1, a.c: 2}` → `{a: {b: 1, c: 2}}`。
 #### 5.6.1 关闭符在内容中的限制
 
 stripped 块内不能有内容行 trim 后恰为 `)`;verbatim 同样不能恰为
-`))`。需使用另一种形式。
+`))`。若确需这样的内容行,写入端 MUST 切换到 verbatim 形式。
 
 解析器行为对称:若 stripped 块内某内容行 trim 后恰为 `)`,解析器
 MUST 在该行关闭块;若 verbatim 块内某内容行 trim 后恰为 `))`,
@@ -742,6 +825,8 @@ inline 值可以自身是 inline 复合值:
 - 多行字符串(`(` / `((` 开启符)。
 - 多行作用域变更。`{` / `[` 作为 inline 值首字符开启 *嵌套 inline
   复合值*,MUST 在同行关闭。
+
+若 `(` 或 `((` 字节作为 inline 标量值的第一个非空白码点出现,它被视为一个 inline 标量的开始(依 § 5.8.1)。由于同一行上没有跟随任何 inline 终止符(`,`、`}`、`]`),这会引发 `UnterminatedInlineCompound`(§ 6.11)。而当 inline 终止符紧接着出现在同一行时(例如 `{a: (, b: 1}`),值在行末之前已经完整,会被读作普通的单字节 String `"("` —— 这不是错误;上述 `UnterminatedInlineCompound` 情形特指 `(`/`((` 之后该行再无其他内容的常见情况。多行字符串开启符不允许出现在 inline 复合值内。
 
 **不**是 inline 值首个非空白码点的 `{` / `[` 是字面字符,**不**
 打开嵌套复合值。解析器在开始读取 inline 值时做一次性决定:首个
