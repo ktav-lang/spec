@@ -70,7 +70,10 @@ Ktav 文档是一系列行,共同描述一个层级化对象或数组。典型�
 ### 3.1 字符集
 
 Ktav 文档是以 UTF-8 编码的 Unicode 码点序列。实现 MUST 以
-`InvalidUtf8` 错误(§ 6.15)拒绝非 UTF-8 文档。
+`InvalidUtf8` 错误(§ 6.15)拒绝非 UTF-8 文档。位于文档最开头、
+任何其他字节之前的字节顺序标记(U+FEFF),实现 MAY 跳过(与
+RFC 8259 § 8.1 对 JSON 的处理一致)。文档中任何其他位置的 U+FEFF
+码点都是普通内容 —— § 3.3 未将其归类为空白。
 
 ### 3.2 行
 
@@ -344,10 +347,10 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
   `valid/` 合规 fixture(§ 8.1)假定这一最小 i64 域用于标量分类
   (§ 5.2 规则 13):超出 i64 范围的整数字面量对最小域实现而言是
   String,故 `i64_overflow_to_string.json` 期望 String
-  `"9223372036854775808"`。支持更宽域的实现 MAY 恰好对此类探测
-  边界的 fixture 产生更宽域下正确的 Integer;只要偏差仅限于期望
-  Value 依赖最小域边界的 fixture,且并非任意或未记录的偏差,它仍
-  符合 parser-conforming(§ 8.1)。Integer 的规范文本形式为基-10
+  `"9223372036854775808"`。§ 8.1 / § 8.2 与
+  `versions/0.7/tests/boundary-fixtures.json` 在单个叶子的层面上
+  定义了更宽域实现 MAY 在何处以及如何合法偏离最小域 fixture
+  oracle。Integer 的规范文本形式为基-10
   十进制串,无下划线、无前导零
   (`0` 除外);前导 `+` 舍弃;有符号零 (`+0`, `-0`) 归一化为
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
@@ -1177,11 +1180,13 @@ Object 对按插入顺序输出 —— 解析输入中出现的顺序或 Value �
 
 ### 6.5 空键
 
-`EmptyKey`。
+修剪后为空的键段 —— 无论是整个键(pair 行中分隔符之前没有任何
+内容),还是点分键的一个段(例如 `a..b`)—— 都是 `EmptyKey` 错误
+(§ 5.3.1)。
 
 ### 6.6 缺失分隔符
 
-`MissingSeparator` —— 派发到 pair-line 模式但无 `:` 分隔符的行。
+`MissingSeparator` —— 派发到 pair-line 模式但无**未 escape** 的 `:` 分隔符的行。
 适用于打开的多行 Object 体内,或顶层根为 Object 时。
 
 ### 6.7 (保留)
@@ -1297,8 +1302,7 @@ million: 1_000_000
 ratio: 0.5
 sci: 1.5e-3
 big: 99999999999999999999
-forced_string: :: 0xFF
-literal_hex: :: 0xFF
+literal_hex:: 0xFF
 ```
 
 `color` 是 `Integer(16772608)`(0xFFEE00 的十进制),
@@ -1360,11 +1364,11 @@ auth: {
 ### 7.7 Raw String
 
 ```
-literal_true:  :: true
-literal_zero:  :: 0
-literal_hex:   :: 0xFF
-literal_path:  :: /usr/local/bin
-literal_comma_only: :: just,a,comma,separated,plain,string
+literal_true:: true
+literal_zero:: 0
+literal_hex:: 0xFF
+literal_path:: /usr/local/bin
+literal_comma_only:: just,a,comma,separated,plain,string
 ```
 
 以上所有值都是 String,而非其推断出的类型。raw 标记无条件地
@@ -1485,8 +1489,9 @@ parse-emit 循环的不动点。不可表示的 Value 不在此不变式的范�
 ### 8.4 声明
 
 实现 MAY 仅声明 parser-、仅声明 writer- 或两者兼有。实现 MAY
-并行支持旧版本(如 0.1.1),但无 version-pragma 时默认行为
-SHOULD 为 0.7.0。
+在配置开关下并行支持旧版本 Ktav 格式(如 0.1.1),但除非调用方
+显式选择其他目标版本,MUST 默认将文档视为 0.7.0 —— 本规范不
+定义任何文档内版本标记。
 
 ## 9. 安全考量
 
@@ -1565,13 +1570,16 @@ inline 标量值的*第一个*字节时才与歧义相关(未转义的 `{` 或 `
 复合值),但拥有全部四种形式免除了写入器的「这里要不要 escape?」疑问,并给出一条
 干净的规则:每个 inline 结构分隔符都有 escape 形式。
 
-制表符(`0x09`)与其他低 ASCII 控制字节刻意**没有专门的命名** escape(没有 `\t`)
-—— 没有任何字母值得为一个本来就能作为字面量合法出现的字节而保留。制表符在键与
-标量中是允许的字面字节(§ 4);控制字节是内容数据。包含此类字节的 String 可通过
-verbatim 多行形式表示(§ 5.6、§ 5.9.7),自 0.7.0 起也可通过 `\uXXXX`(§ 3.7.1)
-以 inline 方式表示,它能按编号指称其中任意一个 —— 多行形式能精确保留字节,
-`\uXXXX` 又以通用方式覆盖 inline 情形,为每个控制字节单设专门命名 escape 并无
-必要。
+制表符(`0x09`)与除 `LF` 和 `CR` 之外的其他低 ASCII 控制字节(`LF` 与
+`CR` 已有各自的专用 escape, `\n` 与 `\r`)刻意**没有专门的命名** escape
+—— 没有任何字母值得为一个本来就能作为字面量合法出现的字节而保留。制表符在
+键与标量中是允许的字面字节(§ 4);控制字节是内容数据。包含此类字节的 String
+可通过 verbatim 多行形式表示(§ 5.6、§ 5.9.7),自 0.7.0 起也可通过 `\uXXXX`
+(§ 3.7.1)以 inline 方式表示,它能按编号指称其中任意一个 —— 多行形式能精确
+保留字节,`\uXXXX` 又以通用方式覆盖 inline 情形,为每个控制字节单设专门命名
+escape 并无必要。裸的 `CR` 字节是另一回事,上述两种机制都覆盖不到:它根本不能
+作为 String 内容表示(§ 5.9.7),因为裸 `CR` 永远是行终止符(§ 3.2),只能通过
+`\r` escape 本身进入 String 的逻辑内容。
 
 多行标量值与多行字符串完全不做 escape 处理 —— 词法布局使 escape 在这些上下文中
 没有必要。(键在 0.6.0 获得了 escape 处理;见 § 3.7。)
@@ -1674,8 +1682,8 @@ RFC 2119、RFC 8174、RFC 3629、RFC 8259、TOML、YAML。
   parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
   在该 fixture 上不满足 § 8.1。
 - **变更:** § 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节
-  fixture 要求补充了镜像 § 8.1 的数值域警告:恰在 § 8.1 所指名的
-  探测边界的 fixture 上,更宽域实现解析出的 Value 可能合法地
+  fixture 要求补充了镜像 § 8.1 的数值域警告:恰在
+  `boundary-fixtures.json` 所指名的叶子上,更宽域实现解析出的 Value 可能合法地
   不同,其输出 MAY 不同于该 fixture 固定的 `canonical.ktav` ——
   只要该输出对其真正持有的 Value 是正确的规范形式(§ 5.9)。此前
   § 5 明确允许的任意精度实现会按原文本在 `i64_overflow_to_string`

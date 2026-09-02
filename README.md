@@ -9,9 +9,11 @@
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
 > A plain configuration format. JSON-shape — scalars, arrays, objects,
-> `null`, `true`, `false` — with none of JSON's punctuation. No quotes
-> around strings, no commas, no escape table. Dotted keys for nesting,
-> visible opt-in markers for literal and multi-line strings.
+> `null`, `true`, `false` — with none of JSON's punctuation in the
+> common case: no quotes around strings, no commas outside one-line
+> inline compounds, and a closed 11-entry escape table only for the
+> rare byte that truly needs one. Dotted keys for nesting, visible
+> opt-in markers for literal and multi-line strings.
 
 This repository is the **canonical specification** of the Ktav format.
 Implementations in any programming language are expected to conform to
@@ -204,6 +206,8 @@ key: value             — scalar pair; bare number → Integer/Float,
 key:: value            — scalar pair; value is ALWAYS a literal string
 key: { ... }           — multi-line object; `}` closes on its own line
 key: [ ... ]           — multi-line array; `]` closes on its own line
+key: { a: 1, b: 2 }    — inline object, one line, comma-separated
+key: [ 1, 2 ]          — inline array, one line, comma-separated
 key: {}   /   key: []  — empty compound, inline
 key: ( ... )           — multi-line string; common indent stripped
 key: (( ... ))         — multi-line string; verbatim (no stripping)
@@ -211,9 +215,12 @@ value                  — inside an array: bare item (typed by form)
 :: value               — inside an array: literal-string item
 ```
 
-That's the whole language. No commas, no quotes, no escape table — the
-only "escape" is the `::` marker, and it lives in the separator (for
-pairs) or as a line prefix (for array items).
+That's the whole language. No commas or quotes are required for the
+common case — commas appear only as separators inside one-line inline
+compounds — and the closed 11-entry escape table (§ 3.7) covers only
+the rare byte that truly needs one. The `::` marker (in the separator
+for pairs, or as a line prefix for array items) forces a literal
+string.
 
 ### Dotted keys
 
@@ -436,13 +443,19 @@ pin to a version directory by path.
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
+├── scripts/               corpus validation script
+├── .github/workflows/     CI running the corpus validation
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
+        ├── spec.ru.md     Russian translation of the spec
+        ├── spec.zh.md     Chinese translation of the spec
         └── tests/         language-agnostic conformance suite
             ├── valid/
             ├── invalid/
-            └── unrepresentable/   (0.7+)
+            ├── unrepresentable/   (0.7+)
+            └── boundary-fixtures.json   (0.7+) leaf-level numeric-
+                        domain exemptions, not a fixture category
 ```
 
 ## Implementations

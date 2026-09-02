@@ -9,8 +9,10 @@
 **Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
 > Простой формат конфигурации. Форма JSON — скаляры, массивы, объекты,
-> `null`, `true`, `false` — без пунктуации JSON. Никаких кавычек
-> вокруг строк, никаких запятых, никакой таблицы escape-последовательностей.
+> `null`, `true`, `false` — без пунктуации JSON в обычном случае:
+> без кавычек вокруг строк; запятые — только внутри однострочных
+> inline-составных, а замкнутая таблица из 11 escape-последовательностей
+> покрывает лишь редкие байты, которым escape действительно нужен.
 > Точечные ключи для вложенности, видимые явные маркеры для литеральных
 > и многострочных строк.
 
@@ -210,6 +212,8 @@ key: value             — scalar pair; bare number → Integer/Float,
 key:: value            — scalar pair; value is ALWAYS a literal string
 key: { ... }           — multi-line object; `}` closes on its own line
 key: [ ... ]           — multi-line array; `]` closes on its own line
+key: { a: 1, b: 2 }    — inline object, one line, comma-separated
+key: [ 1, 2 ]          — inline array, one line, comma-separated
 key: {}   /   key: []  — empty compound, inline
 key: ( ... )           — multi-line string; common indent stripped
 key: (( ... ))         — multi-line string; verbatim (no stripping)
@@ -217,10 +221,12 @@ value                  — inside an array: bare item (typed by form)
 :: value               — inside an array: literal-string item
 ```
 
-Это весь язык. Никаких запятых, никаких кавычек, никакой таблицы
-escape-последовательностей — единственный «escape» это маркер `::`,
-и он живёт в разделителе (для пар) или в префиксе строки (для
-элементов массива).
+Это весь язык. В обычном случае не нужны ни запятые, ни кавычки —
+запятые встречаются только как разделители внутри однострочных
+inline-составных — а замкнутая таблица из 11 escape-последовательностей
+покрывает лишь редкие байты, которым escape действительно нужен.
+Маркер `::` (в разделителе для пар или в префиксе строки для элементов
+массива) делает значение литеральной строкой.
 
 ### Точечные ключи
 
@@ -459,13 +465,19 @@ Runner соответствия MUST обходить каждую фиксту�
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
 ├── LICENSE-APACHE         Apache License 2.0
+├── scripts/               corpus validation script
+├── .github/workflows/     CI running the corpus validation
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
+        ├── spec.ru.md     Russian translation of the spec
+        ├── spec.zh.md     Chinese translation of the spec
         └── tests/         language-agnostic conformance suite
             ├── valid/
             ├── invalid/
-            └── unrepresentable/   (0.7+)
+            ├── unrepresentable/   (0.7+)
+            └── boundary-fixtures.json   (0.7+) leaf-level numeric-
+                        domain exemptions, not a fixture category
 ```
 
 ## Реализации
