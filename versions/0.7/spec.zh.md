@@ -522,7 +522,14 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 8. 否则(裸闭合 `}` / `]` 或不可分类)→ `UnbalancedBracket` 错误
    (§ 6.1)。
 
-根类型由首条内容行**固定**。
+根类型由首条内容行**固定**。随后的各行根据所选类型按 § 5.1 分发:
+
+- 在 top-level **Array** 内,每一条非空白、非注释行都是
+  array-item line(§ 5.4)。看似 pair 的行(如 `host: localhost`)
+  按 § 5.4 规则 9 只是裸标量 String;不存在隐式重新归类回 pair 的
+  机制。请使用原始标记形式,使含冒号的标量无歧义。
+- 在 top-level **Object** 内,每一行都是 pair 行(§ 5.3)。
+  不含 `:` 的裸标量是 `MissingSeparator` 错误。
 
 说明(vs. 0.1.1):规则 4 与 5 与早期版本不同。0.1.1 中,首条内容
 行的单独 `{` 或 `[` 在根级 Array 内打开一个 Object / Array 项;
