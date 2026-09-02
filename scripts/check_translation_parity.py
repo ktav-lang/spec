@@ -43,6 +43,31 @@ Purpose:
          Together these catch the deletion of an ordinary paragraph that
          contains no RFC 2119 keyword and no code fence.
 
+      6. Named-section parity: unnumbered headings of level >= 2 (the h1
+         document title is excluded — the front-matter region under the
+         title legitimately differs across languages: RU/ZH carry an
+         "Informative translation" blockquote EN does not have, so the
+         title region is intentionally left unchecked). Named sections are
+         matched POSITIONALLY: EN's i-th unnumbered top-level heading is
+         paired with the translation's i-th, and the same metrics as for
+         numbered sections are compared. Positional matching is required
+         because the heading TEXT is translated (Abstract / Аннотация /
+         摘要), so exact-text comparison between languages is impossible;
+         no language-independent identifier exists (letter-based matching
+         like "Appendix A" / "Приложение A" / "附录 A" would hard-code
+         translator conventions and break on future front-matter
+         sections); and all shipped files carry their unnumbered
+         top-level sections in identical relative order, so position among
+         unnumbered top-level headings is the invariant. A named section
+         present in EN but missing from the translation is a failure, as
+         is a translation-only named section.
+
+    Fatal input check: if the EN file itself contains a duplicate
+    numbered-section heading, EN being canonical, the run aborts with a
+    fatal error (exit 1) before any translation is read or compared —
+    a duplicated heading in the normative file must never silently pass
+    by being compared against only one of the two occurrences.
+
     A mismatch in any metric for a section that exists in both files is a
     strong signal that normative content was dropped (or, more rarely,
     unnecessarily added) somewhere in that section during translation,
@@ -124,7 +149,7 @@ def heading_level(line):
 def parse_file(lines):
     """Single fence-aware pass over a file's lines.
 
-    Returns (sections, fence_opens, occurrences, levels, excluded):
+    Returns (sections, fence_opens, occurrences, levels, excluded, named):
       sections: dict of section-number -> (start_idx, end_idx) text range,
         end_idx exclusive, keyed by the FIRST occurrence of that number.
       fence_opens: sorted list of line indices where a ``` fence OPENS
@@ -136,6 +161,10 @@ def parse_file(lines):
       excluded: list, same length as lines, True for lines that must be
         ignored by content counters (inside a fence or a fence delimiter
         line). Such lines also act as paragraph-block boundaries.
+      named: ordered list of (text, level, start_idx, end_idx) for every
+        heading (outside fences) that is NOT numbered and whose level is
+        >= 2 (i.e. excluding the h1 document title); end_idx uses the
+        same rule as numbered sections.
 
     Lines matching a heading pattern while inside a fenced code block are
     not treated as headings (see module docstring).
@@ -144,6 +173,7 @@ def parse_file(lines):
     numbered = {}
     occurrences = {}
     levels = {}
+    named = []
     fence_opens = []
     excluded = []
     in_fence = False
@@ -167,6 +197,9 @@ def parse_file(lines):
                 if num not in numbered:
                     numbered[num] = idx
                     levels[num] = heading_level(line)
+            elif heading_level(line) >= 2:
+                named.append((line.lstrip("#").strip(), heading_level(line),
+                              idx, None))
 
     heading_indices.sort()
     sections = {}
@@ -177,7 +210,14 @@ def parse_file(lines):
                 end = h
                 break
         sections[num] = (start, end)
-    return sections, fence_opens, occurrences, levels, excluded
+    for i, (text, level, start, _) in enumerate(named):
+        end = len(lines)
+        for h in heading_indices:
+            if h > start:
+                end = h
+                break
+        named[i] = (text, level, start, end)
+    return sections, fence_opens, occurrences, levels, excluded, named
 
 
 def count_content(lines, start, end, excluded):
@@ -226,13 +266,17 @@ def count_keywords(lines, start, end):
 
 
 def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
-                       en_levels, en_excluded, t_path, t_lines, verbose):
+                       en_levels, en_excluded, en_named, en_named_code_counts,
+                       t_path, t_lines, verbose):
     """Compare one translation file against EN. Prints [FAIL]/[PASS] lines
     as it goes; returns the count of sections (either direction) with any
     mismatch."""
     (t_sections, t_fence_opens, t_occurrences, t_levels,
-     t_excluded) = parse_file(t_lines)
+     t_excluded, t_named) = parse_file(t_lines)
     t_code_counts = count_code_blocks_per_section(t_sections, t_fence_opens)
+    t_named_code_counts = count_code_blocks_per_section(
+        {i: (start, end) for i, (_, _, start, end) in enumerate(t_named)},
+        t_fence_opens)
 
     n_mismatch = 0
     for num in en_numbers_sorted:
@@ -293,6 +337,57 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
                   "(not present in EN)" % (t_path, num))
             n_mismatch += 1
 
+    for i in range(min(len(en_named), len(t_named))):
+        en_text, en_named_level, en_start, en_end = en_named[i]
+        _, t_named_level, t_start, t_end = t_named[i]
+        en_kw = count_keywords(en_lines, en_start, en_end)
+        t_kw = count_keywords(t_lines, t_start, t_end)
+        en_code = en_named_code_counts[i]
+        t_code = t_named_code_counts[i]
+
+        problems = []
+        for name, _ in KEYWORD_PATTERNS:
+            if en_kw[name] != t_kw[name]:
+                problems.append("%s count mismatch (EN=%d, translation=%d)"
+                                 % (name, en_kw[name], t_kw[name]))
+        if en_code != t_code:
+            problems.append("code-block count mismatch (EN=%d, translation=%d)"
+                            % (en_code, t_code))
+        en_para, en_list, en_table = count_content(
+            en_lines, en_start, en_end, en_excluded)
+        t_para, t_list, t_table = count_content(
+            t_lines, t_start, t_end, t_excluded)
+        if en_para != t_para:
+            problems.append("paragraph count mismatch (EN=%d, translation=%d)"
+                            % (en_para, t_para))
+        if en_list != t_list:
+            problems.append("list-item count mismatch (EN=%d, translation=%d)"
+                            % (en_list, t_list))
+        if en_table != t_table:
+            problems.append("table-row count mismatch (EN=%d, translation=%d)"
+                            % (en_table, t_table))
+        if en_named_level != t_named_level:
+            problems.append("heading level mismatch (EN=h%d, translation=h%d)"
+                            % (en_named_level, t_named_level))
+
+        if problems:
+            n_mismatch += 1
+            for p in problems:
+                print("[FAIL] %s named section '%s': %s"
+                      % (t_path, en_text, p))
+        elif verbose:
+            print("[PASS] %s named section '%s': all counts match"
+                  % (t_path, en_text))
+    for i in range(len(t_named), len(en_named)):
+        print("[FAIL] %s: missing named section: %s"
+              % (t_path, en_named[i][0]))
+        n_mismatch += 1
+    for j in range(len(en_named), len(t_named)):
+        print("[FAIL] %s: extra named section: %s (translation has %d "
+              "unnumbered top-level section(s); EN has %d)"
+              % (t_path, t_named[j][0], len(t_named), len(en_named)))
+        n_mismatch += 1
+
     return n_mismatch
 
 
@@ -319,15 +414,29 @@ def main(argv):
               file=sys.stderr)
         return 2
 
-    en_sections, en_fence_opens, en_occurrences, en_levels, en_excluded = \
-        parse_file(en_lines)
+    en_sections, en_fence_opens, en_occurrences, en_levels, en_excluded, \
+        en_named = parse_file(en_lines)
     if not en_sections:
         print("error: no numbered sections (headings matching '#+ <number>') "
               "found in EN file %s" % args.en_path, file=sys.stderr)
         return 2
+    dupes = sorted((num for num, count in en_occurrences.items() if count > 1),
+                   key=section_sort_key)
+    if dupes:
+        for num in dupes:
+            print("[FAIL] %s Sec %s: duplicate section number (%d occurrences)"
+                  % (args.en_path, num, en_occurrences[num]))
+        print("error: EN file %s contains duplicate section number(s) %s; "
+              "EN is canonical, so translations are not compared"
+              % (args.en_path, ", ".join(dupes)), file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
     en_code_counts = count_code_blocks_per_section(en_sections, en_fence_opens)
     en_numbers_sorted = sorted(en_sections, key=section_sort_key)
 
+    en_named_code_counts = count_code_blocks_per_section(
+        {i: (start, end) for i, (_, _, start, end) in enumerate(en_named)},
+        en_fence_opens)
     translation_lines = {}
     t_occurrence_counts = {}
     for t_path in args.translation_paths:
@@ -337,7 +446,7 @@ def main(argv):
             print("error: could not read translation file %s: %s" % (t_path, e),
                   file=sys.stderr)
             return 2
-        _, _, t_occ, _, _ = parse_file(translation_lines[t_path])
+        _, _, t_occ, _, _, _ = parse_file(translation_lines[t_path])
         t_occurrence_counts[t_path] = t_occ
 
     summary_lines = []
@@ -345,7 +454,8 @@ def main(argv):
     for t_path in args.translation_paths:
         n_mismatch = check_translation(en_lines, en_sections, en_code_counts,
                                         en_numbers_sorted, en_levels,
-                                        en_excluded, t_path,
+                                        en_excluded, en_named,
+                                        en_named_code_counts, t_path,
                                         translation_lines[t_path], args.verbose)
         if n_mismatch:
             overall = "FAIL"

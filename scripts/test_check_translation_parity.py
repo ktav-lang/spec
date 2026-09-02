@@ -211,6 +211,30 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("Sec 2.2", out)
         self.assertIn("duplicate section number", out)
 
+    # -- duplicate section number in the canonical EN file ------------------
+
+    def test_duplicate_section_number_in_en_fails(self):
+        en_broken = EN_DOC + "\n### 2.2 Duplicate In En\n\nExtra text with a MUST.\n"
+        en = self.write("spec.md", en_broken)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 2.2", out)
+        self.assertIn("duplicate section number", out)
+
+    # -- missing unnumbered named section ------------------------------------
+
+    def test_missing_unnumbered_named_section_fails(self):
+        en_doc = EN_DOC + "\n## Appendix B. Migration\n\nMigrate with a MUST check.\n"
+        en = self.write("spec.md", en_doc)
+        ru = self.write("spec.ru.md", RU_DOC_OK)  # intentionally lacks the appendix
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("missing named section: Appendix B. Migration", out)
+        self.assertNotIn("extra named section", out)
+
 
 if __name__ == "__main__":
     unittest.main()
