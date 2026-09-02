@@ -453,6 +453,75 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("这不是字段而是粗体段落", out)
         self.assert_no_fail_lines_for(out, "spec.md", "spec.ru.md")
 
+    # -- front matter: a whole bold field line dropped from a translation ---
+
+    def test_front_matter_field_line_count_mismatch_fails(self):
+        # Drop the whole "**Languages:** ..." field line from RU; the
+        # existing h1/Version/Date/stray checks alone do not notice a
+        # missing generic field line, only a dedicated count comparison
+        # does.
+        en = self.write("spec.md", EN_FRONT_DOC)
+        ru_broken = RU_FRONT_DOC.replace(
+            "**Languages:** [English](spec.md) · **Русский**\n", "")
+        ru = self.write("spec.ru.md", ru_broken)
+        zh = self.write("spec.zh.md", ZH_FRONT_DOC)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("field-line count mismatch", out)
+        self.assertIn("EN=3", out)
+        self.assertIn("translation=2", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- keyword inside a fence must not mask a dropped keyword in prose ----
+
+    def test_keyword_inside_fence_not_counted_masks_dropped_must(self):
+        # Adversarial mutation: remove the real prose "MUST" from Sec 2.1
+        # (replace the English keyword with a plain Russian word, so the
+        # regex no longer matches it) while ALSO adding a "MUST"-looking
+        # line inside the section's existing code fence. If fence content
+        # were not excluded from the keyword count, the two changes would
+        # cancel out and the mismatch would go undetected.
+        en = self.write("spec.md", EN_DOC)
+        ru_broken = RU_DOC_OK.replace(
+            "Ключ MUST быть непустым.", "Ключ должен быть непустым."
+        ).replace(
+            "```\nexample: 1\n```\n",
+            "```\nexample: 1\n## MUST\n```\n",
+        )
+        ru = self.write("spec.ru.md", ru_broken)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 2.1", out)
+        self.assertIn("MUST count mismatch (EN=1, translation=0)", out)
+
+    # -- stdout encoding safety ----------------------------------------------
+
+    def test_non_utf8_stdout_does_not_crash_on_non_ascii_output(self):
+        # Regression test for a UnicodeEncodeError crash on Windows
+        # consoles (cp1252 etc.): an echoed non-ASCII fragment (here, a
+        # stray Chinese front-matter line) must not blow up main() when
+        # stdout is a non-UTF-8-encoded stream; it must still print a
+        # normal [FAIL] line. io.StringIO (used by run_main() above) has
+        # no console encoding at all, so it cannot reproduce this bug —
+        # this test drives main() against a real ascii-encoded text
+        # stream instead.
+        en = self.write("spec.md", EN_DOC)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        zh = self.write("spec.zh.md", ZH_DOC_OK.replace(
+            "**日期:**(未发布 —— 草案)\n",
+            "**日期:**(未发布 —— 草案)\n这是未翻译的多余段落。\n"))
+        buf = io.BytesIO()
+        ascii_stdout = io.TextIOWrapper(buf, encoding="ascii", errors="strict")
+        with contextlib.redirect_stdout(ascii_stdout):
+            code = ctp.main([en, ru, zh])
+        ascii_stdout.flush()
+        out = buf.getvalue().decode("utf-8", errors="replace")
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("unexpected content line", out)
+
 
 if __name__ == "__main__":
     unittest.main()

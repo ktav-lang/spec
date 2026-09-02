@@ -19,7 +19,10 @@ Purpose:
          check), so a plain regex count works directly on all files
          without any translation-awareness. MUST NOT is counted before
          MUST (and SHOULD NOT before SHOULD) so the MUST inside "MUST
-         NOT" is not also counted as a bare MUST.
+         NOT" is not also counted as a bare MUST. Lines inside fenced
+         code blocks are excluded from this count (same excluded mask
+         as item 5) so a keyword appearing only in example code is not
+         mistaken for normative prose.
       2. Counts of fenced (``` ... ```) code blocks, attributed to the
          section containing the block's OPENING fence.
       3. Section-inventory parity: the set of numbered section headings in
@@ -67,7 +70,7 @@ Purpose:
          paragraph/list/table counters above — RU/ZH legitimately carry
          an "Informative translation" disclaimer blockquote EN does not
          have, so count parity there would be a permanent false positive.
-         Instead four targeted checks run:
+         Instead five targeted checks run:
            a. exactly ONE h1 heading ("# ...", single '#', not "##" or
               deeper) per file, outside fences — zero or several h1s
               corrupt the document structure;
@@ -96,7 +99,17 @@ Purpose:
               paragraph appended under the title is a failure. This is a
               per-file shape whitelist, not a count comparison: it still
               tolerates the RU/ZH disclaimer and any future field
-              labels, but catches silently appended free text.
+              labels, but catches silently appended free text;
+           e. the total count of bold "**Label:** value" field lines
+              (any label, not just Version/Date — e.g. "**Languages:**")
+              in the front-matter region must be identical between EN
+              and every translation. This is a coarse count-only check
+              (label text is translated and cannot be compared), but it
+              catches a whole field line being dropped wholesale (e.g.
+              the "**Languages:**" line removed from a translation),
+              which checks (b)-(d) alone do not detect since they only
+              look at the Version/Date lines and at disallowed shapes,
+              not at how many well-formed field lines are present.
 
     Fatal input check: if the EN file itself contains a duplicate
     numbered-section heading, EN being canonical, the run aborts with a
@@ -317,8 +330,12 @@ def count_code_blocks_per_section(sections, fence_opens):
     return counts
 
 
-def count_keywords(lines, start, end):
-    text = "\n".join(lines[start:end])
+def count_keywords(lines, start, end, excluded):
+    """Count RFC 2119 keyword occurrences in lines[start:end), skipping
+    lines where excluded[idx] is true (fence delimiters/contents) so a
+    keyword appearing inside an example code block is not counted as
+    normative prose."""
+    text = "\n".join(lines[idx] for idx in range(start, end) if not excluded[idx])
     return {name: len(pattern.findall(text)) for name, pattern in KEYWORD_PATTERNS}
 
 
@@ -361,7 +378,7 @@ def extract_release_date(date_value):
 def scan_front_matter(lines):
     """Fence-aware scan for the targeted front-matter checks.
 
-    Returns (h1_count, version_values, date_values, strays):
+    Returns (h1_count, version_values, date_values, strays, field_count):
       h1_count: number of h1 heading lines ('# text', single '#', not
         '##' or deeper) anywhere in the file outside code fences;
       version_values / date_values: values captured (in order) from the
@@ -371,13 +388,20 @@ def scan_front_matter(lines):
         heading of any level);
       strays: non-blank front-matter lines that are neither the heading
         ending the region, a blockquote line, nor a bold '**Label:** ...'
-        field line.
+        field line;
+      field_count: total number of lines in the front-matter region
+        matching the generic bold '**Label:** value' shape (FIELD_LINE_RE),
+        regardless of which label they carry (Version, Date, Languages, or
+        any future field) — a coarse count comparison that catches a whole
+        field line (e.g. '**Languages:** ...') being dropped from a
+        translation even though its label text is untranslatable-by-regex.
 
     Lines inside ``` fences are ignored, matching parse_file."""
     h1_count = 0
     version_values = []
     date_values = []
     strays = []
+    field_count = 0
     in_fence = False
     in_front_matter = True
     for line in lines:
@@ -403,7 +427,10 @@ def scan_front_matter(lines):
             # The h1 title (and the heading ending the region) is part of
             # the allowed shape, not a stray line.
             continue
-        if BLOCKQUOTE_RE.match(line) or FIELD_LINE_RE.match(line):
+        if BLOCKQUOTE_RE.match(line):
+            continue
+        if FIELD_LINE_RE.match(line):
+            field_count += 1
             m = VERSION_LINE_RE.match(line)
             if m:
                 version_values.append(m.group(1))
@@ -412,7 +439,7 @@ def scan_front_matter(lines):
                 date_values.append(m.group(1))
             continue
         strays.append(line)
-    return h1_count, version_values, date_values, strays
+    return h1_count, version_values, date_values, strays, field_count
 
 
 def check_front_matter(en_path, en_lines, translation_lines, verbose):
@@ -421,10 +448,13 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
     generic paragraph/list/table counters (RU/ZH legitimately carry an
     'Informative translation' disclaimer blockquote EN does not have);
     instead, per file: exactly one h1; per translation vs EN: identical
-    Version value and identical binary release status from the Date line;
-    per file: no stray non-blank front-matter lines. Prints [FAIL] lines
-    (and one [PASS] line under --verbose when all files are clean);
-    returns the number of failures printed."""
+    Version value, identical binary release status from the Date line,
+    and the same total count of bold '**Label:** value' field lines
+    (catches a whole field line, e.g. '**Languages:**', being dropped
+    without needing to compare untranslatable label text); per file: no
+    stray non-blank front-matter lines. Prints [FAIL] lines (and one
+    [PASS] line under --verbose when all files are clean); returns the
+    number of failures printed."""
     scans = {en_path: scan_front_matter(en_lines)}
     for t_path, t_lines in translation_lines.items():
         scans[t_path] = scan_front_matter(t_lines)
@@ -507,10 +537,19 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
                   % (path, len(strays), strays[0]))
             n_fail += 1
 
+    en_field_count = scans[en_path][4]
+    for path in translation_lines:
+        t_field_count = scans[path][4]
+        if t_field_count != en_field_count:
+            print("[FAIL] %s: front matter: field-line count mismatch "
+                  "(EN=%d, translation=%d)"
+                  % (path, en_field_count, t_field_count))
+            n_fail += 1
+
     if verbose and n_fail == 0:
         print("[PASS] front matter: %d file(s) ok (exactly one h1 each; "
-              "Version values and release status agree; no unexpected "
-              "front-matter lines)" % len(paths))
+              "Version values and release status agree; field-line "
+              "counts match; no unexpected front-matter lines)" % len(paths))
     return n_fail
 
 
@@ -530,7 +569,7 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
     n_mismatch = 0
     for num in en_numbers_sorted:
         en_start, en_end = en_sections[num]
-        en_kw = count_keywords(en_lines, en_start, en_end)
+        en_kw = count_keywords(en_lines, en_start, en_end, en_excluded)
         en_code = en_code_counts[num]
 
         if num not in t_sections:
@@ -540,7 +579,7 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
             continue
 
         t_start, t_end = t_sections[num]
-        t_kw = count_keywords(t_lines, t_start, t_end)
+        t_kw = count_keywords(t_lines, t_start, t_end, t_excluded)
         t_code = t_code_counts[num]
 
         problems = []
@@ -589,8 +628,8 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
     for i in range(min(len(en_named), len(t_named))):
         en_text, en_named_level, en_start, en_end = en_named[i]
         _, t_named_level, t_start, t_end = t_named[i]
-        en_kw = count_keywords(en_lines, en_start, en_end)
-        t_kw = count_keywords(t_lines, t_start, t_end)
+        en_kw = count_keywords(en_lines, en_start, en_end, en_excluded)
+        t_kw = count_keywords(t_lines, t_start, t_end, t_excluded)
         en_code = en_named_code_counts[i]
         t_code = t_named_code_counts[i]
 
@@ -656,6 +695,15 @@ def main(argv):
                              "whose counts fully match")
     args = parser.parse_args(argv)
 
+    # Force UTF-8 stdout so echoed non-ASCII fragments (Cyrillic/Chinese
+    # excerpts in [FAIL] messages) never raise UnicodeEncodeError on a
+    # non-UTF-8 console (e.g. Windows cp1252); backslashreplace is a
+    # no-op for valid text under UTF-8 and only guards pathological input.
+    # sys.stdout may be swapped for a stream without .reconfigure() (e.g.
+    # io.StringIO in tests), so only call it when available.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="backslashreplace")
+
     try:
         en_lines = read_lines(args.en_path)
     except (OSError, UnicodeDecodeError) as e:
@@ -706,7 +754,8 @@ def main(argv):
         overall = "FAIL"
     summary_lines.append(
         "front matter: %d mismatch(es) (h1 count / Version value / "
-        "release status and date / allowed line shapes)" % fm_failures)
+        "release status and date / field-line count / allowed line "
+        "shapes)" % fm_failures)
     for t_path in args.translation_paths:
         n_mismatch = check_translation(en_lines, en_sections, en_code_counts,
                                         en_numbers_sorted, en_levels,
