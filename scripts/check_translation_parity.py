@@ -44,10 +44,10 @@ Purpose:
          contains no RFC 2119 keyword and no code fence.
 
       6. Named-section parity: unnumbered headings of level >= 2 (the h1
-         document title is excluded — the front-matter region under the
-         title legitimately differs across languages: RU/ZH carry an
-         "Informative translation" blockquote EN does not have, so the
-         title region is intentionally left unchecked). Named sections are
+         document title and the front-matter region under it are excluded
+         from THIS generic count comparison — RU/ZH legitimately carry an
+         "Informative translation" blockquote EN does not have; that
+         region is instead covered by the targeted checks in item 7). Named sections are
          matched POSITIONALLY: EN's i-th unnumbered top-level heading is
          paired with the translation's i-th, and the same metrics as for
          numbered sections are compared. Positional matching is required
@@ -61,6 +61,36 @@ Purpose:
          unnumbered top-level headings is the invariant. A named section
          present in EN but missing from the translation is a failure, as
          is a translation-only named section.
+      7. Targeted front-matter checks: the region from the start of the
+         file to the first heading of any level (the h1 title plus the
+         fields under it) is deliberately NOT compared with the generic
+         paragraph/list/table counters above — RU/ZH legitimately carry
+         an "Informative translation" disclaimer blockquote EN does not
+         have, so count parity there would be a permanent false positive.
+         Instead four targeted checks run:
+           a. exactly ONE h1 heading ("# ...", single '#', not "##" or
+              deeper) per file, outside fences — zero or several h1s
+              corrupt the document structure;
+           b. the value of the bold Version label line (recognized in
+              all three languages: "**Version:**" / "**Версия:**" /
+              "**版本:**") must be the identical string in EN and every
+              translation;
+           c. the bold Date label line ("**Date:**" / "**Дата:**" /
+              "**日期:**") is reduced to a binary release-status signal —
+              "dated" if the value contains an ISO date (YYYY-MM-DD),
+              "draft" otherwise — and all files must carry the same
+              signal. The value is free prose that legitimately differs
+              word-for-word across languages ("unreleased" vs "не
+              выпущено" vs "未发布"), so ISO-date presence is the one
+              language-independent signal it carries; the normalization
+              is intentionally heuristic (see release_status);
+           d. every non-blank front-matter line must be either a
+              blockquote line (the legitimate per-language disclaimer)
+              or a bold "**Label:** value" field line — a stray plain
+              paragraph appended under the title is a failure. This is a
+              per-file shape whitelist, not a count comparison: it still
+              tolerates the RU/ZH disclaimer and any future field
+              labels, but catches silently appended free text.
 
     Fatal input check: if the EN file itself contains a duplicate
     numbered-section heading, EN being canonical, the run aborts with a
@@ -100,7 +130,8 @@ Usage:
 
 Exit codes:
     0  every translation matches EN in all metrics for every section of
-       both files (and has no extra/duplicate sections)
+       both files (and has no extra/duplicate sections, and the targeted
+       front-matter checks pass)
     1  one or more mismatches (including missing, translation-only, or
        duplicate sections) found
     2  usage error (missing/unreadable file)
@@ -115,6 +146,19 @@ NUMBERED_HEADING_RE = re.compile(r'^#{1,6}\s+(\d+(?:\.\d+)*)\b')
 FENCE_RE = re.compile(r'^\s*```')
 LIST_ITEM_RE = re.compile(r'^\s*(?:[-*]|\d+\.)\s+')
 TABLE_ROW_RE = re.compile(r'^\s*\|')
+
+# Front-matter recognition: the h1 title line (single '#', not '##' or
+# deeper), blockquote lines (the legitimate per-language disclaimer),
+# bold '**Label:** ...' field lines, and the bold Version/Date label
+# lines in all three shipped languages.
+H1_RE = re.compile(r'^#\s+\S')
+BLOCKQUOTE_RE = re.compile(r'^\s*>')
+FIELD_LINE_RE = re.compile(r'^\s*\*\*[^*]+\*\*')
+VERSION_LINE_RE = re.compile(
+    r'^\s*\*\*(?:Version|Версия|版本):\*\*\s*(\S.*?)\s*$')
+DATE_LINE_RE = re.compile(
+    r'^\s*\*\*(?:Date|Дата|日期):\*\*\s*(\S.*?)\s*$')
+ISO_DATE_RE = re.compile(r'\d{4}-\d{2}-\d{2}')
 
 # Order matters for readability only: MUST NOT / SHOULD NOT use their own
 # literal patterns, while MUST / SHOULD use a negative lookahead so the
@@ -263,6 +307,168 @@ def count_code_blocks_per_section(sections, fence_opens):
 def count_keywords(lines, start, end):
     text = "\n".join(lines[start:end])
     return {name: len(pattern.findall(text)) for name, pattern in KEYWORD_PATTERNS}
+
+
+def release_status(date_value):
+    """Normalize a front-matter Date-line value to a binary release-status
+    signal: "dated" if the value contains an ISO date (YYYY-MM-DD),
+    "draft" otherwise.
+
+    The Date value is free prose that legitimately differs word-for-word
+    across languages ("(unreleased — 0.7 draft ...)" vs
+    "(не выпущено — черновик 0.7 ...)" vs "(未发布 —— 0.7 草案...)"), so no
+    literal cross-language comparison is possible. The one
+    language-independent signal the line carries is whether a real release
+    date has been filled in: while the spec is a draft no file has a
+    YYYY-MM-DD here; after release all three will carry the same ISO date.
+    Known heuristic limit: a draft line quoting a target date
+    ("unreleased, planned 2026-10-01") reads as "dated" — but translations
+    mirror the EN wording, so the signal still flips in all files together.
+    The check enforces cross-file parity of the signal, not absolute
+    release state."""
+    return "dated" if ISO_DATE_RE.search(date_value) else "draft"
+
+
+def scan_front_matter(lines):
+    """Fence-aware scan for the targeted front-matter checks.
+
+    Returns (h1_count, version_values, date_values, strays):
+      h1_count: number of h1 heading lines ('# text', single '#', not
+        '##' or deeper) anywhere in the file outside code fences;
+      version_values / date_values: values captured (in order) from the
+        bold Version-family ('**Version:**' / '**Версия:**' / '**版本:**')
+        and Date-family ('**Date:**' / '**Дата:**' / '**日期:**') label
+        lines in the front-matter region (start of file up to the first
+        heading of any level);
+      strays: non-blank front-matter lines that are neither the heading
+        ending the region, a blockquote line, nor a bold '**Label:** ...'
+        field line.
+
+    Lines inside ``` fences are ignored, matching parse_file."""
+    h1_count = 0
+    version_values = []
+    date_values = []
+    strays = []
+    in_fence = False
+    in_front_matter = True
+    for line in lines:
+        if FENCE_RE.match(line):
+            in_fence = not in_fence
+            if in_front_matter:
+                strays.append(line)
+            continue
+        if in_fence:
+            continue
+        if in_front_matter and HEADING_RE.match(line):
+            if h1_count >= 1:
+                # The h1 title itself belongs to the region; the first
+                # heading AFTER it ends the front-matter region.
+                in_front_matter = False
+            elif not H1_RE.match(line):
+                in_front_matter = False
+        if H1_RE.match(line):
+            h1_count += 1
+        if not in_front_matter or not line.strip():
+            continue
+        if HEADING_RE.match(line):
+            # The h1 title (and the heading ending the region) is part of
+            # the allowed shape, not a stray line.
+            continue
+        if BLOCKQUOTE_RE.match(line) or FIELD_LINE_RE.match(line):
+            m = VERSION_LINE_RE.match(line)
+            if m:
+                version_values.append(m.group(1))
+            m = DATE_LINE_RE.match(line)
+            if m:
+                date_values.append(m.group(1))
+            continue
+        strays.append(line)
+    return h1_count, version_values, date_values, strays
+
+
+def check_front_matter(en_path, en_lines, translation_lines, verbose):
+    """Targeted front-matter checks (module docstring, item 7) over EN and
+    every translation together. The region is NOT compared with the
+    generic paragraph/list/table counters (RU/ZH legitimately carry an
+    'Informative translation' disclaimer blockquote EN does not have);
+    instead, per file: exactly one h1; per translation vs EN: identical
+    Version value and identical binary release status from the Date line;
+    per file: no stray non-blank front-matter lines. Prints [FAIL] lines
+    (and one [PASS] line under --verbose when all files are clean);
+    returns the number of failures printed."""
+    scans = {en_path: scan_front_matter(en_lines)}
+    for t_path, t_lines in translation_lines.items():
+        scans[t_path] = scan_front_matter(t_lines)
+    paths = [en_path] + list(translation_lines)
+    n_fail = 0
+
+    for path in paths:
+        h1_count = scans[path][0]
+        if h1_count != 1:
+            print("[FAIL] %s: front matter: expected exactly 1 h1 title "
+                  "heading ('# ...'), found %d" % (path, h1_count))
+            n_fail += 1
+
+    en_version = None
+    if len(scans[en_path][1]) != 1:
+        print("[FAIL] %s: front matter: expected exactly 1 Version label "
+              "line ('**Version:**' / '**Версия:**' / '**版本:**') with a "
+              "value, found %d" % (en_path, len(scans[en_path][1])))
+        n_fail += 1
+    else:
+        en_version = scans[en_path][1][0]
+    for path in translation_lines:
+        t_versions = scans[path][1]
+        if len(t_versions) != 1:
+            print("[FAIL] %s: front matter: expected exactly 1 Version "
+                  "label line ('**Version:**' / '**Версия:**' / "
+                  "'**版本:**') with a value, found %d"
+                  % (path, len(t_versions)))
+            n_fail += 1
+        elif en_version is not None and t_versions[0] != en_version:
+            print("[FAIL] %s: front matter: Version value mismatch "
+                  "(EN=%s, translation=%s)"
+                  % (path, en_version, t_versions[0]))
+            n_fail += 1
+
+    en_status = None
+    if len(scans[en_path][2]) != 1:
+        print("[FAIL] %s: front matter: expected exactly 1 Date label "
+              "line ('**Date:**' / '**Дата:**' / '**日期:**') with a "
+              "value, found %d" % (en_path, len(scans[en_path][2])))
+        n_fail += 1
+    else:
+        en_status = release_status(scans[en_path][2][0])
+    for path in translation_lines:
+        t_dates = scans[path][2]
+        if len(t_dates) != 1:
+            print("[FAIL] %s: front matter: expected exactly 1 Date label "
+                  "line ('**Date:**' / '**Дата:**' / '**日期:**') with a "
+                  "value, found %d" % (path, len(t_dates)))
+            n_fail += 1
+        elif en_status is not None:
+            t_status = release_status(t_dates[0])
+            if t_status != en_status:
+                print("[FAIL] %s: front matter: release-status mismatch "
+                      "(EN=%s, translation=%s)"
+                      % (path, en_status, t_status))
+                n_fail += 1
+
+    for path in paths:
+        strays = scans[path][3]
+        if strays:
+            print("[FAIL] %s: front matter: unexpected content line(s) "
+                  "(%d, first: '%s'); only blank lines, blockquote ('>') "
+                  "lines and bold '**Label:** value' field lines are "
+                  "allowed between the h1 title and the first heading"
+                  % (path, len(strays), strays[0]))
+            n_fail += 1
+
+    if verbose and n_fail == 0:
+        print("[PASS] front matter: %d file(s) ok (exactly one h1 each; "
+              "Version values and release status agree; no unexpected "
+              "front-matter lines)" % len(paths))
+    return n_fail
 
 
 def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
@@ -449,8 +655,15 @@ def main(argv):
         _, _, t_occ, _, _, _ = parse_file(translation_lines[t_path])
         t_occurrence_counts[t_path] = t_occ
 
+    fm_failures = check_front_matter(args.en_path, en_lines,
+                                     translation_lines, args.verbose)
     summary_lines = []
     overall = "PASS"
+    if fm_failures:
+        overall = "FAIL"
+    summary_lines.append(
+        "front matter: %d mismatch(es) (h1 count / Version value / "
+        "release status / allowed line shapes)" % fm_failures)
     for t_path in args.translation_paths:
         n_mismatch = check_translation(en_lines, en_sections, en_code_counts,
                                         en_numbers_sorted, en_levels,
