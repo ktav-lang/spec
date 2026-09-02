@@ -330,7 +330,7 @@ producing hand-authored, non-canonical Ktav text, not the canonical
 algorithm. Where such a writer chooses to escape a byte that also
 has a named escape in the table above, it SHOULD prefer the named
 form (`\.` over the `\uXXXX` form of the same code point, for
-consistency with the other twelve named forms) and use `\uXXXX` only
+consistency with the other thirteen named forms) and use `\uXXXX` only
 for code points with no named escape. When `\uXXXX` is emitted, the four hex
 digits MUST be uppercase (`0-9A-F`) — parsing is case-insensitive
 (§ 3.7.1 above), but two writer-conforming implementations emitting
@@ -342,8 +342,12 @@ determinism requirement).
 The grammar is presented in a semi-formal notation, one rule per line.
 Terminals are in double quotes; `<name>` denotes a non-terminal;
 `*` is zero-or-more, `+` is one-or-more, `?` is optional, `|` is
-alternation. `(ws)` stands for zero or more whitespace code points
-(§ 3.3 — the fixed 25-code-point set, not ASCII-only).
+alternation. Within a terminal, `\"` denotes a literal double-quote
+character and `\\` denotes a literal backslash — this notation is
+used only where a terminal must itself contain a quote or backslash
+byte (e.g. the quoted-segment delimiters, § 4). `(ws)` stands for
+zero or more whitespace code points (§ 3.3 — the fixed 25-code-point
+set, not ASCII-only).
 
 ```
 <document>      ::= <line>*
@@ -374,16 +378,18 @@ alternation. `(ws)` stands for zero or more whitespace code points
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; default, scalar dispatched per § 5.2
                   | <key> "::" <sep-end> <value-part-opt> eol    ; literal String
 
-<key>           ::= <segment> ( <unescaped-dot> <segment> )*
-<unescaped-dot> ::= "." that is NOT preceded by an odd number of "\"
-<segment>       ::= <quoted-segment> | <bare-segment>
-<bare-segment>  ::= <key-token>+
-<key-token>     ::= <key-escape> | <key-char>
-<key-escape>    ::= "\" <escapable-byte>
-                  | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
-<escapable-byte>::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
-                   | "." | ":" | "\"" | "'" | "`"
-<hex-digit>     ::= [0-9a-fA-F]
+<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\"
+<segment>            ::= <quoted-segment> | <bare-segment>
+<bare-segment>       ::= <bare-first-token> <key-token>*
+<bare-first-token>   ::= <key-escape> | <non-quote-key-char>
+<key-token>          ::= <key-escape> | <key-char>
+<non-quote-key-char> ::= <key-char> excluding "\"", "'", "`"
+<key-escape>         ::= "\" <escapable-byte>
+                        | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+                        | "." | ":" | "\"" | "'" | "`"
+<hex-digit>          ::= [0-9a-fA-F]
 
 <quoted-segment> ::= "\"" <dq-token>* "\""       ; § 5.3.3
                   | "'" <sq-token>* "'"
@@ -419,8 +425,10 @@ alternation. `(ws)` stands for zero or more whitespace code points
                     a trimmed line, § 3.4; a quote character — '"',
                     "'", or "`" — is an ordinary, unexcluded
                     <key-char> everywhere in a <bare-segment> EXCEPT
-                    as its first code point, where it instead opens a
-                    <quoted-segment> — § 5.3.3's positional rule below)
+                    as its first code point — excluded there by
+                    <bare-first-token> / <non-quote-key-char> above —
+                    where it instead opens a <quoted-segment> —
+                    § 5.3.3's positional rule)
 
                     Key-segment trimming: a key segment is **trimmed**
                     of leading and trailing whitespace (§ 3.3 — the
@@ -689,7 +697,12 @@ the first matching rule wins.
    purely lexical, shape-only test: the prefix before the separator
    is NOT required to be a grammatically valid `<key>` (§ 4) at
    detection time, so a first line such as `a,b: 1` still selects
-   an Object root. Phase 2 is uniform validation: once the Object
+   an Object root. Because phase 1 reuses § 4's separator-scanning
+   rule verbatim rather than a separate implementation, it inherits
+   that rule's quote-awareness for free — a quoted-segment's
+   content stays opaque to the scan even on this UNDECIDED first
+   line, with no separate logic to keep in sync. Phase 2 is uniform
+   validation: once the Object
    context exists, § 5.3 / § 5.3.1 validate the candidate's raw key
    prefix exactly as they validate every other pair line inside an
    established Object (§ 5.1 rule 8) — the same line then yields
@@ -871,8 +884,15 @@ key:: literal-string-value
 where:
 
 - `key` is one or more **segments** separated by unescaped dots
-  (`key-token+`). Each segment MUST be non-empty after escape
-  processing. The key is **escape-aware** (§ 3.7, § 4): `\` is
+  (`<segment> ( <unescaped-dot> <segment> )*`, § 4). Each segment is
+  either a `<bare-segment>` (`key-token+`) or, as of 0.7.0, a
+  `<quoted-segment>` (§ 5.3.3) opened by `"`, `'`, or `` ` `` — the
+  two forms may be mixed freely across the segments of one dotted
+  key (`a."b.c".d: v`, § 5.3.3) and are validated per § 5.3.1. Each
+  segment MUST be non-empty: after escape processing for a bare
+  segment, or, for a quoted segment, as written between its
+  delimiters (quoted content is never trimmed, § 5.3.3). A
+  `<bare-segment>` is **escape-aware** (§ 3.7, § 4): `\` is
   the escape lead; `\.` produces a literal dot (not a path
   separator); `\:` produces a literal colon (not a pair separator);
   `\\` produces a literal backslash. Other `\X` forms are
@@ -886,9 +906,12 @@ where:
   canonical writer escapes the leading `#` precisely because a raw
   `##` would make the line unparseable-as-intended on re-read.
   The pair separator is the first **unescaped** `:` (or `::`)
-  scanning left-to-right. This scanning rule — together with a
-  non-empty prefix and `<sep-end>` for a plain `:` — is also the
-  shape-only test § 5.0.1 rule 6 uses to detect a root Object;
+  scanning left-to-right, treating the content of any quoted
+  segment along the way as opaque — § 4 gives the exact quote-aware
+  scanning rule (including how an unterminated quoted segment is
+  handled); it is not restated here. This scanning rule — together
+  with a non-empty prefix and `<sep-end>` for a plain `:` — is also
+  the shape-only test § 5.0.1 rule 6 uses to detect a root Object;
   full key validation (§ 5.3.1) runs afterward, uniformly,
   regardless of which rule established the Object context.
 - The plain `:` separator dispatches the value per § 5.2.
@@ -903,7 +926,9 @@ where:
   `MissingSeparatorSpace` error (§ 6.10). The `<sep-end>` rule does
   NOT apply to inline pair separators (§ 5.8) where whitespace is
   optional everywhere. Separator checks precede key validation: for
-  a dispatched pair line the order is `MissingSeparator` (§ 6.6) →
+  a dispatched pair line the order is `UnterminatedQuotedKey`
+  (§ 6.16) when the reason no separator was found is an unterminated
+  quoted key segment, else the generic `MissingSeparator` (§ 6.6) →
   `EmptyKey` for an empty prefix (§ 6.5) → `MissingSeparatorSpace`
   (§ 6.10) → key-segment validation (§ 5.3.1). A key defect does
   not preempt a separator defect: `b,c:1` inside an established
@@ -916,13 +941,37 @@ empty String. This is true for both plain `:` and raw `::`.
 
 #### 5.3.1 Key Validation
 
-A key segment that is empty after trimming yields an `EmptyKey`
-(§ 6.5) error; a segment containing a raw (unescaped) code point
-that `<key-char>` (§ 4) forbids yields an `InvalidKey` (§ 6.4)
-error; a malformed `\X` escape yields a `BadEscapeSequence`
-(§ 6.13) error. Validation operates on the raw prefix up to the
-first unescaped separator, however malformed the separator's
-surrounding whitespace is (check ordering: § 5.3).
+Validation operates on the raw prefix up to the first unescaped
+separator, however malformed the separator's surrounding whitespace
+is (check ordering: § 5.3). Each segment of that prefix is either a
+`<bare-segment>` or a `<quoted-segment>` (§ 4), identified
+positionally (§ 5.3.3), and the two forms are validated differently:
+
+- **Bare segment.** A segment that is empty after trimming yields
+  an `EmptyKey` (§ 6.5) error; a segment containing a raw
+  (unescaped) code point that `<key-char>` (§ 4) forbids yields an
+  `InvalidKey` (§ 6.4) error; a malformed `\X` escape yields a
+  `BadEscapeSequence` (§ 6.13) error.
+- **Quoted segment (§ 5.3.3).** Its content is validated, unmodified
+  by trimming — only the whitespace *outside* the delimiters is
+  trimmed (§ 4); the content itself is checked as-is, so an
+  all-whitespace segment (`" "`) is valid, not `EmptyKey`. The
+  applicable character class is `<dq-char>` / `<sq-char>` /
+  `<bt-char>` (§ 4) for the segment's own delimiter, not
+  `<key-char>`: a raw control byte or DEL is still `InvalidKey`
+  (§ 6.4), and a malformed `\X` escape is still `BadEscapeSequence`
+  (§ 6.13), but which raw bytes are structural differs from a bare
+  segment (§ 5.3.3). An empty quoted segment (`""`, `''`, ` `` `) is
+  still `EmptyKey` (§ 6.5). Content other than whitespace following
+  the closing delimiter, before the next `<unescaped-dot>` or the
+  pair separator, is `InvalidKey` (§ 6.4) per § 5.3.3's "nothing may
+  follow the closer" rule. An unterminated quoted segment (no
+  matching unescaped closer before end-of-line) never reaches this
+  section as a key-validation defect at all: § 4's separator scan
+  finds no separator, and the line is diagnosed as
+  `UnterminatedQuotedKey` (§ 6.16) or, on the document's undecided
+  first content line, treated as no error at all — see § 5.3.3 and
+  § 5.0.1 rule 6.
 
 A segment beginning with `##` is none of these — it is not a key
 validation failure; it is never parsed as a key at all. § 5.1
@@ -985,16 +1034,33 @@ below) — offered because a segment needing several of `.` / `:` / `,`
 / `{` / `}` / `[` / `]` escaped is harder to read than the same
 content quoted once.
 
+- **Keys only.** Quoting (this whole § 5.3.3) applies only to key
+  segments — § 4's `<key>` production. A quote character in any VALUE
+  position — an inline scalar, a multi-line string, an array item —
+  is ordinary content with no special meaning; the existing escaping
+  rules for values (§ 3.7) are completely unchanged by this feature.
+  `{a: "b"}` is the pair `a` mapped to the three-character String
+  `"b"` (quote, `b`, quote — an ordinary bare inline scalar, per
+  § 5.2's existing scalar-typing rules), not an unwrapped String `b`:
+  0.7.0 does not add JSON-style value quoting.
 - **Positional rule.** A quote character opens a `<quoted-segment>`
   if and only if it is the first code point of a segment's raw text
   *after* the same edge-whitespace trimming § 4 already applies to
-  every segment. Anywhere else — including a quote character that is
-  merely the first non-whitespace byte of the whole *key* only
-  because a *dot* precedes it (that dot still starts a new segment,
-  and the rule reapplies fresh to what follows) — a quote character
-  is an ordinary `<key-char>`, exactly as in every version before
-  0.7.0's quoted-key addition: `don't: 1` and `a"b: 1` are unaffected,
-  and `port": 1` is still the five-character bare key `port"`.
+  every segment. This positional test is re-applied fresh at the
+  start of EVERY segment, with no exception — including a segment
+  that immediately follows an unescaped dot: the dot still starts a
+  new segment (§ 5.3.2), and a quote character sitting right after it
+  is that new segment's own first code point, so it opens a
+  `<quoted-segment>` there exactly as it would at the very start of
+  the whole key. This is why `a."b.c".d: 1` is the three-segment path
+  `["a", "b.c", "d"]` (§ 4's dotted-path example; the "Per-segment
+  participation in dotted paths" bullet below) rather than stopping
+  at two segments. Anywhere a quote character is NOT the first code
+  point of a segment — mid-segment, or after other non-whitespace
+  content within the same segment — it is an ordinary `<key-char>`,
+  exactly as in every version before 0.7.0's quoted-key addition:
+  `don't: 1` and `a"b: 1` are unaffected, and `port": 1` is still the
+  five-character bare key `port"`.
 - **Content is not trimmed.** Unlike a `<bare-segment>`, whitespace
   immediately inside a `<quoted-segment>`'s delimiters is ordinary
   content, preserved verbatim at both edges: `" a "` decodes to the
@@ -1047,18 +1113,43 @@ content quoted once.
     `MissingSeparator` (§ 6.6) that a plain colon-free line would
     raise — the same precedence a leading unterminated `[` / `{`
     already takes over a generic pair-candidate read (§ 5.0.1 rule 6).
-    This branch never applies to the document's first content line
-    itself: § 5.0.1 rule 6 uses this SAME separator-scanning rule for
-    its own phase-1 test, so a first line with an unterminated quoted
-    segment already fails phase 1 (next bullet) and never reaches
-    phase 2's pair-line dispatch in the first place.
-  - On the document's UNDECIDED first content line (§ 5.0.1), rule 6's
-    phase-1 test is purely about whether a separator exists; finding
-    none for any reason — no colon at all, or an unterminated quoted
-    segment swallowing the rest of the line — is simply not a pair
-    candidate, exactly as today. Root-kind detection falls through to
-    rule 7: the line is an ordinary Array-root String item, quote
-    character and all, with no error. `'tis the season` (no colon
+    This branch applies to the document's first content line only
+    when that line does NOT begin with `{` or `[`: such a line is
+    routed instead by § 5.0.1 rules 2–5 on the leading bracket/brace,
+    before rule 6's pair-candidate test is ever tried, and an
+    unterminated quoted segment inside it is diagnosed differently —
+    see the note below. For a first line that does NOT begin with `{`
+    or `[`, § 5.0.1 rule 6 uses this SAME separator-scanning rule for
+    its own phase-1 test, so the line already fails phase 1 (next
+    bullet) and never reaches phase 2's pair-line dispatch in the
+    first place.
+  - A first content line that DOES begin with `{` or `[` follows a
+    different path entirely (§ 5.0.1 rules 2–5): its outcome turns on
+    bracket-balance, not on this separator-scanning rule. An
+    unterminated quoted segment inside such a line makes everything
+    from the opening quote to end-of-line opaque to bracket-balance
+    counting, for the same reason described under "Inline pairs"
+    above — so a `}` / `]` that appears only *inside* the unterminated
+    quoted segment's reach does not count as a matching closer.
+    `{"a: 1}` therefore does not close under rule 2 (the unterminated
+    `"` swallows the rest of the line, closing brace included), is not
+    a lone `{` under rule 4 either, and falls to § 5.0.1's note after
+    rules 2–5: a malformed or unterminated inline-compound attempt,
+    diagnosed as `UnterminatedInlineCompound` or `MalformedInlineCompound`
+    (§ 6.11 / § 6.12) — NOT `UnterminatedQuotedKey`, and NOT (contrast
+    the next bullet) an Array-root String item with no error. This is
+    an existing diagnostic path, unmodified by quoted keys; quoting
+    only adds one more way a line can fail to bracket-balance,
+    alongside an already-unterminated `{` / `[` with no quoting
+    involved at all.
+  - On the document's UNDECIDED first content line (§ 5.0.1) that does
+    NOT begin with `{` or `[`, rule 6's phase-1 test is purely about
+    whether a separator exists; finding none for any reason — no
+    colon at all, or an unterminated quoted segment swallowing the
+    rest of the line — is simply not a pair candidate, exactly as
+    today. Root-kind detection falls through to rule 7: the line is
+    an ordinary Array-root String item, quote character and all,
+    with no error. `'tis the season` (no colon
     anywhere) is unaffected by quoting at all; `'tis the season: fa`
     — which before 0.7.0's quoted-key addition parses as an Object
     with the bare key `'tis the season` (an unescaped `'` was always
@@ -1083,7 +1174,7 @@ content quoted once.
   production, so quoted keys are recognised identically inside inline
   objects: `{"a}b": 1, c: 2}` is `{"a}b": 1, "c": 2}` — the `}` inside
   the quoted key is ordinary content, not the inline object's closing
-  brace, because it is read while still inside the `<dq-segment>`
+  brace, because it is read while still inside the `<quoted-segment>`
   before the key-position scan ever reaches the position where an
   inline-object-closing `}` would be recognised. This is the same
   opacity the separator/dot scan already has (§ 4) applied to the
@@ -1102,6 +1193,22 @@ content quoted once.
   prematurely close it), and its canonical form is the fully expanded
   root-level pair list of § 5.9.3, exactly as any other top-level
   inline object's would be.
+
+  The same opacity applies to the **comma** that splits an inline
+  compound's body into elements/pairs (§ 5.8, § 5.8.3, § 6.12) — not
+  only to bracket-balance detection above. A comma between a
+  `<quoted-segment>`'s opening and closing delimiter is ordinary
+  content, not an element/pair separator, for the identical reason a
+  bracket inside one is not a structural delimiter: it is read as
+  ordinary content before the comma-splitting scan ever reaches a
+  position where a `,` could be recognised as structural. `{"a,b": 1,
+  c: 2}` is therefore unambiguously exactly two pairs — key `a,b`
+  mapped to `1`, and key `c` mapped to `2` — never three
+  comma-delimited fields; the comma inside the quoted key does not
+  count as a pair separator, and so cannot itself introduce a leading
+  comma, an empty inline-array item, or a "two or more consecutive
+  commas" defect (§ 6.12) — it was never a splitting position to
+  begin with.
 
 ### 5.4 Array-Item Lines
 
@@ -1823,7 +1930,7 @@ A key segment is emitted in one of two forms — **bare** or
 re-escape recipe below) unless (a) bare form would require escaping
 at least one byte that a `<quoted-segment>` (§ 4) admits as literal,
 unescaped content — the structural bytes `.`, `:`, `,`, `{`, `}`,
-`[`, `]` (bullet 1 below, excluding `\`), or `(` / `)` (part of
+`[`, `]` (bullet 1 below, excluding `\`, LF, and CR), or `(` / `)` (part of
 bullet 2 below, since neither opens a multi-line string at a
 key-segment position) — or the `##`-prefix escape (bullet 4 below)
 or an edge-whitespace escape (bullet 3 below); or (b) the segment's
@@ -1867,9 +1974,9 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   trimming, since the trimmed text is the escape's own ASCII
   spelling (`\`, then a letter or four hex digits), never the
   whitespace byte itself. Interior whitespace needs no escaping.
-- If the key's raw text (the first segment, as written on the
-  line) begins with the two-byte sequence `##`, the writer MUST
-  additionally escape exactly the first `#` as `\u0023` — on
+- If the segment being emitted is the key's first segment, and its
+  decoded content begins with the two-byte sequence `##`, the writer
+  MUST additionally escape exactly the first `#` as `\u0023` — on
   top of, not instead of, whatever bullets 1–3 above already
   require for every other code point in the same segment. A
   structural byte or edge-whitespace code point elsewhere in a
@@ -1897,9 +2004,17 @@ content between two `"` characters, escaping only:
 - `\` (backslash), as `\\` — backslash is always the escape lead,
   in both forms;
 - LF / CR, as `\n` / `\r` — a key MUST remain single-line;
-- any other control byte or DEL, as `\uXXXX` — quoting relaxes
-  which STRUCTURAL bytes need escaping, not the format's separate
-  prohibition on raw invisible bytes in a key (§ 5.3.3).
+- any other control byte below `0x20` that is not a § 3.3
+  whitespace member, or DEL, as `\uXXXX` — quoting relaxes which
+  STRUCTURAL bytes need escaping, not the format's separate
+  prohibition on raw invisible, non-whitespace bytes in a key
+  (§ 5.3.3). A control byte that IS a § 3.3 whitespace member (tab,
+  VT, FF) is excluded from this bullet for the same reason it is
+  excluded from bare form's analogous bullet above: § 4's
+  `<dq-char>` / `<sq-char>` / `<bt-char>` already admit it raw, so
+  it needs no `\uXXXX` escape here, whether it occurs at an edge or
+  in the interior of the segment (see the edge-whitespace point
+  below, which is not limited to non-control whitespace).
 
 `.`, `:`, `,`, `{`, `}`, `[`, `]`, `(`, `)`, `'`, and `` ` `` need no
 escaping in quoted form, and neither does edge whitespace: a
@@ -2111,26 +2226,38 @@ A quote character (`"`, `'`, or `` ` ``) that opens a `<quoted-segment>`
 (§ 5.3.3 — it is the first code point of a key segment after
 trimming) with no matching unescaped closing delimiter of the same
 character before end-of-line is an `UnterminatedQuotedKey` error,
-reported on any line dispatched as a pair line (§ 5.1 rule 8) or any
-inline-pair position (§ 5.8.2). This diagnosis takes precedence over
-the generic `MissingSeparator` (§ 6.6) that a colon-free line would
-otherwise raise, mirroring how an unterminated `[` / `{` already
-takes precedence over a generic pair-candidate read at § 5.0.1
-rule 6. It likewise takes precedence over `UnterminatedInlineCompound`
-(§ 6.11) when both would otherwise apply to the same inline compound:
-an unclosed quoted key at an inline-pair position (e.g. `{"a: 1}`)
+reported on any line dispatched as a pair line (§ 5.1 rule 8) —
+that is, an ordinary multi-line pair line, inside an established
+Object or the top-level Object body, where finding a separator is
+the only requirement and no enclosing bracket needs its own
+same-line closer. This diagnosis takes precedence over the generic
+`MissingSeparator` (§ 6.6) that a colon-free line would otherwise
+raise, mirroring how an unterminated `[` / `{` already takes
+precedence over a generic pair-candidate read at § 5.0.1 rule 6.
+
+This category does NOT cover an inline-pair position (§ 5.8.2): an
+unclosed quoted key there (e.g. `{"a: 1}`, or `obj: {"a: 1}`)
 necessarily swallows the rest of the line — including whatever would
-have been the compound's own closing `}` / `]` — so the compound
-being unterminated is a *consequence* of the unclosed quote, not an
-independent defect; naming the quote is the more specific and more
-actionable diagnosis of the two. This never applies to the document's
-first content line
-itself: § 5.0.1 rule 6 uses this same separator-scanning rule for its
-own phase-1 shape test, so on that UNDECIDED first line the same
-underlying fact — no separator found — is not an error at all: it is
-simply not a pair candidate, and root-kind detection falls through
-to an Array root with this line as a String item (§ 5.3.3, § 5.0.1
-rule 7).
+have been the enclosing compound's own closing `}` / `]` — so the
+compound itself never bracket-balances. The balanced-content check
+behind `UnterminatedInlineCompound` (§ 6.11) / `MalformedInlineCompound`
+(§ 6.12) is already quote-opaque for exactly this reason (§ 5.3.3's
+"Inline pairs" bullet), and reports one of those two categories
+instead — never `UnterminatedQuotedKey` — since the compound-level
+defect is what a reader can actually see and fix (add the missing
+closer or the missing quote-closer, whichever the compound's own
+diagnosis points at); there is no separate "the key inside was also
+unterminated" defect to name on top of it. This also never applies
+to the document's first content line itself, whether or not that
+line begins with `{` / `[`: § 5.0.1 rule 6 uses this same
+separator-scanning rule for its own phase-1 shape test on a line NOT
+starting with `{` / `[`, so on that UNDECIDED first line the same
+underlying fact — no separator found — is not an error at all: it
+is simply not a pair candidate, and root-kind detection falls
+through to an Array root with this line as a String item (§ 5.3.3,
+§ 5.0.1 rule 7); a first line that DOES begin with `{` / `[` follows
+the bracket-balance path above instead, per § 5.3.3's "Unterminated
+quoted segments" bullet.
 
 ## 7. Examples
 
@@ -2278,9 +2405,47 @@ path\\to: x
 dot, not a path separator. `a\:b` is the key `a:b` (literal colon).
 `deep.example\.com` nests under `deep` with the leaf key `example.com`
 (the first dot splits; the escaped dot does not). `path\\to` is the key
-`path\to` — a literal backslash, written `\\`. The canonical writer
-re-escapes `\`, `.`, and `:` inside a key segment (§ 5.9.10), so all of
-these round-trip.
+`path\to` — a literal backslash, written `\\`. Since 0.7.0, the
+canonical writer (§ 5.9.10) prefers **quoted** form over
+bare-with-escape whenever a structural byte (here `.` or `:`) would
+otherwise need escaping, so the first three canonicalise to:
+
+```
+"example.com": prod
+"a:b": v
+deep: {
+    "example.com": 1
+}
+```
+
+`path\\to: x` is unchanged in canonical form — escaping only a literal
+backslash does not switch the form (§ 10.7), since quoting would not
+remove the need for that escape. All four still round-trip (§ 8.3);
+only the byte shape of the first three changed from 0.6.x's
+bare-with-escape output.
+
+### 7.10 Quoted Keys
+
+```
+"cache:redis": enabled
+'say "hi": now': ok
+```
+
+`"cache:redis"` writes the key `cache:redis` directly in quoted form —
+equivalent to the bare-escaped `cache\:redis` of § 7.9, but without a
+backslash sitting inline (§ 10.7). `'say "hi": now'` writes the key
+`say "hi": now`: the single-quote delimiter needs no escape for the
+embedded `"` characters (self-escaping, § 10.7) or the embedded `:`
+(only the segment's own delimiter is structural inside a
+`<quoted-segment>`, § 3.7). Both keys contain a `:`, so bare form
+would need `\:` and the canonical writer (§ 5.9.10) keeps them quoted;
+the canonical delimiter is always `"`, so the second key's embedded
+double quotes are re-escaped as `\"` in canonical output:
+
+```
+"cache:redis": enabled
+"say \"hi\": now": ok
+```
 
 ## 8. Compliance
 
@@ -2591,15 +2756,18 @@ use, just with three more named forms in the same table (§ 10.4).
 
 Quoting is per-segment (§ 5.3.3), not whole-key: `a."b.c".d: 1` and
 `"a.b.c.d": 1` (a single, longer, fully quoted key) are different
-Values (four segments vs. one), matching how a dotted path already
-means four distinct nested pairs — quoting one segment does not
+Values (three segments vs. one), matching how a dotted path already
+means three distinct nested pairs — quoting one segment does not
 collapse the path any more than escaping one segment's dot would.
 This mirrors TOML's dotted-key quoting rather than treating a leading
 quote character as quoting the rest of the line: the latter would
 make `a."b.c".d` silently reparse as the bare four-segment path
-`a`, `"b`, `c"`, `d` for anyone expecting the former, a worse failure
-mode than the explicit `InvalidKey` (§ 6.4) a stray quote elsewhere
-already produces.
+`a`, `"b`, `c"`, `d` for anyone expecting the former — a worse
+failure mode than a clean parse error, since it silently misparses
+rather than rejecting; contrast the explicit `InvalidKey` (§ 6.4)
+that a genuinely malformed key like `"a"b: 1` (content after a
+quoted segment's closing delimiter that is neither `.` nor the pair
+separator) already produces.
 
 The canonical writer (§ 5.9.10) prefers quoted form the moment a
 STRUCTURAL escape (or the `##`-prefix or edge-whitespace hazard)
@@ -2762,10 +2930,19 @@ shorter output (§ 10.4).
   (§ 3.7), let a segment's own delimiter appear literally inside it —
   the escape table grows from eleven entries to fourteen. A new
   `<escapable-byte>` alternative and `<quoted-segment>` production
-  (§ 4) are purely additive; every previously-valid key retains its
-  meaning (a quote character is a delimiter only as the first code
-  point of a segment, exactly where it was already unrestricted
-  literal content before). The canonical writer (§ 5.9.10) now
+  (§ 4) are purely additive to the grammar (a new alternative
+  production, not a change to any existing one); the one narrow
+  behavior change this introduces — a key or segment beginning with a
+  quote character — is captured separately in the Breaking entry
+  below, not claimed here. A related side effect outside key
+  canonicalization: § 5.9.6's Array-root first-item bare-form test
+  shares this same quote-aware separator scan, so a first item such as
+  `'tis the season: fa` — whose only `:` now scans as inside an
+  unterminated quoted segment rather than as an unescaped separator —
+  no longer needs the `::` raw marker forced in canonical form, unlike
+  before quoted keys existed (see
+  `valid/quoted_keys/unterminated_leading_quote_falls_back_to_array_item.canonical.ktav`).
+  The canonical writer (§ 5.9.10) now
   prefers quoted form (delimiter `"`) over bare-with-escape whenever
   escaping a structural byte (`.` `:` `,` `{` `}` `[` `]`), `(` / `)`,
   a `##`-prefix, or edge whitespace would otherwise be needed
