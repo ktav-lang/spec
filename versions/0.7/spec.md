@@ -2479,7 +2479,7 @@ The conformance suite tests both directions: input variety via
   (§ 8.1), writer-conforming (§ 8.2), and the round-trip property
   (§ 8.3); implementations may claim either or both.
 
-### 0.1.1 — 2026-05-08
+### 0.1.1 — 2026-05-10
 
 - Added top-level Array as a recognised root kind (§ 5.0.1) — first-
   content-line array-item shapes (bare scalars, typed markers, lone
