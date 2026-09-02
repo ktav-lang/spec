@@ -78,6 +78,20 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   left these programmatic-only cases undefined. The Rust reference
   core already rejects scalar roots and `CR`-bearing Strings; closing
   the remaining gaps there is tracked separately.
+- **A leading quote character in a key now opens a `<quoted-segment>`
+  (§ 5.3.3, § 10.7).** A line whose first content — after § 4's
+  key-segment trimming — begins with `"`, `'`, or `` ` `` no longer
+  necessarily parses the way it did before quoted keys: a key that
+  already began AND ended with the same quote character silently
+  reads as a shorter key with the delimiters stripped (`"port": 1`
+  now names `port`, not `"port"`); a leading quote character with no
+  matching closer before end-of-line either falls through to an
+  unaffected Array-root String item (root kind not yet decided) or
+  raises the new `UnterminatedQuotedKey` (root kind already Object) —
+  see § 5.3.3 for the exact, context-dependent rule and the `::`
+  raw-marker escape hatch (§ 5.4 rule 1) available for an Array item
+  needing an unambiguous leading quote character. No document whose
+  keys avoid a leading `"` / `'` / `` ` `` is affected.
 
 ### Changed
 
@@ -161,6 +175,18 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   `float/underflow_to_zero` lock the boundary in; the last
   documents that underflow to `0.0` (finite) is an ordinary Float,
   not a String-fallback case.
+- **§ 5.9.10 — the canonical writer now prefers quoted form when
+  escaping a structural byte.** The writer prefers a quoted key
+  segment (delimiter `"`) over bare-with-escape whenever escaping a
+  structural byte (`.` `:` `,` `{` `}` `[` `]`), `(` / `)`, a
+  `##`-prefix, or edge whitespace would otherwise be needed (escaping
+  only a backslash, LF, CR, a control byte, or DEL does not switch the
+  form, since quoting does not remove that escape). This changes the
+  canonical bytes of every key previously requiring a `\.` / `\:` /
+  bracket / comma / paren escape, or a `##`-prefix escape — e.g.
+  `a\.b: 1` now canonicalises to `"a.b": 1`, not `a\.b: 1`; existing
+  `valid/key_escaping/*.canonical.ktav` fixtures update accordingly
+  (tracked separately from this text change).
 
 ### Added
 
@@ -190,6 +216,21 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   one. Does not close rust#5 or rust#12 — those need corresponding
   work in the `rust` core and the six language bindings, tracked
   separately.
+- **Quoted keys (§ 5.3.3)** — a key segment MAY be written `"…"`,
+  `'…'`, or `` `…` `` instead of bare; inside the delimiters, `.`,
+  `:`, `,`, `{`, `}`, `[`, `]`, and the two other quote characters are
+  ordinary content needing no escape, and content is never trimmed.
+  Three new named escapes, `\"` / `\'` / `` \` `` (§ 3.7), let a
+  segment's own delimiter appear literally inside it — the escape
+  table grows from eleven entries to fourteen. Purely additive to the
+  grammar (a new alternative `<quoted-segment>` production); the one
+  narrow behavior change — a key or segment already beginning with a
+  quote character — is a separate Breaking entry above, not covered
+  by this bullet. New error category `UnterminatedQuotedKey` (§ 6.16)
+  is reported when a quote
+  opens a key segment with no matching closer before end-of-line on a
+  line already known to be a pair line; `InvalidKey` (§ 6.4) and
+  `EmptyKey` (§ 6.5) each gain one new triggering case.
 
 ### Fixed
 
