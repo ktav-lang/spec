@@ -142,6 +142,15 @@ ZH_FRONT_DOC = """# 规范
 
 """ + ZH_BODY
 
+# Same base docs, but with a released (dated) Date field instead of draft,
+# for the release-date parity tests below.
+EN_DOC_DATED = EN_DOC.replace("**Date:** (unreleased — draft)\n",
+                              "**Date:** 2026-09-02\n")
+RU_DOC_DATED = RU_DOC_OK.replace("**Дата:** (не выпущено — черновик)\n",
+                                 "**Дата:** 2026-09-02\n")
+ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
+                                 "**日期:** 2026-09-02\n")
+
 
 class TranslationParityTestCase(unittest.TestCase):
     def setUp(self):
@@ -374,6 +383,75 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
         self.assertNotIn("[FAIL]", out)
+
+    # -- front matter: same released date across all files ------------------
+
+    def test_front_matter_same_released_date_passes(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED)
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+        self.assertNotIn("[FAIL]", out)
+
+    # -- front matter: a translation ships a different release date ---------
+
+    def test_front_matter_different_released_dates_fails(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED)
+        zh = self.write("spec.zh.md", ZH_DOC_DATED.replace(
+            "**日期:** 2026-09-02\n", "**日期:** 2027-01-01\n"))
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("release date mismatch", out)
+        self.assertIn("EN=2026-09-02", out)
+        self.assertIn("2027-01-01", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.ru.md")
+
+    # -- front matter: one file still draft while others are released -------
+
+    def test_front_matter_draft_released_mismatch_fails(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_OK)  # still draft
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("release-status mismatch", out)
+        self.assertIn("EN=dated", out)
+        self.assertIn("translation=draft", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- front matter: YYYY-MM-DD-shaped but not a real calendar date -------
+
+    def test_front_matter_invalid_calendar_date_fails(self):
+        en = self.write("spec.md", EN_DOC_DATED)
+        ru = self.write("spec.ru.md", RU_DOC_DATED.replace(
+            "**Дата:** 2026-09-02\n", "**Дата:** 2026-13-40\n"))
+        zh = self.write("spec.zh.md", ZH_DOC_DATED)
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("invalid calendar date", out)
+        self.assertIn("2026-13-40", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- front matter: a bold paragraph with no colon/value is not a field --
+
+    def test_front_matter_bold_prose_without_colon_fails(self):
+        en = self.write("spec.md", EN_DOC)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        zh = self.write("spec.zh.md", ZH_DOC_OK.replace(
+            "**日期:**(未发布 —— 草案)\n",
+            "**日期:**(未发布 —— 草案)\n**这不是字段而是粗体段落**\n"))
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("unexpected content line", out)
+        self.assertIn("这不是字段而是粗体段落", out)
+        self.assert_no_fail_lines_for(out, "spec.md", "spec.ru.md")
 
 
 if __name__ == "__main__":

@@ -76,14 +76,20 @@ Purpose:
               "**版本:**") must be the identical string in EN and every
               translation;
            c. the bold Date label line ("**Date:**" / "**Дата:**" /
-              "**日期:**") is reduced to a binary release-status signal —
-              "dated" if the value contains an ISO date (YYYY-MM-DD),
-              "draft" otherwise — and all files must carry the same
-              signal. The value is free prose that legitimately differs
+              "**日期:**") value is free prose that legitimately differs
               word-for-word across languages ("unreleased" vs "не
-              выпущено" vs "未发布"), so ISO-date presence is the one
-              language-independent signal it carries; the normalization
-              is intentionally heuristic (see release_status);
+              выпущено" vs "未发布"), so it is first reduced to a
+              release-status signal: "draft" if the value contains no
+              ISO date (YYYY-MM-DD), "dated" if it contains one that is
+              a real calendar date, "invalid" if it contains a
+              YYYY-MM-DD-shaped substring that is not a real calendar
+              date (e.g. month 13). All files must carry the same
+              status, "invalid" always fails, and when the status is
+              "dated" the extracted date string itself must also be
+              identical across EN and every translation — a translation
+              silently carrying a different release date than EN, or
+              than another translation, is a release-correctness bug
+              this checker must catch (see extract_release_date);
            d. every non-blank front-matter line must be either a
               blockquote line (the legitimate per-language disclaimer)
               or a bold "**Label:** value" field line — a stray plain
@@ -138,6 +144,7 @@ Exit codes:
 """
 
 import argparse
+import datetime
 import re
 import sys
 
@@ -153,7 +160,13 @@ TABLE_ROW_RE = re.compile(r'^\s*\|')
 # lines in all three shipped languages.
 H1_RE = re.compile(r'^#\s+\S')
 BLOCKQUOTE_RE = re.compile(r'^\s*>')
-FIELD_LINE_RE = re.compile(r'^\s*\*\*[^*]+\*\*')
+# Requires the actual "**Label:** value" shape: a colon immediately before
+# the closing '**' (so a plain bold PROSE paragraph like "**note text**"
+# with no colon is rejected), and at least one non-whitespace character
+# after the closing '**' (so a label with no value is rejected). A space
+# between the closing '**' and the value is NOT required — the shipped ZH
+# Date line writes "**日期:**(未发布 ...)" with none.
+FIELD_LINE_RE = re.compile(r'^\s*\*\*[^*:]+:\*\*\s*\S')
 VERSION_LINE_RE = re.compile(
     r'^\s*\*\*(?:Version|Версия|版本):\*\*\s*(\S.*?)\s*$')
 DATE_LINE_RE = re.compile(
@@ -309,24 +322,40 @@ def count_keywords(lines, start, end):
     return {name: len(pattern.findall(text)) for name, pattern in KEYWORD_PATTERNS}
 
 
-def release_status(date_value):
-    """Normalize a front-matter Date-line value to a binary release-status
-    signal: "dated" if the value contains an ISO date (YYYY-MM-DD),
-    "draft" otherwise.
+def extract_release_date(date_value):
+    """Extract a release-status signal and, when present, the calendar
+    date itself from a front-matter Date-line value.
+
+    Returns (status, date_or_none):
+      status: "draft" if the value contains no YYYY-MM-DD-shaped
+        substring; "dated" if it contains one AND that substring is a
+        real calendar date; "invalid" if it contains a YYYY-MM-DD-shaped
+        substring that is NOT a real calendar date (e.g. "2026-13-45").
+      date_or_none: the matched "YYYY-MM-DD" string when status is
+        "dated", else None.
 
     The Date value is free prose that legitimately differs word-for-word
     across languages ("(unreleased — 0.7 draft ...)" vs
     "(не выпущено — черновик 0.7 ...)" vs "(未发布 —— 0.7 草案...)"), so no
-    literal cross-language comparison is possible. The one
-    language-independent signal the line carries is whether a real release
-    date has been filled in: while the spec is a draft no file has a
-    YYYY-MM-DD here; after release all three will carry the same ISO date.
+    literal cross-language comparison is possible before release. The one
+    language-independent signal the line carries pre-release is whether a
+    real release date has been filled in; after release, the ISO date
+    itself becomes the language-independent value, and every translation
+    is required to carry the exact same one (a translation quietly
+    shipping a different release date than EN is a real bug, not a
+    translation-wording difference).
     Known heuristic limit: a draft line quoting a target date
     ("unreleased, planned 2026-10-01") reads as "dated" — but translations
-    mirror the EN wording, so the signal still flips in all files together.
-    The check enforces cross-file parity of the signal, not absolute
-    release state."""
-    return "dated" if ISO_DATE_RE.search(date_value) else "draft"
+    mirror the EN wording, so the signal (and, being copied, the date
+    substring) still matches in all files together."""
+    m = ISO_DATE_RE.search(date_value)
+    if not m:
+        return "draft", None
+    try:
+        datetime.datetime.strptime(m.group(0), "%Y-%m-%d")
+    except ValueError:
+        return "invalid", None
+    return "dated", m.group(0)
 
 
 def scan_front_matter(lines):
@@ -432,13 +461,19 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
             n_fail += 1
 
     en_status = None
+    en_date = None
     if len(scans[en_path][2]) != 1:
         print("[FAIL] %s: front matter: expected exactly 1 Date label "
               "line ('**Date:**' / '**Дата:**' / '**日期:**') with a "
               "value, found %d" % (en_path, len(scans[en_path][2])))
         n_fail += 1
     else:
-        en_status = release_status(scans[en_path][2][0])
+        en_status, en_date = extract_release_date(scans[en_path][2][0])
+        if en_status == "invalid":
+            print("[FAIL] %s: front matter: Date value contains an "
+                  "invalid calendar date ('%s')"
+                  % (en_path, scans[en_path][2][0]))
+            n_fail += 1
     for path in translation_lines:
         t_dates = scans[path][2]
         if len(t_dates) != 1:
@@ -447,11 +482,19 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
                   "value, found %d" % (path, len(t_dates)))
             n_fail += 1
         elif en_status is not None:
-            t_status = release_status(t_dates[0])
-            if t_status != en_status:
+            t_status, t_date = extract_release_date(t_dates[0])
+            if t_status == "invalid":
+                print("[FAIL] %s: front matter: Date value contains an "
+                      "invalid calendar date ('%s')" % (path, t_dates[0]))
+                n_fail += 1
+            elif t_status != en_status:
                 print("[FAIL] %s: front matter: release-status mismatch "
                       "(EN=%s, translation=%s)"
                       % (path, en_status, t_status))
+                n_fail += 1
+            elif en_status == "dated" and t_date != en_date:
+                print("[FAIL] %s: front matter: release date mismatch "
+                      "(EN=%s, translation=%s)" % (path, en_date, t_date))
                 n_fail += 1
 
     for path in paths:
@@ -663,7 +706,7 @@ def main(argv):
         overall = "FAIL"
     summary_lines.append(
         "front matter: %d mismatch(es) (h1 count / Version value / "
-        "release status / allowed line shapes)" % fm_failures)
+        "release status and date / allowed line shapes)" % fm_failures)
     for t_path in args.translation_paths:
         n_mismatch = check_translation(en_lines, en_sections, en_code_counts,
                                         en_numbers_sorted, en_levels,
