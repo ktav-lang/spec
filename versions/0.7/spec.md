@@ -1804,18 +1804,26 @@ dotted form).
 
 A key segment is emitted in one of two forms — **bare** or
 **quoted** (§ 5.3.3) — decided by one rule: emit **bare** (the
-re-escape recipe below) unless doing so would require escaping at
-least one code point under that recipe, or the segment's decoded
-content begins with `"`, `'`, or `` ` `` (a leading quote character
-in bare form would be misread as opening a `<quoted-segment>` on
-re-parse, so it always forces quoted form even though nothing else
-in the segment needs escaping); otherwise emit **quoted**, with `"`
-as the delimiter unconditionally — the choice of delimiter is fixed,
-not content-dependent, so the writer never needs to scan the content
-against all three candidates first. Either form parses back to the
-same key (§ 5.3.3), but which one the writer emits is not a free
-choice: it is fully determined by this rule, with no discretion left
-once the content is known (§ 5.9's determinism requirement).
+re-escape recipe below) unless (a) bare form would require escaping
+at least one **structural** byte — `.`, `:`, `,`, `{`, `}`, `[`, or
+`]` (bullet 1 below, excluding `\`) — or the `##`-prefix escape
+(bullet 4 below) or an edge-whitespace escape (bullet 3 below); or
+(b) the segment's decoded content begins with `"`, `'`, or `` ` ``
+(a leading quote character in bare form would be misread as opening
+a `<quoted-segment>` on re-parse, so it always forces quoted form
+even though nothing else in the segment needs escaping). A need to
+escape a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
+`\\`/`\n`/`\r` entries and bullet 2 below — does NOT by itself trigger
+quoted form: a `<quoted-segment>` excludes and escapes each of these
+exactly as a `<bare-segment>` does (§ 5.3.3), so quoting buys nothing
+for them, and bare remains the simpler, equally-escaped choice.
+Otherwise (quoted form selected) the delimiter is `"` unconditionally
+— the choice of delimiter is fixed, not content-dependent, so the
+writer never needs to scan the content against all three candidates
+first. Either form parses back to the same key (§ 5.3.3), but which
+one the writer emits is not a free choice: it is fully determined by
+this rule, with no discretion left once the content is known (§ 5.9's
+determinism requirement).
 
 When bare form is selected, the writer MUST re-escape every code
 point that `<key-char>` (§ 4) excludes from raw content, plus any
@@ -1887,18 +1895,23 @@ unescaped dots in a canonical bare key are path separators only,
 structural bytes never appear raw outside a quoted segment's
 delimiters, no edge whitespace is lost to re-parse trimming, and a
 quoted segment's own delimiter never appears raw inside it. A key
-segment containing a literal `.`, `:`, or `\` — needing escapes in
-bare form — is therefore always emitted quoted instead, per the
-form-selection rule above.
+segment containing a literal `.` or `:` — a structural byte needing
+escape in bare form — is therefore always emitted quoted instead,
+per the form-selection rule above; a key segment containing only a
+literal `\`, LF, CR, a control byte, or DEL is NOT — bare form
+escapes those identically and quoting would not remove the escape.
 
 Examples: the key `a.b` (a literal dot) is emitted as `"a.b"` (not
-`a\.b` — quoting is preferred once any escape would otherwise be
-needed); the key `a:b` is emitted as `"a:b"`; the key `hello` (no
-escape needed, does not begin with a quote character) is emitted
-bare, unchanged; the key `"port"` (six characters: a leading and a
-trailing `"`) is emitted as `"\"port\""` (quoted is forced by the
-leading `"` alone, even though the interior needs only the one
-escape for the delimiter's own two occurrences).
+`a\.b` — quoting is preferred once any STRUCTURAL escape would
+otherwise be needed); the key `a:b` is emitted as `"a:b"`; the key
+`hello` (no escape needed, does not begin with a quote character) is
+emitted bare, unchanged; the key `path\to` (a literal backslash, no
+structural byte) is emitted bare as `path\\to`, unchanged from
+before this addition — quoting it (`"path\\to"`) would need the
+identical `\\` escape for no benefit; the key `"port"` (six
+characters: a leading and a trailing `"`) is emitted as `"\"port\""`
+(quoted is forced by the leading `"` alone, even though the interior
+needs only the one escape for the delimiter's own two occurrences).
 
 #### 5.9.11 Order
 
@@ -2560,12 +2573,16 @@ make `a."b.c".d` silently reparse as the bare four-segment path
 mode than the explicit `InvalidKey` (§ 6.4) a stray quote elsewhere
 already produces.
 
-The canonical writer (§ 5.9.10) prefers quoted form the moment ANY
-escaping would otherwise be needed, rather than leaving bare-with-escape
-as an equally valid canonical choice: a determinism requirement (§ 5.9)
+The canonical writer (§ 5.9.10) prefers quoted form the moment a
+STRUCTURAL escape (or the `##`-prefix or edge-whitespace hazard)
+would otherwise be needed, rather than leaving bare-with-escape as
+an equally valid canonical choice: a determinism requirement (§ 5.9)
 means the writer has no discretion either way, so the rule may as
 well pick the more readable of the two — which was the entire
-motivation for the feature. The one fixed delimiter (`"`) keeps the
+motivation for the feature. An escape quoting cannot remove — a
+literal backslash, LF, CR, a control byte, or DEL — does not switch
+the form, since paying for two delimiter characters would buy
+nothing there. The one fixed delimiter (`"`) keeps the
 rule content-independent: nothing here weighs which of the three
 quote characters would need fewer escapes for a given key, since
 self-escaping makes that comparison unnecessary for correctness and
@@ -2722,12 +2739,15 @@ shorter output (§ 10.4).
   point of a segment, exactly where it was already unrestricted
   literal content before). The canonical writer (§ 5.9.10) now
   prefers quoted form (delimiter `"`) over bare-with-escape whenever
-  any escaping would otherwise be needed — this changes the canonical
-  bytes of every key previously requiring `\.` / `\:` / a bracket /
-  comma escape, or a `##`-prefix escape (e.g. `a\.b: 1` now
-  canonicalises to `"a.b": 1`, not `a\.b: 1`); existing
-  `valid/key_escaping/*.canonical.ktav` fixtures update accordingly
-  (tracked separately from this text change). New error category
+  escaping a structural byte, a `##`-prefix, or edge whitespace would
+  otherwise be needed (escaping only a backslash, LF, CR, a control
+  byte, or DEL does NOT switch the form, since quoting does not
+  remove that escape) — this changes the canonical bytes of every key
+  previously requiring `\.` / `\:` / a bracket / comma escape, or a
+  `##`-prefix escape (e.g. `a\.b: 1` now canonicalises to `"a.b": 1`,
+  not `a\.b: 1`); existing `valid/key_escaping/*.canonical.ktav`
+  fixtures update accordingly (tracked separately from this text
+  change). New error category
   `UnterminatedQuotedKey` (§ 6.16), reported when a quote opens a key
   segment with no matching closer before end-of-line on any line
   already known to be a pair line; `InvalidKey` (§ 6.4) and
