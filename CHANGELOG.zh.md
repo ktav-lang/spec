@@ -11,6 +11,10 @@
 - `MINOR` —— 向后兼容的扩展。
 - `MAJOR` —— 破坏性变更。
 
+**pre-1.0 例外:** 当 `MAJOR` 为 `0` 时,`MINOR` 递进 MAY 携带破坏性
+变更,而不必强制 `MAJOR` 递进(0.7.0 相对 0.6.x 正是如此)。一旦格式
+达到 `1.0`,破坏性变更将严格要求 `MAJOR` 递进,如上所述。
+
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 

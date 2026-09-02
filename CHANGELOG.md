@@ -12,6 +12,11 @@ Versions follow `MAJOR.MINOR.PATCH`:
 - `MINOR` — backward-compatible extensions.
 - `MAJOR` — breaking changes.
 
+**Pre-1.0 exception:** while `MAJOR` is `0`, a `MINOR` bump MAY carry
+a breaking change instead of requiring a `MAJOR` bump (0.7.0 does
+this over 0.6.x). Once the format reaches `1.0`, breaking changes
+strictly require a `MAJOR` bump as stated above.
+
 See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
