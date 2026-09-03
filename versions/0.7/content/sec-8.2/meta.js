@@ -7,5 +7,6 @@ export default {
     "en": "Writer-conforming",
     "ru": "Writer-conforming",
     "zh": "Writer-conforming"
-  }
+  },
+  "bodyParts": 1
 }

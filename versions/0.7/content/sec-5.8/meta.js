@@ -7,5 +7,6 @@ export default {
     "en": "Inline Compounds",
     "ru": "Inline-составные значения",
     "zh": "Inline 复合值"
-  }
+  },
+  "bodyParts": 1
 }

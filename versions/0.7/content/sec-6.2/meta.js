@@ -7,5 +7,6 @@ export default {
     "en": "Duplicate Name",
     "ru": "Дублирующееся имя",
     "zh": "重复名称"
-  }
+  },
+  "bodyParts": 1
 }

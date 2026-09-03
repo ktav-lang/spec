@@ -7,5 +7,6 @@ export default {
     "en": "Closer-Content Restriction",
     "ru": "Ограничение «терминатор в содержимом»",
     "zh": "关闭符在内容中的限制"
-  }
+  },
+  "bodyParts": 1
 }

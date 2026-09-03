@@ -7,5 +7,6 @@ export default {
     "en": "Character Set",
     "ru": "Набор символов",
     "zh": "字符集"
-  }
+  },
+  "bodyParts": 1
 }

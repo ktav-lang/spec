@@ -6,5 +6,6 @@ export default {
     "en": "Abstract",
     "ru": "Аннотация",
     "zh": "摘要"
-  }
+  },
+  "bodyParts": 1
 }

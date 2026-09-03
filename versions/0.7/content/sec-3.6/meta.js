@@ -7,5 +7,6 @@ export default {
     "en": "Number Literals",
     "ru": "Числовые литералы",
     "zh": "数字字面量"
-  }
+  },
+  "bodyParts": 1
 }

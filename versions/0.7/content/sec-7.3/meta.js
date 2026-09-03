@@ -7,5 +7,6 @@ export default {
     "en": "Numbers in Multiple Bases",
     "ru": "Числа в нескольких основаниях",
     "zh": "多种基数下的数字"
-  }
+  },
+  "bodyParts": 1
 }

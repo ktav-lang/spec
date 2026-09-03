@@ -7,5 +7,6 @@ export default {
     "en": "Empty-Compound Shortcuts",
     "ru": "Сокращения пустых составных значений",
     "zh": "空复合值的快捷形式"
-  }
+  },
+  "bodyParts": 1
 }

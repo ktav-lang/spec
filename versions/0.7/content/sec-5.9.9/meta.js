@@ -7,5 +7,6 @@ export default {
     "en": "Keywords",
     "ru": "Ключевые слова",
     "zh": "关键词"
-  }
+  },
+  "bodyParts": 1
 }

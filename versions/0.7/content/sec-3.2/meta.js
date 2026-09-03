@@ -7,5 +7,6 @@ export default {
     "en": "Lines",
     "ru": "Строки",
     "zh": "行"
-  }
+  },
+  "bodyParts": 1
 }

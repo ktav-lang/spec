@@ -7,5 +7,6 @@ export default {
     "en": "Invalid Key",
     "ru": "Невалидный ключ",
     "zh": "无效键"
-  }
+  },
+  "bodyParts": 1
 }

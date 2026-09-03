@@ -7,5 +7,6 @@ export default {
     "en": "Key Validation",
     "ru": "Валидация ключа",
     "zh": "键校验"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Why minimal escape?",
     "ru": "Почему минимальное экранирование?",
     "zh": "为什么采用最小 escape?"
-  }
+  },
+  "bodyParts": 1
 }

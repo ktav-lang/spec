@@ -7,5 +7,6 @@ export default {
     "en": "First-output-byte guard",
     "ru": "Защита первого байта вывода",
     "zh": "首字节防护"
-  }
+  },
+  "bodyParts": 1
 }

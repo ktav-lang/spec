@@ -7,5 +7,6 @@ export default {
     "en": "Missing Separator",
     "ru": "Отсутствие разделителя",
     "zh": "缺失分隔符"
-  }
+  },
+  "bodyParts": 1
 }

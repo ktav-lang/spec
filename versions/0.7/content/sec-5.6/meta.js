@@ -7,5 +7,6 @@ export default {
     "en": "Multi-line Strings",
     "ru": "Многострочные строки",
     "zh": "多行字符串"
-  }
+  },
+  "bodyParts": 1
 }

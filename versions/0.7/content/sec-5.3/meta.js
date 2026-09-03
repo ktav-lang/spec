@@ -7,5 +7,6 @@ export default {
     "en": "Pair Lines",
     "ru": "Pair Lines",
     "zh": "Pair 行"
-  }
+  },
+  "bodyParts": 1
 }

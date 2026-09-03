@@ -7,5 +7,6 @@ export default {
     "en": "String form selection",
     "ru": "Выбор формы String",
     "zh": "String 形式选择"
-  }
+  },
+  "bodyParts": 1
 }

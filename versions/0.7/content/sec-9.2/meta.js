@@ -7,5 +7,6 @@ export default {
     "en": "Numeric Overflow",
     "ru": "Числовое переполнение",
     "zh": "数值溢出"
-  }
+  },
+  "bodyParts": 1
 }

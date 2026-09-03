@@ -7,5 +7,6 @@ export default {
     "en": "Malformed Inline Compound",
     "ru": "Дефект структуры inline-составного",
     "zh": "inline 复合值结构缺陷"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Top-Level Kind Detection",
     "ru": "Определение типа корня",
     "zh": "顶层类型的判定"
-  }
+  },
+  "bodyParts": 1
 }

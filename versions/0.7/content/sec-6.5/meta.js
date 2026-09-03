@@ -7,5 +7,6 @@ export default {
     "en": "Empty Key",
     "ru": "Пустой ключ",
     "zh": "空键"
-  }
+  },
+  "bodyParts": 1
 }

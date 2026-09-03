@@ -7,5 +7,6 @@ export default {
     "en": "Dotted-Key Expansion",
     "ru": "Разворачивание точечного ключа",
     "zh": "点分键展开"
-  }
+  },
+  "bodyParts": 1
 }

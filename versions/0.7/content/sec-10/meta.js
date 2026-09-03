@@ -7,5 +7,6 @@ export default {
     "en": "Rationale (Non-normative)",
     "ru": "Обоснование (не-нормативно)",
     "zh": "设计依据(非规范性)"
-  }
+  },
+  "bodyParts": 1
 }

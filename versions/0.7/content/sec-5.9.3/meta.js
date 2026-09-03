@@ -7,5 +7,6 @@ export default {
     "en": "Document root",
     "ru": "Корень документа",
     "zh": "文档根"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Unterminated Inline Compound",
     "ru": "Незакрытое inline-составное",
     "zh": "未终止 inline 复合值"
-  }
+  },
+  "bodyParts": 1
 }

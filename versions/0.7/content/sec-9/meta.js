@@ -7,5 +7,6 @@ export default {
     "en": "Security Considerations",
     "ru": "Соображения безопасности",
     "zh": "安全考量"
-  }
+  },
+  "bodyParts": 1
 }

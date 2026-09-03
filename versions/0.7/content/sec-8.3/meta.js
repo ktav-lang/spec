@@ -7,5 +7,6 @@ export default {
     "en": "Round-trip property",
     "ru": "Свойство round-trip",
     "zh": "Round-trip 性质"
-  }
+  },
+  "bodyParts": 1
 }

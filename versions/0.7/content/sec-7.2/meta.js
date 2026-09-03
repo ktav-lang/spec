@@ -7,5 +7,6 @@ export default {
     "en": "Nested Objects, Arrays, Keywords",
     "ru": "Вложенные объекты, массивы, ключевые слова",
     "zh": "嵌套 Object、Array 与关键词"
-  }
+  },
+  "bodyParts": 1
 }

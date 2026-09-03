@@ -7,5 +7,6 @@ export default {
     "en": "Comments",
     "ru": "Комментарии",
     "zh": "注释"
-  }
+  },
+  "bodyParts": 1
 }

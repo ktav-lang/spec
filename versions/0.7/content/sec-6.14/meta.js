@@ -7,5 +7,6 @@ export default {
     "en": "Orphan Line After Top-Level Inline",
     "ru": "Orphan-строка после top-level inline",
     "zh": "顶层 inline 后的孤立行"
-  }
+  },
+  "bodyParts": 1
 }

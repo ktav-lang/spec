@@ -7,5 +7,6 @@ export default {
     "en": "Introduction",
     "ru": "Введение",
     "zh": "引言"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Key Escaping",
     "ru": "Экранирование ключей",
     "zh": "键 escape"
-  }
+  },
+  "bodyParts": 1
 }

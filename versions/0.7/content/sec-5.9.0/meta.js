@@ -7,5 +7,6 @@ export default {
     "en": "Representable Values",
     "ru": "Представимые значения",
     "zh": "可表示的值"
-  }
+  },
+  "bodyParts": 1
 }

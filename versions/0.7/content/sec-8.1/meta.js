@@ -7,5 +7,6 @@ export default {
     "en": "Parser-conforming",
     "ru": "Parser-conforming",
     "zh": "Parser-conforming"
-  }
+  },
+  "bodyParts": 1
 }

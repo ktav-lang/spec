@@ -7,5 +7,6 @@ export default {
     "en": "— unreleased",
     "ru": "— не выпущено",
     "zh": "—— 未发布"
-  }
+  },
+  "bodyParts": 2
 }

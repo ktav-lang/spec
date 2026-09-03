@@ -7,5 +7,6 @@ export default {
     "en": "Minimal",
     "ru": "Минимальный",
     "zh": "最小示例"
-  }
+  },
+  "bodyParts": 1
 }

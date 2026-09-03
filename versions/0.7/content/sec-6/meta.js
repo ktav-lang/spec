@@ -7,5 +7,6 @@ export default {
     "en": "Errors",
     "ru": "Ошибки",
     "zh": "错误"
-  }
+  },
+  "bodyParts": 1
 }

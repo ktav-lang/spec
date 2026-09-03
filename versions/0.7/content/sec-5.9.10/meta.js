@@ -7,5 +7,6 @@ export default {
     "en": "Keys",
     "ru": "Ключи",
     "zh": "键"
-  }
+  },
+  "bodyParts": 2
 }

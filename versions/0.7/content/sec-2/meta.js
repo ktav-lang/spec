@@ -7,5 +7,6 @@ export default {
     "en": "Conventions",
     "ru": "Соглашения",
     "zh": "约定"
-  }
+  },
+  "bodyParts": 1
 }

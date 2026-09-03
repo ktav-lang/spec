@@ -6,5 +6,6 @@ export default {
     "en": "Appendix B. Migration from 0.1.x",
     "ru": "Приложение B. Миграция с 0.1.x",
     "zh": "附录 B. 从 0.1.x 迁移"
-  }
+  },
+  "bodyParts": 1
 }

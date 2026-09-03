@@ -7,5 +7,6 @@ export default {
     "en": "Encoding",
     "ru": "Кодировка",
     "zh": "编码"
-  }
+  },
+  "bodyParts": 1
 }

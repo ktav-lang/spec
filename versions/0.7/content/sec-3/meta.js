@@ -7,5 +7,6 @@ export default {
     "en": "Lexical Structure",
     "ru": "Лексическая структура",
     "zh": "词法结构"
-  }
+  },
+  "bodyParts": 1
 }

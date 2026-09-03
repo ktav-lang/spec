@@ -7,5 +7,6 @@ export default {
     "en": "Unicode Escapes (`\\uXXXX`)",
     "ru": "Unicode-escape (`\\uXXXX`)",
     "zh": "Unicode Escape(`\\uXXXX`)"
-  }
+  },
+  "bodyParts": 1
 }

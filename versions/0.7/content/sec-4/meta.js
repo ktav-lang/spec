@@ -7,5 +7,6 @@ export default {
     "en": "Grammar",
     "ru": "Грамматика",
     "zh": "语法"
-  }
+  },
+  "bodyParts": 3
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Number canonicalisation",
     "ru": "Канонизация чисел",
     "zh": "数字规范化"
-  }
+  },
+  "bodyParts": 1
 }

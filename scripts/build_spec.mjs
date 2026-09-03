@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 // build_spec.mjs — assembles versions/0.7/spec{,.ru,.zh}.md from per-section
-// content units in versions/0.7/content/ (manifest.js + unit dirs).
+// content units in versions/0.7/content/ (manifest.js + unit dirs). Unit bodies
+// come from body-1.js..body-N.js parts (N = meta.bodyParts), each exporting
+// { en, ru, zh } strings.
 // Node ESM, built-ins only. Usage:
 //   node scripts/build_spec.mjs            write the three spec files
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
@@ -62,6 +64,9 @@ function validateMeta(unit, meta) {
   if (meta.kind !== 'frontmatter' && meta.kind !== 'numbered' && meta.kind !== 'named') {
     failUnit(unit, `bad kind ${JSON.stringify(meta.kind)}`);
   }
+  if (!Number.isInteger(meta.bodyParts) || meta.bodyParts < 1) {
+    failUnit(unit, `bad bodyParts ${JSON.stringify(meta.bodyParts)}`);
+  }
   if (meta.kind === 'frontmatter') {
     if (meta.number !== null || meta.level !== null || meta.title !== null) {
       failUnit(unit, 'frontmatter must have number/level/title all null');
@@ -106,14 +111,25 @@ for (const unit of manifest) {
   const unitDir = path.join(contentDir, unit);
   const meta = (await import(pathToFileURL(path.join(unitDir, 'meta.js')))).default;
   validateMeta(unit, meta);
-  for (const lang of LANGS) {
-    const bodyPath = path.join(unitDir, `${lang}.md`);
-    let body;
+  const parts = [];
+  for (let k = 1; k <= meta.bodyParts; k++) {
+    let mod;
     try {
-      body = fs.readFileSync(bodyPath);
-    } catch {
-      failUnit(unit, `missing body file ${lang}.md`);
+      mod = await import(pathToFileURL(path.join(unitDir, `body-${k}.js`)));
+    } catch (e) {
+      failUnit(unit, `cannot load body-${k}.js: ${e.message}`);
     }
+    const d = mod.default;
+    if (typeof d !== 'object' || d === null || Array.isArray(d)) {
+      failUnit(unit, `body-${k}.js default export is not an object`);
+    }
+    for (const l of LANGS) {
+      if (typeof d[l] !== 'string') failUnit(unit, `body-${k}.js missing string field ${l}`);
+    }
+    parts.push(d);
+  }
+  for (const lang of LANGS) {
+    const body = Buffer.from(parts.map((p) => p[lang]).join(''), 'utf8');
     const arr = outputs[lang];
     if (meta.kind !== 'frontmatter') {
       const title = meta.title[lang];

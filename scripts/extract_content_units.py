@@ -19,6 +19,63 @@ LANGS = [("en", "spec.md"), ("ru", "spec.ru.md"), ("zh", "spec.zh.md")]
 SLUG_OK_RE = re.compile(r"[^a-z0-9]+")
 
 
+def tl_escape(s):
+    s = s.replace("\\", "\\\\")   # 1. backslashes
+    s = s.replace("`", "\\`")     # 2. backticks
+    s = s.replace("${", "\\${")   # 3. dollar-brace
+    return s
+
+
+def split_language(body, lang_lines, N):
+    """Split body into exactly N chunks at blank-line boundaries near the
+    even targets. Returns (chunks, placed_cut_count)."""
+    L = len(lang_lines) - 1
+    offs = [0]
+    for ln in lang_lines[:-1]:
+        offs.append(offs[-1] + len(ln) + 1)
+    cands = [b for b in range(len(lang_lines) - 1)
+             if lang_lines[b] == "" and offs[b + 1] < len(body)]
+    cuts = []
+    prev_b = -1
+    for i in range(1, N):
+        t = i * L / N
+        best = None
+        for b in cands:
+            if b <= prev_b:
+                continue
+            if best is None or abs((b + 1) - t) < abs((best + 1) - t):
+                best = b
+        if best is None:
+            return None, i - 1
+        cuts.append(offs[best + 1])
+        prev_b = best
+    bounds = [0] + cuts + [len(body)]
+    chunks = [body[bounds[k]:bounds[k + 1]] for k in range(N)]
+    return chunks, N - 1
+
+
+def split_unit(bodies, lines_by_lang, folder):
+    """Split each language body into N chunks; returns ({lang: chunks}, N)."""
+    counts = {lang: bodies[lang].count("\n") for lang in bodies}
+    L_unit = max(counts.values())
+    N = 1 if L_unit <= 120 else -(-L_unit // 100)
+    for _attempt in range(10):
+        results = {}
+        shortfall = None
+        for lang in bodies:
+            chunks, placed = split_language(bodies[lang], lines_by_lang[lang], N)
+            if chunks is None:
+                shortfall = placed if shortfall is None else min(shortfall, placed)
+                break
+            if "".join(chunks) != bodies[lang]:
+                fatal("%s/%s: body chunk reassembly mismatch" % (folder, lang))
+            results[lang] = chunks
+        if shortfall is None:
+            return results, N
+        N = 1 + shortfall
+    fatal("could not converge on a split for unit %s" % folder)
+
+
 def fatal(msg):
     print("FATAL: " + msg, file=sys.stderr)
     sys.exit(1)
@@ -144,20 +201,22 @@ def main():
         fatal("expected 103 units, got %d" % len(units))
 
     files_written = 0
+    parts_per_unit = {}
     for folder, info, ranges in units:
         unitdir = os.path.join(outdir, folder)
         os.makedirs(unitdir)
         kind, num, lvl = info if info else ("frontmatter", None, None)
         titles = {}
         seps = {}
+        bodies = {}
         for lang in ("en", "ru", "zh"):
             S = st[lang]
             hidx, eidx = ranges[lang]
             bstart = S["offsets"][0] if hidx == 0 else S["offsets"][hidx + 1]
-            body = S["data"][bstart:S["offsets"][eidx]]
-            with open(os.path.join(unitdir, lang + ".md"), "wb") as f:
-                f.write(body)
-            files_written += 1
+            body = S["data"][bstart:S["offsets"][eidx]].decode("utf-8")
+            if not body.endswith("\n"):
+                fatal("%s/%s: body does not end with newline" % (folder, lang))
+            bodies[lang] = body
             if kind == "frontmatter":
                 titles[lang] = None
                 continue
@@ -193,6 +252,21 @@ def main():
                 fatal("%s/%s: heading round-trip failed\nreceived: %r\nexpected: %r"
                       % (folder, lang, synthesized, line))
 
+        chunks_by_lang, N = split_unit(
+            bodies, {lang: bodies[lang].split("\n") for lang in bodies}, folder)
+        parts_per_unit[folder] = N
+        for k in range(1, N + 1):
+            with open(os.path.join(unitdir, "body-%d.js" % k), "w",
+                      encoding="utf-8", newline="\n") as f:
+                f.write("export default {\n"
+                        "  en: `%s`,\n"
+                        "  ru: `%s`,\n"
+                        "  zh: `%s`,\n"
+                        "};\n"
+                        % tuple(tl_escape(chunks_by_lang[l][k - 1])
+                                for l in ("en", "ru", "zh")))
+        files_written += N
+
         if kind == "frontmatter":
             obj = {"kind": "frontmatter", "number": None, "level": None,
                    "title": None}
@@ -205,6 +279,7 @@ def main():
         else:
             obj = {"kind": "named", "number": None, "level": lvl,
                    "title": titles}
+        obj["bodyParts"] = N
         with open(os.path.join(unitdir, "meta.js"), "w", encoding="utf-8",
                   newline="\n") as f:
             f.write("export default " + json.dumps(obj, ensure_ascii=False,
@@ -222,12 +297,22 @@ def main():
     files_written += 1
 
     counts = {}
+    split_info = []
+    total_parts = 0
+    for folder, _, _ in units:
+        n = parts_per_unit[folder]
+        total_parts += n
+        if n > 1:
+            split_info.append("%s=%d" % (folder, n))
     for _, info, _ in units:
         k = info[0] if info else "frontmatter"
         counts[k] = counts.get(k, 0) + 1
     print("Units: %d total" % len(units))
     for k in ("frontmatter", "numbered", "named"):
         print("  %s: %d" % (k, counts.get(k, 0)))
+    print("Body parts: %d total across %d units; %d unit(s) split "
+          "(bodyParts>1): %s"
+          % (total_parts, len(units), len(split_info), split_info))
     print("Files written: %d" % files_written)
     print("Manifest head: %s" % names[:3])
     print("Manifest tail: %s" % names[-3:])

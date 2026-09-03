@@ -7,5 +7,6 @@ export default {
     "en": "Dispatch per Line",
     "ru": "Диспетчеризация по строкам",
     "zh": "逐行分发"
-  }
+  },
+  "bodyParts": 1
 }

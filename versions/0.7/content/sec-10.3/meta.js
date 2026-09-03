@@ -7,5 +7,6 @@ export default {
     "en": "Why `##` for comments?",
     "ru": "Почему `##` для комментариев?",
     "zh": "为什么注释用 `##`?"
-  }
+  },
+  "bodyParts": 1
 }

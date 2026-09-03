@@ -7,5 +7,6 @@ export default {
     "en": "Escape Sequences in Inline Values",
     "ru": "Escape-последовательности в inline-значениях",
     "zh": "inline 值中的 escape 序列"
-  }
+  },
+  "bodyParts": 1
 }

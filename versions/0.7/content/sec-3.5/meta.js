@@ -7,5 +7,6 @@ export default {
     "en": "Blank Lines",
     "ru": "Пустые строки",
     "zh": "空白行"
-  }
+  },
+  "bodyParts": 1
 }

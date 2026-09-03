@@ -51,7 +51,9 @@ This directory is the **per-section source of truth** for
 
 ## Unit contents
 
-Each unit directory contains exactly: `meta.js`, `en.md`, `ru.md`, `zh.md`.
+Each unit directory contains exactly: `meta.js`, `body-1.js`, ..., `body-N.js`
+(N >= 1). There are **no** `.md` files under `content/` — zero, except this
+README.md itself.
 
 ### `meta.js`
 
@@ -60,7 +62,7 @@ verbatim:
 
 ```js
 // frontmatter/meta.js
-export default { "kind": "frontmatter", "number": null, "level": null, "title": null };
+export default { "kind": "frontmatter", "number": null, "level": null, "title": null, "bodyParts": 1 };
 
 // sec-3.1/meta.js
 export default {
@@ -68,7 +70,8 @@ export default {
   "number": "3.1",
   "sep": " ",
   "level": 3,
-  "title": { "en": "...", "ru": "...", "zh": "..." }
+  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "bodyParts": 1
 };
 
 // named-appendix-a/meta.js
@@ -76,7 +79,8 @@ export default {
   "kind": "named",
   "number": null,
   "level": 2,
-  "title": { "en": "...", "ru": "...", "zh": "..." }
+  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "bodyParts": 1
 };
 ```
 
@@ -95,20 +99,69 @@ Field meanings:
   must reproduce each heading byte-exactly, so the actual separator is
   recorded per unit. Only `". "` and `" "` are legal. The extraction script
   enforces that all three languages use the same `sep` for a unit.
+- `bodyParts` — the integer count of `body-*.js` files for the unit
+  (N in `body-1.js` .. `body-N.js`). Always >= 1. Present on ALL units,
+  including `frontmatter`, and always appended **last**.
+
+### `body-<k>.js`
+
+Each `body-<k>.js` has exactly this shape (2-space indent, template
+literals, real multi-line prose inside, no added whitespace inside the
+literals, trailing newline after `};`):
+
+```js
+export default {
+  en: `...raw text chunk k for English...`,
+  ru: `...`,
+  zh: `...`,
+};
+```
+
+The unit's full body text for a language is the **concatenation** of chunks
+1..N, in order, with **no separator** between chunks.
+
+**Escaping rule (mechanical, in this exact order).** To embed raw text `t`
+in a template literal:
+
+1. replace every `\` with `\\`;
+2. replace every backtick with `` \` ``;
+3. replace every `${` with `\${`;
+
+then wrap the result in backticks. Backslashes must be replaced **first**,
+or you double-escape them. **Never retype content by hand — script this
+transformation.**
+
+**Splitting rule (exact numbers).** Let `L` = max line count over the unit's
+three language bodies.
+
+- If `L <= 120`, `N = 1` (a single `body-1.js`).
+- If `L > 120`, `N = ceil(L / 100)`.
+
+Each language is split **independently** into N chunks by cutting only at
+blank-line boundaries (an empty line — never mid-line), choosing the N-1 cut
+points as the blank lines closest to the proportional target offsets
+`i*L/N` for `i = 1..N-1`. If a language lacks enough distinct interior blank
+lines for N-1 cut points, N for the **whole unit** is reduced to
+(available cut points + 1) rather than failing. Semantic alignment of parts
+across languages is **not** a goal — this is file-size hygiene only.
 
 ## Body files (critical for byte-exactness)
 
-`en.md` / `ru.md` / `zh.md` hold the section **body only**: everything after
-the heading line up to (not including) the next section's heading line,
-verbatim. The generator inserts nothing between units, so blank-line
-separation lives at the END of each body file:
+The unit body in each language is the concatenation of `body-1.js` ..
+`body-N.js` string values, in order, with **no separator inserted between
+chunks**. The generator inserts nothing between units either, so
+blank-line separation lives at the END of the **last chunk of the unit**:
 
-- Every body file **except the last unit's** ends with exactly ONE blank
-  line, i.e. the file ends with `"\n\n"`.
+- Every unit **except the last unit's** ends with exactly ONE blank line,
+  i.e. the last chunk's string ends with `"\n\n"`.
 - The **last unit in manifest order** ends with a single final newline and
-  no trailing blank line (`"\n"`).
+  no trailing blank line (`"\n"`), as the last bytes of its last chunk.
 - The frontmatter body ends with the one blank line before the first
   section heading.
+
+When a unit is split into multiple chunks, those trailing bytes simply live
+at the end of the LAST chunk — earlier chunks carry no special trailing
+whitespace of their own beyond what the split produced.
 
 Getting this wrong is the #1 way to make `--check` fail.
 
@@ -123,12 +176,15 @@ position manually.
 
 ## How the generator builds a file
 
-`scripts/build_spec.mjs` walks the manifest in order:
+`scripts/build_spec.mjs` walks the manifest in order. For each unit it reads
+`meta.bodyParts` from `meta.js` and dynamically imports `body-1.js` ..
+`body-N.js` **in order**, then:
 
-- for `frontmatter`: emit the bytes of `en.md` / `ru.md` / `zh.md` verbatim;
+- for `frontmatter`: emit the concatenation of the `en` / `ru` / `zh`
+  strings of `body-1` .. `body-N`, verbatim;
 - for every other unit: emit
   `'#'.repeat(level) + ' ' + (numbered ? number + sep : '') + title[lang] + '\n'`,
-  then the body file's bytes;
+  then the concatenated body strings;
 - concatenate.
 
 Commands:
@@ -155,8 +211,8 @@ with subsection `### 9.9.1 Widget Modes`, using space-only separators.
 
 Steps:
 
-1. Create the folders, `meta.js`, and the three body files per unit
-   (mind the trailing-blank-line rule above).
+1. Create the folders, `meta.js` (with `"bodyParts": 1`), and `body-1.js`
+   per unit (mind the trailing-blank-line rule above).
 2. Insert both folder names into `manifest.js` at the correct document
    positions (after the unit preceding section 9.9).
 3. Run `node scripts/build_spec.mjs`, check the `git diff`, run the parity
@@ -170,7 +226,8 @@ export default {
   "number": "9.9",
   "sep": " ",
   "level": 2,
-  "title": { "en": "Widget Frobnication", "ru": "...", "zh": "..." }
+  "title": { "en": "Widget Frobnication", "ru": "...", "zh": "..." },
+  "bodyParts": 1
 };
 ```
 
@@ -180,34 +237,43 @@ for `## 9.9 Widget Frobnication` it is `" "`. Record what you actually
 wrote, and be consistent. For the subsection `### 9.9.1 Widget Modes`,
 `sec-9.9.1/meta.js` is the same shape with `"number": "9.9.1"`, `"level": 3`.
 
-Body files (fictional placeholder content), marking where the trailing
-blank line goes:
+`sec-9.9/body-1.js` (fictional placeholder content), marking where the
+trailing newline rules apply:
 
+```js
+// sec-9.9/body-1.js  (last unit in manifest order? then en must end "\n", else "\n\n")
+export default {
+  en: `Frobnicate the widget.
+
+(body of 9.9)
+`,
+  ru: `...`,
+  zh: `...`,
+};
 ```
-sec-9.9/en.md:                     sec-9.9.1/en.md:
-+---------------------------+      +---------------------------+
-| Frobnicate the widget.    |      | Choose a widget mode.     |
-|                           |      |                           |
-| (body of 9.9)             |      | (body of 9.9.1)           |
-|                           |      +---------------------------+
-+---------------------------+       ^ single final "\n", NO blank
- ^ ends "\n\n" — exactly one       blank line (if 9.9.1 is the
-   blank line before the next      last unit in manifest order;
-   unit's heading                  otherwise "\n\n" too)
-```
+
+The trailing blank line before the next unit's heading is the LAST bytes of
+the LAST chunk of the unit (here `body-1.js`, since `"bodyParts": 1`): the
+`en` string above ends `"\n\n"` (exactly one blank line) unless 9.9 is the
+last unit in manifest order, in which case it ends with a single `"\n"`.
+Earlier chunks (in a multi-chunk unit) carry no such trailing bytes.
 
 ## History / bootstrap
 
 This layout was created by a one-time mechanical migration:
 `scripts/extract_content_units.py` sliced the then-current three `.md`
 files into units by line-range byte-slicing (no text was retyped) and
-verified byte-identical reconstruction. The script is kept as a record and
-can be re-run with `--force` to rebuild `content/` from the `.md` files (it
-refuses to overwrite without `--force`). The **ongoing** workflow is the
+verified byte-identical reconstruction. It was later extended to emit the
+current `body-*.js` schema directly — `meta.js` with `bodyParts` plus
+`body-1..N` per unit — and can be re-run with `--force` to rebuild
+`content/` from the three monolithic spec `.md` files (it refuses to
+overwrite without `--force`). **Warning:** `--force` deletes the whole
+`content/` directory including this README.md itself, so restore/keep
+README.md from git after any `--force` run. The **ongoing** workflow is the
 opposite direction: edit units, then `build_spec.mjs` regenerates the
 `.md` files.
 
 ## Out of scope
 
-CI wiring (running `build_spec --check` in `.github/workflows`) is planned
-as a separate later task; until then, run `--check` manually.
+CI already runs `node scripts/build_spec.mjs --check` in
+`.github/workflows` on every push/PR.

@@ -7,5 +7,6 @@ export default {
     "en": "Canonical Form",
     "ru": "Каноническая форма",
     "zh": "规范形式"
-  }
+  },
+  "bodyParts": 1
 }

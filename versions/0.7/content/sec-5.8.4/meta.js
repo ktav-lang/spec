@@ -7,5 +7,6 @@ export default {
     "en": "Nested Inline Compounds",
     "ru": "Вложенные inline-составные",
     "zh": "嵌套 inline 复合值"
-  }
+  },
+  "bodyParts": 1
 }

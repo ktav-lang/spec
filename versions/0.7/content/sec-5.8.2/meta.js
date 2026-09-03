@@ -7,5 +7,6 @@ export default {
     "en": "Pairs",
     "ru": "Пары",
     "zh": "对"
-  }
+  },
+  "bodyParts": 1
 }

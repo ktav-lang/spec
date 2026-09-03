@@ -7,5 +7,6 @@ export default {
     "en": "Path Conflict",
     "ru": "Конфликт пути",
     "zh": "路径冲突"
-  }
+  },
+  "bodyParts": 1
 }

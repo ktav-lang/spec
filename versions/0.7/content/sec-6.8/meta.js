@@ -7,5 +7,6 @@ export default {
     "en": "I/O Errors",
     "ru": "I/O ошибки",
     "zh": "I/O 错误"
-  }
+  },
+  "bodyParts": 1
 }

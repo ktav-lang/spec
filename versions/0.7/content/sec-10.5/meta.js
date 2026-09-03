@@ -7,5 +7,6 @@ export default {
     "en": "Why is `{a:}` valid but `[,a]` an error?",
     "ru": "Почему `{a:}` валидно, а `[,a]` — ошибка?",
     "zh": "为什么 `{a:}` 合法而 `[,a]` 是错误?"
-  }
+  },
+  "bodyParts": 1
 }

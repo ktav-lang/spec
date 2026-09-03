@@ -7,5 +7,6 @@ export default {
     "en": "Claims",
     "ru": "Заявления",
     "zh": "声明"
-  }
+  },
+  "bodyParts": 1
 }

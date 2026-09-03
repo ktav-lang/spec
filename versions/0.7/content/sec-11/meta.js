@@ -7,5 +7,6 @@ export default {
     "en": "References",
     "ru": "Ссылки",
     "zh": "参考文献"
-  }
+  },
+  "bodyParts": 1
 }

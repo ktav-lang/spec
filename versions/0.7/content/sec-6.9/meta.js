@@ -7,5 +7,6 @@ export default {
     "en": "(RESERVED)",
     "ru": "(ЗАРЕЗЕРВИРОВАНО)",
     "zh": "(保留)"
-  }
+  },
+  "bodyParts": 1
 }

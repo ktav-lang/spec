@@ -7,5 +7,6 @@ export default {
     "en": "Items",
     "ru": "Элементы",
     "zh": "项"
-  }
+  },
+  "bodyParts": 1
 }

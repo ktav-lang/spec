@@ -7,5 +7,6 @@ export default {
     "en": "Examples",
     "ru": "Примеры",
     "zh": "示例"
-  }
+  },
+  "bodyParts": 1
 }

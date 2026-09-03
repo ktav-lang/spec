@@ -7,5 +7,6 @@ export default {
     "en": "Quoted Keys",
     "ru": "Квотированные ключи",
     "zh": "带引号的键"
-  }
+  },
+  "bodyParts": 1
 }

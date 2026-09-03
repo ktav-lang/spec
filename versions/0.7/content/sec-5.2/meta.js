@@ -7,5 +7,6 @@ export default {
     "en": "Scalar Value Interpretation",
     "ru": "Интерпретация скалярного значения",
     "zh": "标量值解释"
-  }
+  },
+  "bodyParts": 1
 }

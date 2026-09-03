@@ -7,5 +7,6 @@ export default {
     "en": "Semantics",
     "ru": "Семантика",
     "zh": "语义"
-  }
+  },
+  "bodyParts": 1
 }

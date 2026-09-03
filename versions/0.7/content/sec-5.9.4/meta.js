@@ -7,5 +7,6 @@ export default {
     "en": "Compound values (non-root)",
     "ru": "Составные значения (не-корень)",
     "zh": "复合值(非根)"
-  }
+  },
+  "bodyParts": 1
 }

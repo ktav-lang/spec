@@ -7,5 +7,6 @@ export default {
     "en": "Compliance",
     "ru": "Соответствие",
     "zh": "合规性"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Whitespace, indentation, line endings",
     "ru": "Пробелы, отступы, окончания строк",
     "zh": "空白、缩进、行尾"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Top-Level Inline",
     "ru": "Top-level inline",
     "zh": "顶层 inline"
-  }
+  },
+  "bodyParts": 1
 }

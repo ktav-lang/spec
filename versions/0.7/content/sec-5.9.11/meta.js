@@ -7,5 +7,6 @@ export default {
     "en": "Order",
     "ru": "Порядок",
     "zh": "顺序"
-  }
+  },
+  "bodyParts": 1
 }

@@ -7,5 +7,6 @@ export default {
     "en": "Why a canonical form?",
     "ru": "Зачем каноническая форма?",
     "zh": "为什么要规范形式?"
-  }
+  },
+  "bodyParts": 1
 }

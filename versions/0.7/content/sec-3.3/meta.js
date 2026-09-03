@@ -7,5 +7,6 @@ export default {
     "en": "Whitespace",
     "ru": "Пробельные символы",
     "zh": "空白"
-  }
+  },
+  "bodyParts": 1
 }

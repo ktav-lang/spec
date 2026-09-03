@@ -7,5 +7,6 @@ export default {
     "en": "Array-Item Lines",
     "ru": "Array-Item Lines",
     "zh": "Array-Item 行"
-  }
+  },
+  "bodyParts": 1
 }

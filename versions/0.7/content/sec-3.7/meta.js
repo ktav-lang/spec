@@ -7,5 +7,6 @@ export default {
     "en": "Escape Sequences",
     "ru": "Escape-последовательности",
     "zh": "Escape 序列"
-  }
+  },
+  "bodyParts": 1
 }
