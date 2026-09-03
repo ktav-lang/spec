@@ -37,7 +37,17 @@ function failUnit(unit, problem) {
 // Strict UTF-8: reject malformed byte sequences instead of silently
 // substituting U+FFFD replacement characters (lenient decoding would let a
 // corrupted multi-byte sequence pass as different, valid-looking text).
+// A leading BOM must be rejected HERE, at the raw-byte level, BEFORE
+// decoding: TextDecoder's default ignoreBOM: false treats a leading BOM as
+// an encoding signature and silently strips it from the returned string,
+// and the BOM bytes are valid UTF-8, so fatal: true does not reject them
+// either. Without this check a BOM-prefixed file would decode to exactly
+// the same string as its canonical BOM-less form and slip past both the
+// prefix check and the canonical byte-identity comparison.
 function decodeUtf8Strict(buf, label) {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    fail(`${label} starts with a UTF-8 byte-order mark (EF BB BF); a BOM is not permitted -- content files must be byte-identical to their canonical form, which has no encoding signature`);
+  }
   try {
     return utf8Strict.decode(buf);
   } catch (e) {

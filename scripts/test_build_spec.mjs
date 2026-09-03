@@ -1,7 +1,8 @@
 // test_build_spec.mjs — adversarial node:test suite for scripts/build_spec.mjs
 // Run: node --test scripts/test_build_spec.mjs
-// Builds self-contained fixtures in temp dirs; the one real-repo input is
-// versions/0.7/content/README.md, read by the README acceptance test.
+// Builds self-contained fixtures in temp dirs; the only real-repo inputs are
+// the three content READMEs (README.md / README.ru.md / README.zh.md), read
+// by the README acceptance test.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -519,42 +520,78 @@ test('meta.js without exactly one trailing newline is rejected', async () => {
 
 // ---- canonical byte form, strict UTF-8, lone surrogates (round 21) ----
 
-test('README-documented sec-9.9 meta.js example is accepted verbatim (docs and builder agree)', async () => {
-  // Acceptance test for the content README: the example documented there is
-  // copied byte-for-byte out of the real file and must pass the real
-  // validator unchanged.
-  const readme = fs.readFileSync(
-    new URL('../versions/0.7/content/README.md', import.meta.url), 'utf8');
-  const m = readme.match(/`sec-9\.9\/meta\.js`:\s*\n+```js\n([\s\S]*?)```/);
-  assert.ok(m, 'sec-9.9/meta.js example not found in README.md');
-  const documented = m[1];
-  assert.ok(documented.startsWith('export default {\n'));
-  assert.ok(documented.endsWith('}\n'), 'example must end with a single newline and no semicolon');
-  assert.ok(!documented.includes(';'), 'meta.js example must not contain a semicolon');
-  const fx = [
-    { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['fm.\n\n', 'фм.\n\n', '前言。\n\n']] },
-    { name: 'sec-9.9', meta: unitMeta('numbered', { __num: '9.9' }), bodies: [LAST] },
+test('README-documented sec-9.9 meta.js example is accepted verbatim in EN, RU and ZH (docs and builder agree)', async (t) => {
+  // Acceptance test for the three content READMEs (round 22, finding 3):
+  // the example documented in EACH language copy is copied byte-for-byte out
+  // of that real file and must pass the real validator unchanged; previously
+  // only the EN README was validated, so a drift introduced into the RU or
+  // ZH copy alone would have gone unnoticed.
+  const READMES = [
+    ['en', 'README.md'],
+    ['ru', 'README.ru.md'],
+    ['zh', 'README.zh.md'],
   ];
-  const { units } = await validate(fx, ['frontmatter', 'sec-9.9'], (c) =>
-    write(path.join(c, 'sec-9.9', 'meta.js'), documented));
-  const meta = units.get('sec-9.9').meta;
-  assert.equal(meta.number, '9.9');
-  assert.equal(meta.title.en, 'Widget Frobnication');
+  for (const [lang, readmeName] of READMES) {
+    await t.test(`${readmeName}: documented sec-9.9/meta.js example is accepted verbatim`, async () => {
+      const readme = fs.readFileSync(
+        new URL('../versions/0.7/content/' + readmeName, import.meta.url), 'utf8');
+      const m = readme.match(/`sec-9\.9\/meta\.js`:\s*\n+```js\n([\s\S]*?)```/);
+      assert.ok(m, `sec-9.9/meta.js example not found in ${readmeName}`);
+      const documented = m[1];
+      assert.ok(documented.startsWith('export default {\n'));
+      assert.ok(documented.endsWith('}\n'), 'example must end with a single newline and no semicolon');
+      assert.ok(!documented.includes(';'), 'meta.js example must not contain a semicolon');
+      const fx = [
+        { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['fm.\n\n', 'фм.\n\n', '前言。\n\n']] },
+        { name: 'sec-9.9', meta: unitMeta('numbered', { __num: '9.9' }), bodies: [LAST] },
+      ];
+      const { units } = await validate(fx, ['frontmatter', 'sec-9.9'], (c) =>
+        write(path.join(c, 'sec-9.9', 'meta.js'), documented));
+      const meta = units.get('sec-9.9').meta;
+      assert.equal(meta.number, '9.9');
+      assert.equal(meta.title.en, 'Widget Frobnication');
+    });
+  }
 });
 
+// Extracts one top-level object member (from its `  "key": {` opening line
+// through the matching `  },` line) as a contiguous, canonically-formatted
+// block from a metaJs()-style canonical serialization.
+function topLevelObjectMember(canonical, key) {
+  const open = '  "' + key + '": {\n';
+  const close = '  },\n';
+  const start = canonical.indexOf(open);
+  assert.ok(start !== -1, `canonical fixture must contain member "${key}"`);
+  const end = canonical.indexOf(close, start);
+  assert.ok(end !== -1, `member "${key}" must be closed by ${JSON.stringify(close)}`);
+  return canonical.slice(start, end + close.length);
+}
+
 test('meta.js with a duplicate top-level key is rejected by the canonical byte check', async () => {
-  const dupMeta =
-    'export default {\n' +
-    '  "kind": "named",\n' +
-    '  "number": null,\n' +
-    '  "level": 2,\n' +
-    '  "title": { "en": "A", "ru": "Б", "zh": "甲" },\n' +
-    '  "title": { "en": "B", "ru": "В", "zh": "乙" },\n' +
-    '  "bodyParts": 1\n' +
-    '}\n';
+  // Single-factor fixture (round 22, finding 2): the previous version wrote
+  // both duplicated "title" objects inline on one line each, so the source
+  // was ALREADY non-canonical for formatting reasons alone and this test
+  // would have passed even if duplicate-key detection broke. The fixture is
+  // now built by splicing one extra, canonically-formatted "title" member
+  // block into the canonical serialization of a valid meta object, so that
+  // removing either duplicated member restores exactly canonical bytes and
+  // the duplicate key is the ONLY reason the source can be rejected.
+  const effective = unitMeta('named');
+  const stale = {
+    ...effective,
+    title: { en: 'stale English title', ru: 'устаревший заголовок', zh: '过期标题' },
+  };
+  const canonical = metaJs(effective); // what the canonical check compares against (JSON.parse keeps the last value)
+  const staleBlock = topLevelObjectMember(metaJs(stale), 'title');
+  const effectiveBlock = topLevelObjectMember(canonical, 'title');
+  const duplicated = canonical.replace(effectiveBlock, staleBlock + effectiveBlock);
+  // Isolation proof: deleting exactly one of the two duplicated members
+  // restores a perfectly canonical file (either one).
+  assert.equal(duplicated.replace(staleBlock, ''), canonical);
+  assert.equal(duplicated.replace(effectiveBlock, ''), metaJs(stale));
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'named-abstract', 'meta.js'), dupMeta)),
+      write(path.join(c, 'named-abstract', 'meta.js'), duplicated)),
     (e) => /must be byte-identical to the canonical serialization/.test(e.message) &&
       /first difference at byte offset \d+/.test(e.message) &&
       !/title keys must be exactly/.test(e.message)
@@ -658,6 +695,47 @@ test('hasLoneSurrogate flags unpaired surrogates and accepts valid surrogate pai
   assert.equal(hasLoneSurrogate('before\uDEAD'), true);
   assert.equal(hasLoneSurrogate('pair \uD83D\uDE00 done'), false);
   assert.equal(hasLoneSurrogate('汉字😀'), false);
+});
+
+// ---- UTF-8 BOM rejected at the raw-byte level (round 22, finding 1) ----
+//
+// TextDecoder's default ignoreBOM: false treats a leading BOM as an encoding
+// signature and silently strips it from the decoded string; the BOM bytes are
+// valid UTF-8, so the fatal decoder does not reject them either. Without a
+// raw-byte check, a BOM-prefixed file would decode to exactly the canonical
+// BOM-less string and pass both the prefix check and the canonical
+// byte-identity check. The fixtures below prepend the BOM as RAW BYTES
+// (never via a JS string literal) so the tests exercise the byte-level
+// concern directly.
+
+function withUtf8Bom(content) {
+  return Buffer.concat([Buffer.from([0xEF, 0xBB, 0xBF]), Buffer.from(content, 'utf8')]);
+}
+
+test('manifest.js with a UTF-8 BOM is rejected before decoding', async () => {
+  const canonicalManifest =
+    'export default ' + JSON.stringify(['frontmatter', 'named-abstract', 'sec-1'], null, 2) + '\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'manifest.js'), withUtf8Bom(canonicalManifest))),
+    (e) => /manifest\.js starts with a UTF-8 byte-order mark/.test(e.message)
+  );
+});
+
+test('meta.js with a UTF-8 BOM is rejected before decoding', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), withUtf8Bom(metaJs(unitMeta('named'))))),
+    (e) => /meta\.js starts with a UTF-8 byte-order mark/.test(e.message)
+  );
+});
+
+test('body-1.js with a UTF-8 BOM is rejected before decoding', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), withUtf8Bom(bodyJs('x\n', 'y\n', 'z\n')))),
+    (e) => /unit "sec-1": body-1\.js starts with a UTF-8 byte-order mark/.test(e.message)
+  );
 });
 
 // ---- escape grammar: "$" without "{" is not a valid escape (round 20, finding 3) ----
