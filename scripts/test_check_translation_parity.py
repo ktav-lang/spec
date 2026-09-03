@@ -1130,6 +1130,144 @@ class TranslationParityTestCase(unittest.TestCase):
             "LF 0x0A and")
         self.run_semi_compound_mutation(mutated, "<key-char>")
 
+    # -- fixed absolute-constant checks: '< 0x20' threshold, tab 0x09 ------
+    #
+    # Round-20 finding 2: two more numeric facts in the semi-formal
+    # <dq-char>/<key-char> prose are asserted as FIXED ABSOLUTE CONSTANTS
+    # per language (threshold always 0x20; tab always 0x09 wherever the
+    # translated word is stated with its code point), not compared
+    # cross-language.
+
+    def test_semi_formal_key_char_control_threshold_mutated_fails(self):
+        # ONLY the threshold value changes ("< 0x20" -> "< 0x09") in the
+        # translation; the tab pairing is untouched. The absolute check
+        # must fire and name the exact defect; the old compound-pair
+        # check has nothing to fire on (no LF/CR/VT/FF/DEL pair touched).
+        # Note the old flat-multiset check ALSO fires on this particular
+        # mutation (a one-sided value change necessarily shifts the token
+        # counts) -- that catch is incidental and evaporates when both
+        # sides are corrupted identically, which is the case
+        # test_semi_formal_threshold_corruption_identical_in_en_and_translation_fails
+        # pins below.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    ASCII control bytes < 0x20",
+            "                    ASCII control bytes < 0x09 other than the "
+            "whitespace")
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "control-byte threshold in production <key-char>", out)
+        self.assertIn("expected 0x20, found 0x09", out)
+        self.assertNotIn(
+            "control-byte codepoint association mismatch", out)
+
+    def test_semi_formal_dq_char_control_threshold_mutated_fails(self):
+        # Same threshold mutation in the OTHER hosting production,
+        # <dq-char> ("... control bytes < 0x20 other than tab/VT/FF, ...").
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    < 0x20",
+            "                    < 0x09 other than tab/VT/FF, DEL (0x7F), "
+            "LF, CR,")
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "control-byte threshold in production <dq-char>", out)
+        self.assertIn("expected 0x20, found 0x09", out)
+        self.assertNotIn(
+            "control-byte codepoint association mismatch", out)
+
+    def test_semi_formal_key_char_tab_codepoint_mutated_fails(self):
+        # ONLY the tab pairing's codepoint changes ("tab 0x09" ->
+        # "tab 0x20"); the threshold is untouched. The absolute check
+        # must fire and name the exact defect; the compound-pair check
+        # stays silent ("tab" is not one of its five Latin names).
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    members (tab 0x09,",
+            "                    members (tab 0x20, VT 0x0B, FF 0x0C — "
+            "LF 0x0A and")
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("tab codepoint in production <key-char>", out)
+        self.assertIn("expected 0x09, found 0x20", out)
+        self.assertNotIn(
+            "control-byte codepoint association mismatch", out)
+
+    def test_semi_formal_review_adversarial_threshold_tab_swap_fails_both_new_checks(self):
+        # The review's exact false-green: swap BOTH fixed values
+        # ("< 0x20 ... tab 0x09" -> "< 0x09 ... tab 0x20"). The flat
+        # token multiset is IDENTICAL (one 0x20 and one 0x09 on each
+        # side) and COMPOUND_ATOM_PAIR_RE matches neither the
+        # '<'-anchored threshold nor the translated tab word, so BOTH
+        # pre-existing detectors are structurally silent -- each new
+        # absolute check must fire on its own fact, independently.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    ASCII control bytes < 0x20",
+            "                    ASCII control bytes < 0x09 other than the "
+            "whitespace")
+        mutated = self._replace_semi_line(
+            mutated,
+            "                    members (tab 0x09,",
+            "                    members (tab 0x20, VT 0x0B, FF 0x0C — "
+            "LF 0x0A and")
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "control-byte threshold in production <key-char> (en): "
+            "expected 0x20, found 0x09", out)
+        self.assertIn(
+            "tab codepoint in production <key-char> (en): expected "
+            "0x09, found 0x20", out)
+        # The OLD detectors must NOT have fired: flat multiset identical
+        # by construction, compound pairs untouched, all counts unchanged.
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+        self.assertNotIn(
+            "control-byte codepoint association mismatch", out)
+        self.assertNotIn("non-blank line count mismatch", out)
+        self.assertNotIn("grammar production RHS mismatch", out)
+        self.assertNotIn("grammar production LHS set mismatch", out)
+
+    def test_semi_formal_threshold_corruption_identical_in_en_and_translation_fails(self):
+        # The absolute-constant payoff: apply the SAME one-sided
+        # threshold corruption to EN and the translation. Every
+        # cross-language comparison is definitionally blind to identical
+        # corruption on both sides (flat multiset, compound pairs, all
+        # counts agree), so the OLD detectors stay silent -- only the
+        # fixed constant catches it. The tab pairing is untouched, so
+        # the tab check must NOT fire.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    ASCII control bytes < 0x20",
+            "                    ASCII control bytes < 0x09 other than the "
+            "whitespace")
+        en = self.write("spec.md", semi_doc(mutated))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "control-byte threshold in production <key-char> (en): "
+            "expected 0x20, found 0x09", out)
+        self.assertNotIn("tab codepoint in production", out)
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+        self.assertNotIn(
+            "control-byte codepoint association mismatch", out)
+
     # -- unit tests: extract_embedded_tokens / significant_grammar_tokens --
 
     def test_extract_embedded_tokens_returns_all_matches_in_order(self):
@@ -1179,6 +1317,44 @@ class TranslationParityTestCase(unittest.TestCase):
         # (e.g. the forward reference "LF, CR" in <dq-char>): not captured.
         text = 'tab/VT/FF, DEL (0x7F), LF, CR, and "\\" (escape lead)'
         self.assertEqual(ctp.extract_compound_atoms(text), [("DEL", "0x7F")])
+
+    def test_extract_control_thresholds_captures_and_normalizes(self):
+        # '<' + optional whitespace + hex; digits upper-cased, '0x' kept.
+        self.assertEqual(
+            ctp.extract_control_thresholds(
+                'bytes < 0x20 other than ... and <0x2a here'),
+            ["0x20", "0x2A"])
+        # A <nonterminal> reference is not a threshold (a letter, not
+        # whitespace/hex, follows the '<').
+        self.assertEqual(
+            ctp.extract_control_thresholds('<dq-char> and <key-char>'), [])
+
+    def test_extract_tab_codepoints_pairs_only_word_plus_value(self):
+        # A tab word IMMEDIATELY followed by its hex value is captured
+        # (per language); a bare mention with no adjacent value
+        # ("tab/VT/FF" -- the real <dq-char> shape in all three
+        # languages) is not.
+        self.assertEqual(
+            ctp.extract_tab_codepoints(
+                'members (tab 0x09, VT 0x0B) or bare tab/VT/FF'),
+            [("en", "0x09")])
+        self.assertEqual(
+            ctp.extract_tab_codepoints(
+                '(табуляция 0x09, VT 0x0B — и просто табуляции/VT/FF)'),
+            [("ru", "0x09")])
+        self.assertEqual(
+            ctp.extract_tab_codepoints(
+                '制表符 0x09、VT 0x0B —— 以及 制表符/VT/FF'),
+            [("zh", "0x09")])
+
+    def test_detect_language_labels_marked_scripts(self):
+        self.assertEqual(
+            ctp.detect_language('ASCII bytes < 0x20 and tab'), 'en')
+        self.assertEqual(
+            ctp.detect_language('управляющих байтов < 0x20 (табуляция)'),
+            'ru')
+        self.assertEqual(
+            ctp.detect_language('控制字节 < 0x20(制表符 0x09)'), 'zh')
 
     # -- protective real-spec test for the embedded-terminal check ----------
 
@@ -1254,6 +1430,43 @@ class TranslationParityTestCase(unittest.TestCase):
         for pair in [("LF", "0x0A"), ("CR", "0x0D"), ("VT", "0x0B"),
                      ("FF", "0x0C"), ("DEL", "0x7F")]:
             self.assertIn(pair, en_key)
+
+    def test_real_spec_fixed_threshold_and_tab_constants_hold(self):
+        # Positive pin over the ACTUAL shipped EN/RU/ZH files (round-20
+        # finding 2): wherever the '<'-anchored control-byte threshold
+        # occurs in a semi-formal production it is 0x20, and wherever a
+        # tab word is stated with its code point it is 0x09. The exact
+        # occurrence shapes are pinned per production so a future edit
+        # that DROPS the pattern (instead of corrupting it) is noticed
+        # here too: <dq-char> carries exactly one threshold and a bare
+        # (value-less) tab mention; <key-char> carries exactly one
+        # threshold and exactly one tab pairing, per language.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        tab_lang = {"spec.md": "en", "spec.ru.md": "ru", "spec.zh.md": "zh"}
+        for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            lines = ctp.read_lines(
+                os.path.join(repo_root, "versions", "0.7", name))
+            sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+            start, end = sections["4"]
+            semi = ctp.extract_semi_formal_rhs(lines, start, end, excluded)
+            for lhs, rhs in semi.items():
+                for hexval in ctp.extract_control_thresholds(rhs):
+                    self.assertEqual(
+                        hexval, "0x20",
+                        "%s %s: threshold" % (name, lhs))
+                for lang, hexval in ctp.extract_tab_codepoints(rhs):
+                    self.assertEqual(
+                        (lang, hexval), (tab_lang[name], "0x09"),
+                        "%s %s: tab pairing" % (name, lhs))
+            self.assertEqual(
+                ctp.extract_control_thresholds(semi["<key-char>"]), ["0x20"])
+            self.assertEqual(
+                ctp.extract_tab_codepoints(semi["<key-char>"]),
+                [(tab_lang[name], "0x09")])
+            self.assertEqual(
+                ctp.extract_control_thresholds(semi["<dq-char>"]), ["0x20"])
+            self.assertEqual(
+                ctp.extract_tab_codepoints(semi["<dq-char>"]), [])
 
     # -- stdout encoding safety ----------------------------------------------
 

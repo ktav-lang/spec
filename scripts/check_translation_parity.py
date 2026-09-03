@@ -92,6 +92,19 @@ Purpose:
          to WHICH code point -- so swapping "LF 0x0A ... CR 0x0D" into
          "LF 0x0D ... CR 0x0A" fails even though both flat token
          multisets are identical.
+         Two further numeric facts in the same prose are asserted as
+         FIXED ABSOLUTE CONSTANTS per language rather than compared
+         cross-language, because their correct value is known
+         independently of any other language: wherever the
+         language-independent '< 0x...' threshold pattern occurs
+         (CONTROL_THRESHOLD_RE) its value must be 0x20, and wherever a
+         translated tab word (EN "tab" / RU "табуляция" / ZH "制表符")
+         is stated immediately followed by its hex value (TAB_WORD_RE)
+         that value must be 0x09. A translation swapping BOTH values
+         keeps every flat multiset and every compound pair unchanged --
+         undetectable by any comparison -- and identical corruption of
+         all languages at once defeats every cross-language check by
+         construction; the absolute assertions catch both.
       7. Named-section parity: unnumbered headings of level >= 2 (the h1
          document title and the front-matter region under it are excluded
          from THIS generic count comparison — RU/ZH legitimately carry an
@@ -320,6 +333,52 @@ LANGUAGE_INDEPENDENT_ATOM_RE = re.compile(r'\b0x[0-9A-Fa-f]+\b|\b(?:LF|CR|VT|FF|
 COMPOUND_ATOM_PAIR_RE = re.compile(
     r'\b(LF|CR|VT|FF|DEL)\b\s*\(?(0x[0-9A-Fa-f]+)\)?')
 
+# The ASCII control-byte threshold stated in the <dq-char>/<key-char>
+# prose: a literal '<' immediately followed by a hex value ("ASCII control
+# bytes < 0x20" -- EN, RU "управляющих байтов < 0x20", ZH "控制字节 < 0x20";
+# '<' and hex notation are language-independent, so the pattern itself
+# carries no translation risk). Unlike the LF/CR/VT/FF/DEL pairs above,
+# this value has a known-correct answer in EVERY language independently of
+# what any other language says -- ASCII control bytes are definitionally
+# the range below 0x20 -- so it is asserted ABSOLUTELY per language rather
+# than compared cross-language: a wrong value fails even when every
+# language is mutated identically (which no cross-language comparison can
+# ever catch). Checked wherever the pattern occurs (only <dq-char> and
+# <key-char> carry it today); zero matches in a production's RHS is fine.
+CONTROL_THRESHOLD_RE = re.compile(r'<\s*(0x[0-9A-Fa-f]+)')
+CONTROL_THRESHOLD_EXPECTED = "0x20"
+
+# The tab control byte, always 0x09. The WORD is legitimately translated
+# (EN "tab", RU "табуляция"/"табуляции", ZH "制表符") and is therefore
+# deliberately absent from LANGUAGE_INDEPENDENT_ATOM_RE -- but wherever a
+# language's tab word is IMMEDIATELY followed by its hex value, that
+# pairing is a fixed fact of this spec in every language (tab is code
+# point 0x09, period), so the word-plus-value PAIRING is checked
+# absolutely even though the word itself cannot be. A bare word mention
+# with no adjacent value ("tab/VT/FF" -- the <dq-char> shape in all three
+# languages) is not captured and carries no obligation, mirroring
+# COMPOUND_ATOM_PAIR_RE's treatment of bare LF/CR mentions. Every
+# language's word pattern is run against every text: the patterns match
+# disjoint scripts, so only the text's own language can produce matches.
+TAB_WORD_RE = {
+    "en": re.compile(r'\btab\b'),
+    "ru": re.compile(r'\bтабуляц\w*\b'),
+    "zh": re.compile(r'制表符'),
+}
+# Value shape accepted after a tab word: optional whitespace, optional
+# parentheses around the hex value (same shape COMPOUND_ATOM_PAIR_RE
+# accepts after a name). Matched with .match(text, word_match.end()) so
+# the value must IMMEDIATELY follow the word.
+TAB_VALUE_AFTER_WORD_RE = re.compile(r'\s*\(?(0x[0-9A-Fa-f]+)\)?')
+TAB_CODEPOINT_EXPECTED = "0x09"
+
+# Marked-script presence, used by detect_language to name the language of
+# a semi-formal RHS text in [FAIL] messages. Latin letters are present in
+# all three languages (terminals, "UTF-8", "ASCII") and identify nothing;
+# Cyrillic and CJK ideographs identify ru/zh.
+CYRILLIC_RE = re.compile(r'[\u0400-\u04FF]')
+CJK_RE = re.compile(r'[\u4E00-\u9FFF]')
+
 
 def extract_embedded_tokens(rhs_text):
     """Return the source-ordered list of every GRAMMAR_TOKEN_RE match
@@ -423,6 +482,57 @@ def extract_compound_atoms(rhs_text):
     for m in COMPOUND_ATOM_PAIR_RE.finditer(rhs_text):
         hexval = m.group(2)
         pairs.append((m.group(1), hexval[:2] + hexval[2:].upper()))
+    return pairs
+
+
+def normalize_hex_literal(hexval):
+    """Uppercase the hex DIGITS, keep the '0x' prefix lower -- the same
+    normalization extract_compound_atoms applies -- so '0x0a' and '0x0A'
+    are one value ('0x0A')."""
+    return hexval[:2] + hexval[2:].upper()
+
+
+def detect_language(text):
+    """Best-effort language name ('en' | 'ru' | 'zh') for a semi-formal
+    production's RHS text, by marked-script presence: Cyrillic -> 'ru',
+    CJK ideographs -> 'zh', otherwise 'en'. Only used to LABEL [FAIL]
+    messages (the fixed-constant checks below are absolute and need no
+    language identity to run); never used to select or skip a check."""
+    if CJK_RE.search(text):
+        return "zh"
+    if CYRILLIC_RE.search(text):
+        return "ru"
+    return "en"
+
+
+def extract_control_thresholds(rhs_text):
+    """Return every '<'-anchored ASCII control-byte threshold value stated
+    in a semi-formal production's RHS text, one per CONTROL_THRESHOLD_RE
+    match, hex digits normalized to upper case: "< 0x20" -> "0x20". Zero
+    matches is a normal result (only <dq-char>/<key-char> carry the
+    pattern today); callers assert each returned value equals
+    CONTROL_THRESHOLD_EXPECTED."""
+    return [normalize_hex_literal(m.group(1))
+            for m in CONTROL_THRESHOLD_RE.finditer(rhs_text)]
+
+
+def extract_tab_codepoints(rhs_text):
+    """Return every (language, hex) pairing of a translated tab word with
+    its code point in a semi-formal production's RHS text: EN "tab 0x09"
+    -> ("en", "0x09"), RU "табуляция 0x09" -> ("ru", "0x09"), ZH
+    "制表符 0x09" -> ("zh", "0x09"), hex digits normalized to upper case.
+    A tab word with no immediately-adjacent hex value ("tab/VT/FF",
+    "табуляции/VT/FF", "制表符/VT/FF" -- the <dq-char> shape in all three
+    languages) is not captured and carries no obligation. Every language's
+    word pattern is run against every text (they match disjoint scripts,
+    so only the text's own language can produce matches); callers assert
+    each returned hex equals TAB_CODEPOINT_EXPECTED."""
+    pairs = []
+    for lang in sorted(TAB_WORD_RE):
+        for m in TAB_WORD_RE[lang].finditer(rhs_text):
+            vm = TAB_VALUE_AFTER_WORD_RE.match(rhs_text, m.end())
+            if vm:
+                pairs.append((lang, normalize_hex_literal(vm.group(1))))
     return pairs
 
 
@@ -1171,6 +1281,37 @@ def check_translation(en_lines, en_sections, en_code_counts,
                         "control-byte codepoint association mismatch in "
                         "semi-formal production %s: EN pairs %r vs "
                         "translation pairs %r" % (lhs, en_pairs, t_pairs))
+            # Fixed absolute-constant checks (round-20 review finding 2):
+            # two more numeric facts in the same semi-formal prose have
+            # known-correct values in every language INDEPENDENTLY of what
+            # any other language says, so -- unlike the cross-language
+            # comparisons above -- they are asserted absolutely, per
+            # language: the '<'-anchored ASCII control-byte threshold is
+            # always 0x20, and the translated tab word is always bound to
+            # 0x09 wherever it is stated immediately followed by its code
+            # point. A translation swapping BOTH values ("< 0x09 ...
+            # tab 0x20") keeps the flat multiset AND the compound pairs
+            # above unchanged -- a false-green for every cross-language
+            # check -- and a corruption applied identically to all
+            # languages defeats every comparison by construction; both
+            # fail the absolute assertion here regardless. Zero matches
+            # for either pattern in a production's RHS is fine (only
+            # <dq-char>/<key-char> carry them today); an existing match
+            # with any other value is reported.
+            for lhs in sorted(en_semi):
+                t_rhs = t_semi.get(lhs, "")
+                language = detect_language(t_rhs)
+                for hexval in extract_control_thresholds(t_rhs):
+                    if hexval != CONTROL_THRESHOLD_EXPECTED:
+                        problems.append(
+                            "control-byte threshold in production %s (%s): "
+                            "expected 0x20, found %s"
+                            % (lhs, language, hexval))
+                for lang, hexval in extract_tab_codepoints(t_rhs):
+                    if hexval != TAB_CODEPOINT_EXPECTED:
+                        problems.append(
+                            "tab codepoint in production %s (%s): expected "
+                            "0x09, found %s" % (lhs, lang, hexval))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
