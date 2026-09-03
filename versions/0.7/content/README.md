@@ -1,5 +1,7 @@
 # versions/0.7/content/ — spec content units
 
+**Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
+
 ## What this directory is
 
 This directory is the **per-section source of truth** for

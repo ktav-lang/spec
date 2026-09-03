@@ -416,13 +416,19 @@ submodule 引入(或直接拷贝)。
 │   ├── test_validate_corpus.py            validate_corpus.py 的单元测试
 │   ├── check_translation_parity.py        EN/RU/ZH 翻译对等性检查工具
 │   ├── test_check_translation_parity.py   check_translation_parity.py 的单元测试
+│   ├── build_spec.mjs                     (0.7+) 从 content/ 生成 spec.md/.ru.md/.zh.md
+│   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
+│   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
 │   └── locks/                             boundary-fixtures 清单锁文件
-├── .github/workflows/     CI:语料库校验、翻译对等性检查,以及两套单元测试
+├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
+│                          翻译对等性检查,以及两套单元测试
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
         ├── spec.ru.md     Russian translation of the spec
         ├── spec.zh.md     Chinese translation of the spec
+        ├── content/       (0.7+) 逐节来源——见 content/README.md;
+        │                  spec.md/.ru.md/.zh.md 由 content/ 生成,切勿手动编辑
         └── tests/         language-agnostic conformance suite
             ├── valid/
             ├── invalid/
