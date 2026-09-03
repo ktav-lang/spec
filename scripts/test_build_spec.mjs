@@ -7,7 +7,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 
 import { validateContentDir } from './build_spec.mjs';
 
@@ -51,6 +50,9 @@ function unitMeta(kind, opts = {}) {
 // unit defs: { name, meta, bodies: [[en,ru,zh], ...] }
 function makeContent(dir, unitDefs, manifestNames) {
   write(path.join(dir, 'content', 'package.json'), '{\n  "type": "module"\n}\n');
+  for (const readme of ['README.md', 'README.ru.md', 'README.zh.md']) {
+    write(path.join(dir, 'content', readme), '# content README\n');
+  }
   for (const u of unitDefs) {
     const ud = path.join(dir, 'content', u.name);
     write(path.join(ud, 'meta.js'), metaJs(u.meta));
@@ -77,17 +79,32 @@ function baseFixtures() {
   ];
 }
 
-function validate(fixtures, manifest, mutate) {
+async function validate(fixtures, manifest, mutate) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-test-'));
   try {
     makeContent(dir, fixtures, manifest || fixtures.map((u) => u.name));
     if (mutate) mutate(path.join(dir, 'content'));
-    const url = pathToFileURL(path.join(dir, 'content', 'manifest.js'));
-    return validateContentDir(path.join(dir, 'content'));
+    return await validateContentDir(path.join(dir, 'content'));
   } finally {
-    // removed by caller (sync tests) — but async: clean up in callers
-    setTimeout(() => fs.rmSync(dir, { recursive: true, force: true }), 100).unref();
+    fs.rmSync(dir, { recursive: true, force: true });
   }
+}
+
+let symlinksSupportedCache = null;
+function symlinksSupported() {
+  if (symlinksSupportedCache === null) {
+    const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-symlink-probe-'));
+    try {
+      fs.symlinkSync('no-such-target', path.join(probeDir, 'probe'), 'file');
+      symlinksSupportedCache = true;
+    } catch {
+      // Windows without admin/Developer Mode raises EPERM.
+      symlinksSupportedCache = false;
+    } finally {
+      fs.rmSync(probeDir, { recursive: true, force: true });
+    }
+  }
+  return symlinksSupportedCache;
 }
 
 test('well-formed minimal fixture passes cleanly', async () => {
@@ -245,5 +262,82 @@ test('subdirectory inside a unit dir is rejected', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) => fs.mkdirSync(path.join(c, 'sec-1', 'nested'))),
     (e) => /unit "sec-1": subdirectory "nested" is not allowed/.test(e.message)
+  );
+});
+
+test('symlink named body-1.js inside a unit dir is rejected', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      const outside = path.join(c, '..', 'outside-body.js');
+      fs.writeFileSync(outside, bodyJs('x\n', 'y\n', 'z\n'));
+      fs.rmSync(path.join(c, 'sec-1', 'body-1.js'));
+      fs.symlinkSync(outside, path.join(c, 'sec-1', 'body-1.js'), 'file');
+    }),
+    (e) => /unit "sec-1": entry "body-1\.js" is not a regular file/.test(e.message)
+  );
+});
+
+test('symlink named meta.js inside a unit dir is rejected', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      const outside = path.join(c, '..', 'outside-meta.js');
+      fs.writeFileSync(outside, bodyJs('x\n', 'y\n', 'z\n'));
+      fs.rmSync(path.join(c, 'sec-1', 'meta.js'));
+      fs.symlinkSync(outside, path.join(c, 'sec-1', 'meta.js'), 'file');
+    }),
+    (e) => /unit "sec-1": entry "meta\.js" is not a regular file/.test(e.message)
+  );
+});
+
+test('meta.js title with an extra 4th key is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title = { en: 'Abstract', ru: 'Аннотация', zh: '摘要', de: 'Zusammenfassung' };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": title keys must be exactly \{en, ru, zh\}; got unexpected key\(s\) "de"/.test(e.message)
+  );
+});
+
+test('meta.js title missing a key is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title = { en: 'Abstract', ru: 'Аннотация' };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": title keys must be exactly \{en, ru, zh\}; got missing key\(s\) "zh"/.test(e.message)
+  );
+});
+
+test('non-last unit en final chunk ends "\\n\\n\\n" (extra blank line) is rejected', async () => {
+  const fx = baseFixtures();
+  fx[0].bodies = [['fm.\n\n\n', 'фм.\n\n', '前言。\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "frontmatter": en: non-last unit's final chunk must end with "\\n\\n".*got "\\n\\n\\n" or more/.test(e.message)
+  );
+});
+
+test('non-last unit zh final chunk ends "\\n\\n\\n\\n" (four LFs) is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [['mid.\n\n', 'середина.\n\n', '中间。\n\n\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": zh: non-last unit's final chunk must end with "\\n\\n".*got "\\n\\n\\n" or more/.test(e.message)
+  );
+});
+
+test('missing README.ru.md at content/ top level is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => fs.rmSync(path.join(c, 'README.ru.md'))),
+    (e) => /required file "README\.ru\.md" is missing under content\//.test(e.message)
   );
 });

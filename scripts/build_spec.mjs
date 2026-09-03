@@ -78,6 +78,16 @@ export function validateMeta(unit, meta) {
   }
   const t = meta.title;
   if (typeof t !== 'object' || t === null) failUnit(unit, 'missing title object');
+  const tKeySet = Object.keys(t).sort();
+  const tWantSet = [...LANGS].sort();
+  if (tKeySet.length !== tWantSet.length || tKeySet.some((k, i) => k !== tWantSet[i])) {
+    const extra = tKeySet.filter((k) => !tWantSet.includes(k));
+    const missing = tWantSet.filter((k) => !tKeySet.includes(k));
+    const bits = [];
+    if (extra.length) bits.push(`unexpected key(s) ${extra.map((k) => JSON.stringify(k)).join(', ')}`);
+    if (missing.length) bits.push(`missing key(s) ${missing.map((k) => JSON.stringify(k)).join(', ')}`);
+    failUnit(unit, `title keys must be exactly {en, ru, zh}; got ${bits.join('; ')}`);
+  }
   for (const lang of LANGS) {
     if (typeof t[lang] !== 'string' || t[lang].length === 0) {
       failUnit(unit, `missing/empty title.${lang}`);
@@ -131,6 +141,7 @@ export async function validateContentDir(contentDir) {
 
   // 1. Top-level allowlist + 2. exact directory-set match.
   const actualDirs = new Set();
+  const actualFiles = new Set();
   for (const ent of entries) {
     if (ent.isDirectory()) {
       if (!manifestSet.has(ent.name)) {
@@ -141,6 +152,7 @@ export async function validateContentDir(contentDir) {
       if (!TOP_LEVEL_ALLOWED_FILES.has(ent.name)) {
         fail(`unexpected file under content/: "${ent.name}"`);
       }
+      actualFiles.add(ent.name);
     } else {
       fail(`unexpected entry under content/: "${ent.name}"`);
     }
@@ -148,6 +160,15 @@ export async function validateContentDir(contentDir) {
   for (const name of manifest) {
     if (!actualDirs.has(name)) {
       fail(`manifest lists unit "${name}" but its directory is missing under content/`);
+    }
+  }
+
+  // 2b. The three per-language READMEs are required, not merely permitted:
+  // the content model is trilingual and its documentation ships in all
+  // three languages (README.md / README.ru.md / README.zh.md).
+  for (const name of ['README.md', 'README.ru.md', 'README.zh.md']) {
+    if (!actualFiles.has(name)) {
+      fail(`required file "${name}" is missing under content/ (all three per-language READMEs are mandatory)`);
     }
   }
 
@@ -165,10 +186,16 @@ export async function validateContentDir(contentDir) {
     const isLast = idx === manifest.length - 1;
 
     // 4. Exact per-unit file set (before dynamic import so our message wins).
+    // Every entry must be a REGULAR file: a symlink named meta.js/body-N.js
+    // would otherwise pass the name allowlist and its target would be loaded
+    // by dynamic import(), possibly outside the unit or outside content/.
     const unitEntries = fs.readdirSync(unitDir, { withFileTypes: true });
     for (const ent of unitEntries) {
       if (ent.isDirectory()) {
         failUnit(unit, `subdirectory "${ent.name}" is not allowed inside a unit directory`);
+      }
+      if (!ent.isFile()) {
+        failUnit(unit, `entry "${ent.name}" is not a regular file (symlinks, FIFOs, devices and other special entries are not allowed inside a unit directory)`);
       }
     }
     const present = new Set(unitEntries.map((e) => e.name));
@@ -239,8 +266,9 @@ export async function validateContentDir(contentDir) {
     }
 
     // 6. Terminal-newline invariant (per language).
-    // Non-last units must end with exactly one blank line ("\n\n"); exception:
-    // empty "container" sections whose whole body is exactly "\n" in every
+    // Non-last units must end with EXACTLY two trailing LFs ("\n\n"), i.e.
+    // exactly one blank line; a run of 3+ trailing LFs is also rejected.
+    // Exception: empty "container" sections whose whole body is exactly "\n" in every
     // language (heading immediately followed by subsections — the lone "\n"
     // supplies the blank line). The last unit must end with a single "\n".
     const last = parts[parts.length - 1];
@@ -252,11 +280,13 @@ export async function validateContentDir(contentDir) {
         } else if (!s.endsWith('\n')) {
           failUnit(unit, `${lang}: last unit's final chunk must end with "\\n"`);
         }
-      } else if (!s.endsWith('\n\n')) {
+      } else if (!s.endsWith('\n\n') || s.endsWith('\n\n\n')) {
         const wholeBody = parts.map((p) => p[lang]).join('');
         const container = wholeBody === '\n' && LANGS.every((l) => parts.map((p) => p[l]).join('') === '\n');
         if (container) continue;
-        const shape = s.endsWith('\n') ? '"\\n" (single newline)' : 'no trailing newline';
+        const shape = s.endsWith('\n\n\n')
+          ? '"\\n\\n\\n" or more (two or more trailing blank lines)'
+          : s.endsWith('\n') ? '"\\n" (single newline)' : 'no trailing newline';
         failUnit(unit, `${lang}: non-last unit's final chunk must end with "\\n\\n" (exactly one blank line; only whole-body "\\n" container sections are exempt), got ${shape}`);
       }
     }
