@@ -260,18 +260,17 @@ Earlier chunks (in a multi-chunk unit) carry no such trailing bytes.
 
 ## History / bootstrap
 
-This layout was created by a one-time mechanical migration:
-`scripts/extract_content_units.py` sliced the then-current three `.md`
-files into units by line-range byte-slicing (no text was retyped) and
-verified byte-identical reconstruction. It was later extended to emit the
-current `body-*.js` schema directly — `meta.js` with `bodyParts` plus
-`body-1..N` per unit — and can be re-run with `--force` to rebuild
-`content/` from the three monolithic spec `.md` files (it refuses to
-overwrite without `--force`). **Warning:** `--force` deletes the whole
-`content/` directory including this README.md itself, so restore/keep
-README.md from git after any `--force` run. The **ongoing** workflow is the
-opposite direction: edit units, then `build_spec.mjs` regenerates the
-`.md` files.
+This layout was created by a one-time mechanical migration, recorded in
+`scripts/archive/extract_content_units.py`: it sliced the then-current
+three `.md` files into units by line-range byte-slicing (no text was
+retyped) and verified byte-identical reconstruction. It was later extended
+to emit the current `body-*.js` schema directly — `meta.js` with
+`bodyParts` plus `body-1..N` per unit. The script is kept for provenance
+only, not as a routine tool: it refuses to overwrite an existing
+`content/` and has no override flag. Rebuilding from scratch means
+manually deleting `content/` first as a separate, deliberate action. The
+**ongoing** workflow is the opposite direction: edit units, then
+`build_spec.mjs` regenerates the `.md` files.
 
 ## Out of scope
 

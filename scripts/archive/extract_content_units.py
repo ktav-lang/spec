@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""One-time mechanical bootstrap: split the 0.7 specs into content units.
+"""Archived one-time bootstrap record: split the 0.7 specs into content units.
+
+This is the script that mechanically performed the 0.7 content-unit
+migration, kept in scripts/archive/ for provenance only -- it is NOT a
+routine tool. It refuses to run when versions/0.7/content/ already exists
+and has no override flag: rebuilding from scratch requires manually
+deleting content/ first as a separate, deliberate action.
 
 All spec content is extracted by byte-range slicing of the original files;
 the script never regenerates or hard-codes any spec text. Stdlib only.
@@ -8,10 +14,9 @@ import argparse
 import json
 import os
 import re
-import shutil
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from check_translation_parity import (parse_file, NUMBERED_HEADING_RE,
                                       heading_level, FENCE_RE, HEADING_RE)
 
@@ -96,15 +101,15 @@ def load(path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
-    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    root = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     outdir = os.path.join(root, "versions", "0.7", "content")
     if os.path.exists(outdir):
-        if not args.force:
-            fatal("output dir exists: %s (use --force)" % outdir)
-        shutil.rmtree(outdir)
+        fatal("output dir exists: %s -- refusing to touch it; delete it "
+              "manually first if a from-scratch re-bootstrap is really needed"
+              % outdir)
     os.makedirs(outdir)
 
     # per-language state
