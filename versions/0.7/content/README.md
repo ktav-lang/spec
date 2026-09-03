@@ -54,8 +54,9 @@ This directory is the **per-section source of truth** for
 ## Unit contents
 
 Each unit directory contains exactly: `meta.js`, `body-1.js`, ..., `body-N.js`
-(N >= 1). There are **no** `.md` files under `content/` — zero, except this
-README.md itself.
+(N >= 1). The only `.md` files under `content/` are the three root READMEs
+(`README.md`, `README.ru.md`, `README.zh.md`); Markdown is forbidden
+entirely inside unit directories.
 
 ### `meta.js`
 

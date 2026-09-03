@@ -52,8 +52,8 @@
 ## 单元内容
 
 每个单元目录恰好包含:`meta.js`、`body-1.js`、……、`body-N.js`
-(N >= 1)。`content/` 下**没有**任何 `.md` 文件——零个,只有本
-README.md 例外。
+(N >= 1)。`content/` 下的 `.md` 文件只有三个根 README(`README.md`、
+`README.ru.md`、`README.zh.md`);单元目录内完全禁止 `.md` 文件。
 
 ### `meta.js`
 
