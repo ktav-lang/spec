@@ -264,6 +264,112 @@ SEMI_FORMAL_PROSE_LHS = frozenset([
     "<multiline-content-line>",  # "any line within an open <multiline>; ..."
 ])
 
+# Bare single-character ABNF operator tokens dropped by
+# significant_grammar_tokens. Reason (observed against the shipped
+# EN/RU/ZH files): parenthesized grouping inside a semi-formal production's
+# prose is a legitimate per-language rendering choice -- RU/ZH <dq-char>
+# group their exclusions into parenthetical spans EN leaves ungrouped (4
+# extra paren pairs), so raw paren counts differ across languages without
+# any normative difference. Every review-flagged normative terminal in the
+# semi-formal productions is a quoted terminal, a <nonterminal> reference,
+# or "(ws)", all of which survive this filter.
+SEMI_FORMAL_OPERATOR_TOKENS = frozenset(["(", ")", "|", "*", "+", "?"])
+
+# Inner content of a quoted terminal that is pure ASCII punctuation
+# (code points 0x21-0x2F, 0x3A-0x40, 0x5B-0x60, 0x7B-0x7E). Quoted tokens
+# whose inner text carries letters, digits, spaces, or non-ASCII
+# characters are dropped by significant_grammar_tokens.
+PUNCTUATION_ONLY_QUOTED_RE = re.compile(r'[!-/:-@\[-`{-~]+')
+
+
+def extract_embedded_tokens(rhs_text):
+    """Return the ORDERED list of every GRAMMAR_TOKEN_RE match in a
+    semi-formal production's RHS text (the raw token stream, unfiltered)."""
+    return [m.group(0) for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
+
+
+def significant_grammar_tokens(rhs_text):
+    """Reduce a semi-formal production's RHS token stream to the tokens
+    that are actually normative grammar contract, discarding prose
+    artifacts. Two filters are applied to extract_embedded_tokens' output:
+
+      1. Bare single-character operator tokens ("(", ")", "|", "*", "+",
+         "?") are dropped (see SEMI_FORMAL_OPERATOR_TOKENS for the
+         observed reason: per-language parenthetical grouping).
+
+      2. Quoted terminals whose INNER content is not pure ASCII
+         punctuation (must fully match PUNCTUATION_ONLY_QUOTED_RE) are
+         dropped. Reason (observed): these RHS blocks quote example
+         scalars ('"first name: alice"') and mention quote-characters as
+         prose ('"\'"', '"`"'); across languages the mention-pairing
+         shifts (RU/ZH produce pairing-artifact tokens containing
+         letters/spaces/CJK that EN does not), so letter/space-bearing
+         quoted tokens are prose, not contract. All known normative
+         terminals -- '"##"', '"."', '"\\\\"', '"\\."', '"#"', the quote
+         exclusions, '","', '"}"', '"]"', '")"', '"))"' -- are
+         punctuation-only and survive.
+
+    The surviving lists are compared as MULTISETS (sorted(a) !=
+    sorted(b)), NOT as ordered lists. This deliberately deviates from a
+    naive ordered contract because the shipped files legitimately differ
+    in token ORDER: ZH <unescaped-dot> lists '"\\\\"' before '"."' where
+    EN lists '"."' first, and RU <sq-char>/<bt-char> phrase it as
+    "instead of '\\"'" (own-delimiter first) where EN says "excluding
+    '\'' ... instead of '\\"'" -- while exclusion sets are semantically
+    order-independent. An ordered comparison would flag the currently-
+    consistent shipped translations. The real check on the shipped
+    versions/0.7 files passes under this multiset contract (verified),
+    and every currently-known corruption class -- terminal substitution,
+    terminal loss, terminal gain -- changes the multiset."""
+    significant = []
+    for tok in extract_embedded_tokens(rhs_text):
+        if tok in SEMI_FORMAL_OPERATOR_TOKENS:
+            continue
+        if (len(tok) >= 2 and tok.startswith('"') and tok.endswith('"')
+                and not PUNCTUATION_ONLY_QUOTED_RE.fullmatch(tok[1:-1])):
+            continue
+        significant.append(tok)
+    return significant
+
+
+def extract_semi_formal_rhs(lines, start, end, excluded):
+    """Return {lhs: rhs_text} for every LHS in SEMI_FORMAL_PROSE_LHS found
+    inside the fence lines (excluded[idx] True) of lines[start:end).
+
+    The RHS text block for a semi-formal production is the declaration
+    line after '::=' PLUS all immediately-following fence lines until the
+    first blank line, the first line matching GRAMMAR_LHS_RE, or the fence
+    end -- these productions' prose wraps over several continuation lines
+    that do NOT start with '|' (e.g. <inline-scalar>'s '","' / '"}"' /
+    '"]"' sit on the 2nd wrapped line; <multiline-content-line>'s '")"' /
+    '"))"' on its 2nd line). Lines are individually whitespace-collapsed
+    then joined with single spaces. Unlike _rhs_fragment, the text is NOT
+    cut at ';': in these productions semicolons are ordinary prose
+    punctuation (EN <key-char> contains "path separator; use '\\\\.'" -- a
+    ';' cut would eat the '"\\."' terminal, and was empirically shown to
+    break against the real files)."""
+    result = {}
+    idx = start
+    while idx < end:
+        if not excluded[idx]:
+            idx += 1
+            continue
+        m = GRAMMAR_LHS_RE.match(lines[idx])
+        if not m or m.group(1) not in SEMI_FORMAL_PROSE_LHS:
+            idx += 1
+            continue
+        parts = [' '.join(lines[idx][m.end():].split())]
+        j = idx + 1
+        while j < end and excluded[j]:
+            stripped = lines[j].strip()
+            if not stripped or GRAMMAR_LHS_RE.match(lines[j]):
+                break
+            parts.append(' '.join(stripped.split()))
+            j += 1
+        result[m.group(1)] = ' '.join(parts)
+        idx = j
+    return result
+
 # Front-matter recognition: the h1 title line (single '#', not '##' or
 # deeper), blockquote lines (the legitimate per-language disclaimer),
 # bold '**Label:** ...' field lines, and the bold Version/Date label
@@ -934,6 +1040,28 @@ def check_translation(en_lines, en_sections, en_code_counts,
                     "semi-formal prose allowlist, so this is a corrupted "
                     "terminal/nonterminal, not legitimate translated prose"
                     % (lhs, frag))
+            # Semi-formal-prose productions are NOT held to verbatim RHS
+            # parity (their prose is legitimately translated), but the
+            # real grammar terminals EMBEDDED in their prose are still
+            # language-independent contract: compare the significant-token
+            # MULTISETS (see significant_grammar_tokens -- multiset, not
+            # ordered, so legitimate per-language token ordering/pairing
+            # differences in the shipped files never false-fail). A
+            # production with zero significant tokens in both languages
+            # passes trivially (empty == empty) -- the accepted,
+            # self-verifying outcome for genuinely pure-prose productions.
+            en_semi = extract_semi_formal_rhs(
+                en_lines, en_start, en_end, en_excluded)
+            t_semi = extract_semi_formal_rhs(
+                t_lines, t_start, t_end, t_excluded)
+            for lhs in sorted(en_semi):
+                en_sig = sorted(significant_grammar_tokens(en_semi[lhs]))
+                t_sig = sorted(significant_grammar_tokens(t_semi.get(lhs, "")))
+                if en_sig != t_sig:
+                    problems.append(
+                        "embedded grammar terminal mismatch in semi-formal "
+                        "production %s (EN tokens: %r; translation tokens: %r)"
+                        % (lhs, en_sig, t_sig))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(

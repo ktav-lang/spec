@@ -152,6 +152,55 @@ ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
                                  "**日期:** 2026-09-02\n")
 
 
+    # -- embedded grammar terminals in semi-formal prose productions ---------
+    #
+    # The 10 SEMI_FORMAL_PROSE_LHS productions mix real language-
+    # independent syntax into translatable prose. Before this check was
+    # added, a translation could silently corrupt an embedded normative
+    # terminal (e.g. swap "." for ":" inside <unescaped-dot>'s prose RHS)
+    # with zero detection. These tests pin the embedded-terminal
+    # protection, the multiset (order-insensitive) comparison contract,
+    # and the real shipped files' behavior.
+
+# Real EN production text for the semi-formal-prose fixtures (verbatim
+# grammar content from versions/0.7/spec.md § 4, prose lightly abridged
+# where irrelevant to the embedded terminals). Used by the semi-formal
+# tests below so the embedded tokens are realistic.
+SEMI_GRAMMAR_LINES_EN = [
+    "<document>      ::= <line>*",
+    "<line>          ::= <comment> | <blank> | <header-line> | <pair-line>",
+    '<comment>       ::= (ws) "##" (any-chars until line-end)',
+    "<blank>         ::= (ws)",
+    r'<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"',
+    r'<non-quote-key-char> ::= <key-char> excluding "\"", "\'", "`"',
+    "<key-char>      ::= any UTF-8 code point except",
+    '                    "[", "]", "{", "}", "(", ")", ":", ",",',
+    r'                    "\\" (backslash), "." (the path separator; use "\." for',
+    '                    a literal dot), "#" is allowed; "##" only starts a comment',
+    "<dq-char>       ::= any UTF-8 code point except ASCII control bytes",
+    '                    < 0x20 other than tab/VT/FF, DEL (0x7F), LF, CR,',
+    r'                    "\\" (escape lead), and "\"" (the delimiter itself)',
+    "<sq-char>       ::= same exclusions as <dq-char>, but excluding \"'\"",
+    '                    (its own delimiter) instead of "\\""',
+    "<scalar-body>   ::= (ws) any-chars-until-eol",
+    "                    ; trimmed; interpreted per the value rules",
+    "<inline-scalar>    ::= sequence of bytes terminated by an unescaped",
+    '                       "," / "}" / "]" or by end-of-line',
+    "<multiline-content-line> ::= any line within an open <multiline>;",
+    '                             the terminator (")" or "))") ends the block',
+]
+
+
+def semi_doc(fence_lines):
+    return (
+        "# Spec\n\n**Version:** 0.7.0\n"
+        "**Date:** (unreleased — draft)\n\n"
+        "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+        + "\n".join(fence_lines) + "\n```\n\n"
+        "## 5. Semantics\n\nSome text with a MUST.\n"
+    )
+
+
 class TranslationParityTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="ktav-parity-test-")
@@ -162,6 +211,14 @@ class TranslationParityTestCase(unittest.TestCase):
         with open(path, "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         return path
+
+    def _replace_semi_line(self, lines, prefix, new_line):
+        mutated = list(lines)
+        for i, l in enumerate(mutated):
+            if l.startswith(prefix):
+                mutated[i] = new_line
+                return mutated
+        self.fail("fixture line with prefix %r not found" % prefix)
 
     def run_main(self, *args):
         out = io.StringIO()
@@ -837,6 +894,199 @@ class TranslationParityTestCase(unittest.TestCase):
         code, out = self.run_main(en, ru)
         self.assertEqual(code, 0, out)
         self.assertNotIn("unclosed fenced code block", out)
+
+    # -- embedded grammar terminals in semi-formal prose productions ---------
+
+    def run_semi_mutation(self, mutated_lines, lhs):
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated_lines))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "embedded grammar terminal mismatch in semi-formal "
+            "production %s" % lhs, out)
+        # The OLD detectors must NOT have fired: same physical line
+        # counts, and the mutated LHS has no pure-BNF fragment so it is
+        # not in `productions` at all, and LHS names are intact.
+        self.assertNotIn("non-blank line count mismatch", out)
+        self.assertNotIn("grammar production RHS mismatch", out)
+        self.assertNotIn("grammar production LHS set mismatch", out)
+
+    def test_semi_formal_comment_terminal_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<comment>",
+            '<comment>       ::= (ws) "//" (any-chars until line-end)')
+        self.run_semi_mutation(mutated, "<comment>")
+
+    def test_semi_formal_unescaped_dot_terminal_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<unescaped-dot>",
+            r'<unescaped-dot>      ::= ":" that is NOT preceded by an odd '
+            r'number of "\\"')
+        self.run_semi_mutation(mutated, "<unescaped-dot>")
+
+    def test_semi_formal_unescaped_dot_escape_lead_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<unescaped-dot>",
+            r'<unescaped-dot>      ::= "." that is NOT preceded by an odd '
+            r'number of "//"')
+        self.run_semi_mutation(mutated, "<unescaped-dot>")
+
+    def test_semi_formal_non_quote_key_char_dropped_bt_exclusion_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<non-quote-key-char>",
+            r'<non-quote-key-char> ::= <key-char> excluding "\"", "\'"')
+        self.run_semi_mutation(mutated, "<non-quote-key-char>")
+
+    def test_semi_formal_non_quote_key_char_sq_swapped_for_dq_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<non-quote-key-char>",
+            r'<non-quote-key-char> ::= <key-char> excluding "\"", "\"", "`"')
+        self.run_semi_mutation(mutated, "<non-quote-key-char>")
+
+    def test_semi_formal_dq_char_escape_lead_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, r'                    "\\" (escape lead)',
+            r'                    "//" (escape lead), and "\"" '
+            r'(the delimiter itself)')
+        self.run_semi_mutation(mutated, "<dq-char>")
+
+    def test_semi_formal_sq_char_delimiter_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<sq-char>",
+            '<sq-char>       ::= same exclusions as <dq-char>, but '
+            'excluding "\\""')
+        self.run_semi_mutation(mutated, "<sq-char>")
+
+    def test_semi_formal_inline_scalar_comma_swap_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<inline-scalar>",
+            '<inline-scalar>    ::= sequence of bytes terminated by an '
+            'unescaped')
+        mutated = self._replace_semi_line(
+            mutated, '                       ","',
+            '                       ";" / "}" / "]" or by end-of-line')
+        self.run_semi_mutation(mutated, "<inline-scalar>")
+
+    def test_semi_formal_multiline_content_line_verbatim_terminator_lost(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                             the terminator",
+            '                             the terminator (")" or ")") ends '
+            'the block')
+        self.run_semi_mutation(mutated, "<multiline-content-line>")
+
+    def test_semi_formal_key_char_colon_exclusion_dropped_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, '                    "[", "]", "{", "}"',
+            '                    "[", "]", "{", "}", "(", ")", ","!')
+        self.run_semi_mutation(mutated, "<key-char>")
+
+    def test_semi_formal_order_insensitive_quote_list_passes(self):
+        # Mirroring the real RU phrasing ("own delimiter first"): list the
+        # quote exclusions in a DIFFERENT order than EN. Exclusion sets
+        # are semantically order-independent, so the multiset contract
+        # must keep this a PASS.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<non-quote-key-char>",
+            r'<non-quote-key-char> ::= <key-char> excluding "\'", "\"", "`"')
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+
+    def test_semi_formal_reworded_prose_keeping_terminals_passes(self):
+        # A translation legitimately re-wording the prose while keeping
+        # every embedded terminal must PASS.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<unescaped-dot>",
+            r'<unescaped-dot>      ::= a "." with an odd count of "\\" '
+            r'right before it is escaped, not unescaped')
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+
+    def test_semi_formal_baseline_fixture_passes(self):
+        # The untouched fixture itself must be a clean PASS (the mutation
+        # tests below rely on this baseline).
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
+    # -- unit tests: extract_embedded_tokens / significant_grammar_tokens --
+
+    def test_extract_embedded_tokens_returns_all_matches_in_order(self):
+        text = '(ws) "##" then <dq-char> and (bare) parens here'
+        self.assertEqual(
+            ctp.extract_embedded_tokens(text),
+            ["(ws)", '"##"', "<dq-char>", "(", ")"])
+
+    def test_significant_grammar_tokens_filters_prose_artifacts(self):
+        text = (r'(ws) "##" <dq-char> ( and ) "\." '
+                '"(" "first name: alice"')
+        sig = ctp.significant_grammar_tokens(text)
+        # Bare parens dropped; the letter/space-bearing example-scalar
+        # quote dropped; normative terminals kept.
+        self.assertIn('"##"', sig)
+        self.assertIn('"\\."', sig)
+        self.assertIn("<dq-char>", sig)
+        self.assertIn("(ws)", sig)
+        self.assertIn('"("', sig)
+        self.assertNotIn("(", sig)
+        self.assertNotIn(")", sig)
+        self.assertNotIn('"first name: alice"', sig)
+
+    # -- protective real-spec test for the embedded-terminal check ----------
+
+    def test_real_spec_semi_formal_terminal_multisets_match_translations(self):
+        # Self-verifying pin over the ACTUAL shipped files: for every
+        # SEMI_FORMAL_PROSE_LHS production in § 4, the significant
+        # embedded-terminal multiset in RU and ZH must exactly equal EN's.
+        # If this ever fails, a real normative terminal drifted inside a
+        # semi-formal prose RHS. Also pins specific named terminals are
+        # present in EN's lists.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        en_lines = ctp.read_lines(
+            os.path.join(repo_root, "versions", "0.7", "spec.md"))
+        ru_lines = ctp.read_lines(
+            os.path.join(repo_root, "versions", "0.7", "spec.ru.md"))
+        zh_lines = ctp.read_lines(
+            os.path.join(repo_root, "versions", "0.7", "spec.zh.md"))
+
+        def tokens_per_lhs(lines):
+            sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+            start, end = sections["4"]
+            semi = ctp.extract_semi_formal_rhs(lines, start, end, excluded)
+            self.assertEqual(set(semi), ctp.SEMI_FORMAL_PROSE_LHS)
+            return {lhs: sorted(ctp.significant_grammar_tokens(rhs))
+                    for lhs, rhs in semi.items()}
+
+        en = tokens_per_lhs(en_lines)
+        ru = tokens_per_lhs(ru_lines)
+        zh = tokens_per_lhs(zh_lines)
+        for lhs in sorted(en):
+            self.assertEqual(ru[lhs], en[lhs], "RU drift in %s" % lhs)
+            self.assertEqual(zh[lhs], en[lhs], "ZH drift in %s" % lhs)
+        # Named terminals present in EN's lists.
+        self.assertIn('"##"', en["<comment>"])
+        self.assertIn('"."', en["<unescaped-dot>"])
+        self.assertIn('"\\\\"', en["<unescaped-dot>"])
+        self.assertIn("<key-char>", en["<non-quote-key-char>"])
+        for q in ('"\\""', '"\'"', '"`"'):
+            self.assertIn(q, en["<non-quote-key-char>"])
+        self.assertIn('"\\\\"', en["<dq-char>"])
+        self.assertIn('"\\""', en["<dq-char>"])
+        for t in ('","', '"}"', '"]"'):
+            self.assertIn(t, en["<inline-scalar>"])
+        for t in ('")"', '"))"', "<multiline>"):
+            self.assertIn(t, en["<multiline-content-line>"])
 
     # -- stdout encoding safety ----------------------------------------------
 
