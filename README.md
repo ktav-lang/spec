@@ -448,13 +448,18 @@ pin to a version directory by path.
 │   ├── test_validate_corpus.py            unit tests for validate_corpus.py
 │   ├── check_translation_parity.py        EN/RU/ZH translation-parity checker
 │   ├── test_check_translation_parity.py   unit tests for check_translation_parity.py
+│   ├── build_spec.mjs                     (0.7+) generates spec.md/.ru.md/.zh.md from content/
+│   ├── extract_content_units.py           (0.7+) one-time bootstrap; see content/README.md
 │   └── locks/                             boundary-fixtures manifest lock files
-├── .github/workflows/     CI: corpus validation, translation-parity check, and both unit test suites
+├── .github/workflows/     CI: content/ byte-identity check (0.7+), corpus validation,
+│                          translation-parity check, and both unit test suites
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
         ├── spec.ru.md     Russian translation of the spec
         ├── spec.zh.md     Chinese translation of the spec
+        ├── content/       (0.7+) per-section source of truth — see content/README.md;
+        │                  spec.md/.ru.md/.zh.md are generated from this, never hand-edited
         └── tests/         language-agnostic conformance suite
             ├── valid/
             ├── invalid/

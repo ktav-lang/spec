@@ -15,6 +15,14 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v7
 
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Rebuild spec.md/.ru.md/.zh.md from content units and verify byte-identity
+        run: node scripts/build_spec.mjs --check
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
