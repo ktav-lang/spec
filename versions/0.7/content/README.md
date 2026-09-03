@@ -195,12 +195,18 @@ Commands:
 ```sh
 node scripts/build_spec.mjs          # writes the 3 spec .md files
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
 
 `--check` regenerates the three files in memory and byte-compares them
 against the committed files. On success: exit 0 and **completely silent**.
 On divergence: exit 1 with a diagnostic naming the unit, language, and line
 of the first differing byte. It writes nothing.
+
+`node --test scripts/test_build_spec.mjs` runs the builder's adversarial
+(negative-path) test suite: it feeds deliberately malformed content trees
+to the validator and asserts each closed-world invariant documented in
+this README is rejected.
 
 Recommended workflow: edit unit files -> run `node scripts/build_spec.mjs`
 -> verify `git diff` on the three `.md` files shows exactly what you
@@ -277,5 +283,6 @@ manually deleting `content/` first as a separate, deliberate action. The
 
 ## Out of scope
 
-CI already runs `node scripts/build_spec.mjs --check` in
-`.github/workflows` on every push/PR.
+CI already runs `node scripts/build_spec.mjs --check` and
+`node --test scripts/test_build_spec.mjs` in `.github/workflows` on every
+push/PR.

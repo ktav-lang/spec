@@ -205,12 +205,18 @@ N-1 точек разреза выбираются как пустые стро�
 ```sh
 node scripts/build_spec.mjs          # writes the 3 spec .md files
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
 
 `--check` регенерирует три файла в памяти и побайтово сравнивает их с
 закоммиченными. При успехе: код выхода 0 и **полная тишина**. При
 расхождении: код выхода 1 с диагностикой, называющей юнит, язык и
 строку первого различающегося байта. Ничего не пишет.
+
+`node --test scripts/test_build_spec.mjs` запускает adversarial-набор
+тестов сборщика (негативные сценарии): он скармливает валидатору
+специально искажённые деревья контента и проверяет, что каждое
+closed-world-свойство, задокументированное в этом README, отвергается.
 
 Рекомендуемый рабочий процесс: правите файлы юнитов -> запускаете
 `node scripts/build_spec.mjs` -> проверяете по `git diff`, что изменения
@@ -293,5 +299,6 @@ export default {
 
 ## Вне охвата
 
-CI уже запускает `node scripts/build_spec.mjs --check` в
-`.github/workflows` на каждый push/PR.
+CI уже запускает `node scripts/build_spec.mjs --check` и
+`node --test scripts/test_build_spec.mjs` в `.github/workflows` на каждый
+push/PR.

@@ -417,11 +417,12 @@ submodule 引入(或直接拷贝)。
 │   ├── check_translation_parity.py        EN/RU/ZH 翻译对等性检查工具
 │   ├── test_check_translation_parity.py   check_translation_parity.py 的单元测试
 │   ├── build_spec.mjs                     (0.7+) 从 content/ 生成 spec.md/.ru.md/.zh.md
+│   ├── test_build_spec.mjs                (0.7+) build_spec.mjs 的对抗性单元测试(负面路径)
 │   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
 │   └── locks/                             boundary-fixtures 清单锁文件
 ├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
-│                          翻译对等性检查,以及两套单元测试
+│                          翻译对等性检查,以及全部三套单元测试
 └── versions/
     └── <version>/
         ├── spec.md        the specification document

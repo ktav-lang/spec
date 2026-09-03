@@ -182,11 +182,16 @@ N-1 个切割点。若某语言的内部空行不足以提供 N-1 个切割点,�
 ```sh
 node scripts/build_spec.mjs          # writes the 3 spec .md files
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
 
 `--check` 在内存中重新生成三个文件,并与已提交的文件逐字节比较。
 成功时:退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
 信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。
+
+`node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
+(负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条
+closed-world 不变量都会被拒绝。
 
 推荐工作流:编辑单元文件 -> 运行 `node scripts/build_spec.mjs` ->
 核对三个 `.md` 文件的 `git diff` 是否与你的意图完全一致 -> 运行
@@ -260,4 +265,5 @@ export default {
 ## 范围之外
 
 CI 已在 `.github/workflows` 中于每次 push/PR 时运行
-`node scripts/build_spec.mjs --check`。
+`node scripts/build_spec.mjs --check` 与
+`node --test scripts/test_build_spec.mjs`。

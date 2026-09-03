@@ -23,6 +23,9 @@ jobs:
       - name: Rebuild spec.md/.ru.md/.zh.md from content units and verify byte-identity
         run: node scripts/build_spec.mjs --check
 
+      - name: Run content builder adversarial tests
+        run: node --test scripts/test_build_spec.mjs
+
       - name: Set up Python
         uses: actions/setup-python@v7
         with:

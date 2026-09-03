@@ -449,11 +449,12 @@ pin to a version directory by path.
 │   ├── check_translation_parity.py        EN/RU/ZH translation-parity checker
 │   ├── test_check_translation_parity.py   unit tests for check_translation_parity.py
 │   ├── build_spec.mjs                     (0.7+) generates spec.md/.ru.md/.zh.md from content/
+│   ├── test_build_spec.mjs                (0.7+) adversarial unit tests for build_spec.mjs
 │   ├── archive/                           (0.7+) archived one-time content-unit bootstrap
 │   │   └── extract_content_units.py         see content/README.md; refuses to overwrite content/
 │   └── locks/                             boundary-fixtures manifest lock files
 ├── .github/workflows/     CI: content/ byte-identity check (0.7+), corpus validation,
-│                          translation-parity check, and both unit test suites
+│                          translation-parity check, and all three unit test suites
 └── versions/
     └── <version>/
         ├── spec.md        the specification document

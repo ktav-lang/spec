@@ -471,11 +471,12 @@ Runner соответствия MUST обходить каждую фиксту�
 │   ├── check_translation_parity.py        проверка паритета переводов EN/RU/ZH
 │   ├── test_check_translation_parity.py   модульные тесты для check_translation_parity.py
 │   ├── build_spec.mjs                     (0.7+) генерирует spec.md/.ru.md/.zh.md из content/
+│   ├── test_build_spec.mjs                (0.7+) модульные тесты для build_spec.mjs (adversarial/негативные сценарии)
 │   ├── archive/                           (0.7+) архивированный одноразовый бутстрап юнитов контента
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
 │   └── locks/                             lock-файлы манифеста boundary-fixtures
 ├── .github/workflows/     CI: проверка байт-идентичности content/ (0.7+), валидация корпуса,
-│                          проверка паритета переводов и оба набора модульных тестов
+│                          проверка паритета переводов и все три набора модульных тестов
 └── versions/
     └── <version>/
         ├── spec.md        the specification document
