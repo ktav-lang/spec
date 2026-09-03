@@ -25,10 +25,13 @@ This directory is the **per-section source of truth** for
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Plus:
 
 - `manifest.js` — the ordered list of units (see below).
-- `package.json` — `{"type":"module"}`. This is **required**: `build_spec.mjs`
-  dynamically imports the unit `meta.js` files, and without a nearby
-  `package.json` with `"type": "module"` Node would treat `.js` files as
-  CommonJS. (The repo root has no `package.json`.)
+- `package.json` — `{"type":"module"}`. Historical: it was required back when
+  `build_spec.mjs` dynamically imported `meta.js`/`body-*.js` as ES modules.
+  Since the closed-world hardening that stopped executing any content source
+  (nothing under `content/` is ever dynamic-`import()`ed anymore — `manifest.js`
+  and `meta.js` are read as UTF-8 text and `JSON.parse`d, `body-*.js` is
+  statically shape-scanned and decoded), this file is no longer functionally
+  required, but is kept in place and still allowed at the top level.
 
 ## Folder naming convention
 
@@ -180,8 +183,9 @@ position manually.
 ## How the generator builds a file
 
 `scripts/build_spec.mjs` walks the manifest in order. For each unit it reads
-`meta.bodyParts` from `meta.js` and dynamically imports `body-1.js` ..
-`body-N.js` **in order**, then:
+`manifest.js`/`meta.js` as UTF-8 text and `JSON.parse`s the payload after
+`export default `, then statically shape-scans and decodes `body-1.js` ..
+`body-N.js` **in order** (no code under `content/` is ever executed), then:
 
 - for `frontmatter`: emit the concatenation of the `en` / `ru` / `zh`
   strings of `body-1` .. `body-N`, verbatim;

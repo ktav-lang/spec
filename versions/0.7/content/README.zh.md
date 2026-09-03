@@ -24,10 +24,12 @@
 `named-appendix-d`)。另有:
 
 - `manifest.js` —— 单元的有序列表(见下文)。
-- `package.json` —— `{"type":"module"}`。这是**必需的**:
-  `build_spec.mjs` 会动态导入单元的 `meta.js` 文件;如果附近没有带
-  `"type": "module"` 的 `package.json`,Node 会把 `.js` 文件当作
-  CommonJS 处理。(仓库根目录没有 `package.json`。)
+- `package.json` —— `{"type":"module"}`。历史遗留:曾用于
+  `build_spec.mjs` 把 `meta.js`/`body-*.js` 当作 ES 模块动态导入的阶段。
+  在完成 closed-world 加固后(`content/` 下再无任何代码被执行——
+  `manifest.js` 与 `meta.js` 作为 UTF-8 文本读取并通过 `JSON.parse` 解析,
+  `body-*.js` 经静态扫描后解码),此文件已不再是功能上必需的,但仍保留
+  在原位,顶层仍允许它存在。
 
 ## 文件夹命名约定
 
@@ -166,9 +168,10 @@ N-1 个切割点。若某语言的内部空行不足以提供 N-1 个切割点,�
 
 ## 生成器如何构建文件
 
-`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它从
-`meta.js` 读取 `meta.bodyParts`,并**按顺序**动态导入 `body-1.js` ..
-`body-N.js`,然后:
+`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它把
+`manifest.js`/`meta.js` 作为 UTF-8 文本读取,并对 `export default ` 之后的
+payload 执行 `JSON.parse`,然后**按顺序**静态扫描并解码 `body-1.js` ..
+`body-N.js`(`content/` 下的代码从不被执行),然后:
 
 - 对 `frontmatter`:输出 `body-1` .. `body-N` 的 `en` / `ru` / `zh`
   字符串的拼接,原样;
