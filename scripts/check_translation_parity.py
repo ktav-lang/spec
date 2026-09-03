@@ -84,6 +84,14 @@ Purpose:
          fragments fully accounted for by recognized BNF tokens are held
          to exact parity, since this spec's convention never translates
          actual grammar syntax.
+         The excluded semi-formal prose productions are still guarded by
+         two embedded-token comparisons run inside check_translation: the
+         significant-token MULTISET (see significant_grammar_tokens) and
+         the compound control-byte (name, hex) PAIR multiset (see
+         extract_compound_atoms), which pins WHICH abbreviation is bound
+         to WHICH code point -- so swapping "LF 0x0A ... CR 0x0D" into
+         "LF 0x0D ... CR 0x0A" fails even though both flat token
+         multisets are identical.
       7. Named-section parity: unnumbered headings of level >= 2 (the h1
          document title and the front-matter region under it are excluded
          from THIS generic count comparison — RU/ZH legitimately carry an
@@ -295,21 +303,49 @@ PUNCTUATION_ONLY_QUOTED_RE = re.compile(r'[!-/:-@\[-`{-~]+')
 # purpose GRAMMAR_TOKEN_RE used for the 28 fully-BNF productions is untouched.
 LANGUAGE_INDEPENDENT_ATOM_RE = re.compile(r'\b0x[0-9A-Fa-f]+\b|\b(?:LF|CR|VT|FF|DEL)\b')
 
+# Compound control-byte associations embedded in the semi-formal
+# productions' prose: a control-byte abbreviation (LF, CR, VT, FF, DEL)
+# immediately followed by its hex value, e.g. "LF 0x0A", "VT 0x0B",
+# "DEL (0x7F)" (parentheses around the value optional). The flat atom
+# multiset folded in by LANGUAGE_INDEPENDENT_ATOM_RE above knows that
+# every name and every value is present somewhere, but not WHICH name is
+# bound to WHICH value -- so a translation that swaps the code points
+# ("LF 0x0A and CR 0x0D" rewritten as "LF 0x0D and CR 0x0A") keeps the
+# exact same flat multiset while asserting the wrong byte for each name.
+# A bare name mention with NO adjacent hex value (e.g. the forward
+# reference "LF, CR" in <dq-char>) is not captured by this regex and
+# carries no pairing obligation -- that is correct: only an explicit
+# name-plus-value statement is held to association parity. Hex digits
+# are upper-cased before comparison so "0x0a" and "0x0A" are one pair.
+COMPOUND_ATOM_PAIR_RE = re.compile(
+    r'\b(LF|CR|VT|FF|DEL)\b\s*\(?(0x[0-9A-Fa-f]+)\)?')
+
 
 def extract_embedded_tokens(rhs_text):
-    """Return the ORDERED list of every GRAMMAR_TOKEN_RE match PLUS every
-    LANGUAGE_INDEPENDENT_ATOM_RE match in a semi-formal production's RHS
-    text (the raw token stream, unfiltered). The atom regex captures the
-    hex byte literals and Latin control-byte abbreviations (LF, CR, VT, FF,
-    DEL) that the semi-formal <dq-char>/<key-char> prose states as plain
-    text rather than as quoted terminals -- they are language-independent
-    normative contract (kept verbatim by the shipped RU/ZH translations)
-    and must join the significant-token multiset even though the
-    punctuation-only quoted-terminal filter cannot see them."""
-    tokens = [m.group(0) for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
-    tokens.extend(m.group(0) for m in
-                  LANGUAGE_INDEPENDENT_ATOM_RE.finditer(rhs_text))
-    return tokens
+    """Return the source-ordered list of every GRAMMAR_TOKEN_RE match
+    PLUS every LANGUAGE_INDEPENDENT_ATOM_RE match in a semi-formal
+    production's RHS text (the raw token stream, unfiltered). Matches
+    from BOTH regexes are tagged with their .start() offset and the
+    combined list is sorted by that offset, so the result reflects real
+    source order no matter how grammar terminals and language-independent
+    atoms interleave (an earlier implementation returned every grammar
+    match first and every atom match afterward, silently breaking the
+    ordered contract whenever the two classes interleaved). The atom
+    regex captures the hex byte literals and Latin control-byte
+    abbreviations (LF, CR, VT, FF, DEL) that the semi-formal
+    <dq-char>/<key-char> prose states as plain text rather than as quoted
+    terminals -- they are language-independent normative contract (kept
+    verbatim by the shipped RU/ZH translations) and must join the
+    significant-token multiset even though the punctuation-only
+    quoted-terminal filter cannot see them. Downstream callers compare
+    this stream as a multiset, so the ordering is contract hygiene for
+    this helper's direct callers/tests, not a behavioral change for the
+    parity verdict itself."""
+    matches = [(m.start(), m.group(0))
+               for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
+    matches.extend((m.start(), m.group(0)) for m in
+                   LANGUAGE_INDEPENDENT_ATOM_RE.finditer(rhs_text))
+    return [tok for _, tok in sorted(matches, key=lambda pair: pair[0])]
 
 
 def significant_grammar_tokens(rhs_text):
@@ -364,6 +400,30 @@ def significant_grammar_tokens(rhs_text):
             continue
         significant.append(tok)
     return significant
+
+
+def extract_compound_atoms(rhs_text):
+    """Return the list of (name, hex) control-byte associations stated in
+    a semi-formal production's RHS text, one per COMPOUND_ATOM_PAIR_RE
+    match, with hex digits normalized to upper case (the "0x" prefix
+    stays lower): "LF 0x0A" -> ("LF", "0x0A"), "DEL (0x7F)" ->
+    ("DEL", "0x7F").
+
+    This is the compound companion to the flat significant-token multiset
+    compared in check_translation: the flat multiset pins WHICH tokens are
+    present and how many, but not the label-value bindings between the
+    LF/CR/VT/FF/DEL abbreviations and their hex code points, so a
+    translation that merely re-pairs the same names and values (e.g.
+    swaps LF's and CR's code points) leaves the flat multiset unchanged.
+    Callers compare these pair lists as MULTISETS (sorted on both sides),
+    preserving the order-insensitivity contract of the flat check; bare
+    name mentions with no adjacent value never appear here and so impose
+    no pairing obligation (see COMPOUND_ATOM_PAIR_RE)."""
+    pairs = []
+    for m in COMPOUND_ATOM_PAIR_RE.finditer(rhs_text):
+        hexval = m.group(2)
+        pairs.append((m.group(1), hexval[:2] + hexval[2:].upper()))
+    return pairs
 
 
 def extract_semi_formal_rhs(lines, start, end, excluded):
@@ -1096,6 +1156,21 @@ def check_translation(en_lines, en_sections, en_code_counts,
                         "embedded grammar terminal mismatch in semi-formal "
                         "production %s (EN tokens: %r; translation tokens: %r)"
                         % (lhs, en_sig, t_sig))
+            # Compound association check: the flat multiset above cannot
+            # see WHICH control-byte abbreviation is bound to WHICH hex
+            # value, so a translation swapping the LF/CR (or VT/FF)
+            # code-point bindings passes it while asserting the wrong
+            # bytes. Compare the (name, hex) pair multisets per production
+            # as well (additive defense-in-depth: the flat check above
+            # stays exactly as it is).
+            for lhs in sorted(en_semi):
+                en_pairs = sorted(extract_compound_atoms(en_semi[lhs]))
+                t_pairs = sorted(extract_compound_atoms(t_semi.get(lhs, "")))
+                if en_pairs != t_pairs:
+                    problems.append(
+                        "control-byte codepoint association mismatch in "
+                        "semi-formal production %s: EN pairs %r vs "
+                        "translation pairs %r" % (lhs, en_pairs, t_pairs))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(

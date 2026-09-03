@@ -917,6 +917,28 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertNotIn("grammar production RHS mismatch", out)
         self.assertNotIn("grammar production LHS set mismatch", out)
 
+    def run_semi_compound_mutation(self, mutated_lines, lhs):
+        """Like run_semi_mutation, but for mutations that change ONLY the
+        (name, hex) bindings while keeping the flat token multiset
+        identical: the OLD flat-multiset detector must stay silent (this
+        is a genuinely NEW detection, not duplicate coverage) and the new
+        compound association check must name the production."""
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated_lines))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "control-byte codepoint association mismatch in semi-formal "
+            "production %s" % lhs, out)
+        # NOT caught by the old flat multiset: the flat token bag is
+        # unchanged by construction.
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+        # No other detector has anything to fire on either.
+        self.assertNotIn("non-blank line count mismatch", out)
+        self.assertNotIn("grammar production RHS mismatch", out)
+        self.assertNotIn("grammar production LHS set mismatch", out)
+
     def test_semi_formal_comment_terminal_swap_fails(self):
         mutated = self._replace_semi_line(
             SEMI_GRAMMAR_LINES_EN, "<comment>",
@@ -1079,13 +1101,48 @@ class TranslationParityTestCase(unittest.TestCase):
             "                    members (tab 0x09, VT 0x0B, FF 0x0C — LF")
         self.run_semi_mutation(mutated, "<key-char>")
 
+    def test_semi_formal_key_char_lf_cr_codepoint_bindings_swapped_fails(self):
+        # The review's exact false-negative: swap ONLY the LF/CR codepoint
+        # bindings ("LF 0x0A and CR 0x0D" -> "LF 0x0D and CR 0x0A"). The
+        # flat token multiset is IDENTICAL (same names, same hex values),
+        # so the pre-compound-check logic passed this; the compound pair
+        # check must catch it.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    members (tab 0x09,",
+            "                    members (tab 0x09, VT 0x0B, FF 0x0C — "
+            "LF 0x0D and")
+        mutated = self._replace_semi_line(
+            mutated,
+            "                    CR 0x0D are excluded separately",
+            "                    CR 0x0A are excluded separately as line "
+            "terminators),")
+        self.run_semi_compound_mutation(mutated, "<key-char>")
+
+    def test_semi_formal_key_char_vt_ff_codepoint_bindings_swapped_fails(self):
+        # Same association-swap class for the VT/FF pair: "VT 0x0B,
+        # FF 0x0C" -> "VT 0x0C, FF 0x0B". Flat multiset unchanged; only
+        # the compound check fires.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    members (tab 0x09,",
+            "                    members (tab 0x09, VT 0x0C, FF 0x0B — "
+            "LF 0x0A and")
+        self.run_semi_compound_mutation(mutated, "<key-char>")
+
     # -- unit tests: extract_embedded_tokens / significant_grammar_tokens --
 
     def test_extract_embedded_tokens_returns_all_matches_in_order(self):
-        text = '(ws) "##" then <dq-char> and (bare) parens here'
+        # Terminals AND language-independent atoms interleaved in a
+        # specific known order: the returned list must follow real source
+        # positions, not "all grammar matches first, all atom matches
+        # after" (the pre-round-19 behavior that broke the ordered
+        # contract whenever the two token classes interleaved).
+        text = '(ws) "##" 0x09 <dq-char> VT then (DEL (0x7F)) here'
         self.assertEqual(
             ctp.extract_embedded_tokens(text),
-            ["(ws)", '"##"', "<dq-char>", "(", ")"])
+            ["(ws)", '"##"', "0x09", "<dq-char>", "VT",
+             "(", "DEL", "(", "0x7F", ")", ")"])
 
     def test_significant_grammar_tokens_filters_prose_artifacts(self):
         text = (r'(ws) "##" <dq-char> ( and ) "\." '
@@ -1110,6 +1167,18 @@ class TranslationParityTestCase(unittest.TestCase):
             sorted(["0x20", "VT", "FF", "DEL", "0x7F", "LF", "CR"]))
         # "tab" is deliberately excluded (legitimately translated prose).
         self.assertNotIn("tab", sig)
+
+    def test_extract_compound_atoms_captures_pairs_and_normalizes_case(self):
+        text = '< 0x20 other than tab/VT/FF, DEL (0x7f), LF 0x0A and CR 0x0d,'
+        self.assertEqual(
+            ctp.extract_compound_atoms(text),
+            [("DEL", "0x7F"), ("LF", "0x0A"), ("CR", "0x0D")])
+
+    def test_extract_compound_atoms_ignores_bare_name_mentions(self):
+        # A name with no adjacent hex value carries no pairing obligation
+        # (e.g. the forward reference "LF, CR" in <dq-char>): not captured.
+        text = 'tab/VT/FF, DEL (0x7F), LF, CR, and "\\" (escape lead)'
+        self.assertEqual(ctp.extract_compound_atoms(text), [("DEL", "0x7F")])
 
     # -- protective real-spec test for the embedded-terminal check ----------
 
@@ -1155,6 +1224,36 @@ class TranslationParityTestCase(unittest.TestCase):
             self.assertIn(t, en["<inline-scalar>"])
         for t in ('")"', '"))"', "<multiline>"):
             self.assertIn(t, en["<multiline-content-line>"])
+
+    def test_real_spec_semi_formal_compound_atom_pairs_match_translations(self):
+        # Compound companion to the test above, over the ACTUAL shipped
+        # files: for every SEMI_FORMAL_PROSE_LHS production in § 4, the
+        # multiset of (control-byte name, hex code point) pairs in RU and
+        # ZH must exactly equal EN's. If this ever fails, a translation
+        # re-paired a label with the wrong byte (e.g. LF/CR codepoints
+        # swapped) while keeping the flat token multiset intact.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        per_file = {}
+        for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            lines = ctp.read_lines(
+                os.path.join(repo_root, "versions", "0.7", name))
+            sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+            start, end = sections["4"]
+            semi = ctp.extract_semi_formal_rhs(lines, start, end, excluded)
+            per_file[name] = {
+                lhs: sorted(ctp.extract_compound_atoms(rhs))
+                for lhs, rhs in semi.items()}
+        en_pairs = per_file["spec.md"]
+        for lhs in sorted(ctp.SEMI_FORMAL_PROSE_LHS):
+            for other in ("spec.ru.md", "spec.zh.md"):
+                self.assertEqual(
+                    per_file[other].get(lhs, []), en_pairs.get(lhs, []),
+                    "%s compound-pair drift in %s" % (other, lhs))
+        # The <key-char> production carries the full association set.
+        en_key = en_pairs["<key-char>"]
+        for pair in [("LF", "0x0A"), ("CR", "0x0D"), ("VT", "0x0B"),
+                     ("FF", "0x0C"), ("DEL", "0x7F")]:
+            self.assertIn(pair, en_key)
 
     # -- stdout encoding safety ----------------------------------------------
 
