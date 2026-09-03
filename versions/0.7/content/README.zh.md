@@ -64,7 +64,13 @@
 
 ```js
 // frontmatter/meta.js
-export default { "kind": "frontmatter", "number": null, "level": null, "title": null, "bodyParts": 1 };
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
 
 // sec-3.1/meta.js
 export default {
@@ -72,19 +78,35 @@ export default {
   "number": "3.1",
   "sep": " ",
   "level": 3,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 
 // named-appendix-a/meta.js
 export default {
   "kind": "named",
   "number": null,
   "level": 2,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
+
+整个文件必须逐字节等于 `export default ` 加上以严格 JSON 序列化的值
+（`JSON.stringify(value, null, 2)`）再加单个末尾换行：每行一个键、
+2 空格缩进、LF 换行、无末尾分号。`export default ` 之后的 payload 是作为
+JSON（`JSON.parse`）解析的，**不是**作为 JavaScript 对象字面量求值——
+末尾逗号、注释、不带引号的键以及分号在那里永远不合法（与 `body-<k>.js`
+不同，后者是 JS 源码，只是受到严格限制）。重复的键同样会被拒绝：构建器
+将文件与上面的规范序列化逐字节比较，重复键会使原始文件与它不一致。
 
 字段含义:
 
@@ -168,8 +190,8 @@ N-1 个切割点。若某语言的内部空行不足以提供 N-1 个切割点,�
 
 ## 生成器如何构建文件
 
-`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它把
-`manifest.js`/`meta.js` 作为 UTF-8 文本读取,并对 `export default ` 之后的
+`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它以
+严格的 UTF-8 读取 `manifest.js`/`meta.js`,并对 `export default ` 之后的
 payload 执行 `JSON.parse`,然后**按顺序**静态扫描并解码 `body-1.js` ..
 `body-N.js`(`content/` 下的代码从不被执行),然后:
 
@@ -223,9 +245,13 @@ export default {
   "number": "9.9",
   "sep": " ",
   "level": 2,
-  "title": { "en": "Widget Frobnication", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
 
 注意:`sep` 取决于作者写出的标题文本。对于带点的标题

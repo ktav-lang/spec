@@ -70,7 +70,13 @@ README (`README.md`, `README.ru.md`, `README.zh.md`); внутри директ�
 
 ```js
 // frontmatter/meta.js
-export default { "kind": "frontmatter", "number": null, "level": null, "title": null, "bodyParts": 1 };
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
 
 // sec-3.1/meta.js
 export default {
@@ -78,19 +84,39 @@ export default {
   "number": "3.1",
   "sep": " ",
   "level": 3,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 
 // named-appendix-a/meta.js
 export default {
   "kind": "named",
   "number": null,
   "level": 2,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
+
+Файл целиком должен быть байт-в-байт идентичен `export default `, за которым
+следует значение, сериализованное как строгий JSON
+(`JSON.stringify(value, null, 2)`), плюс один завершающий перевод строки:
+один ключ на строку, отступ в 2 пробела, переводы строк LF, без завершающей
+точки с запятой. Payload после `export default ` разбирается как JSON
+(`JSON.parse`), а **не** вычисляется как литерал объекта JavaScript —
+завершающие запятые, комментарии, ключи без кавычек и точки с запятой там
+никогда не допустимы (в отличие от `body-<k>.js`, который является
+исходником на JS, лишь узко ограниченным). Дубликаты ключей тоже
+отвергаются: сборщик сравнивает файл байт-в-байт с канонической
+сериализацией выше, и повторный ключ делает файл отличным от неё.
 
 Значения полей:
 
@@ -193,7 +219,7 @@ N-1 точек разреза выбираются как пустые стро�
 ## Как генератор собирает файл
 
 `scripts/build_spec.mjs` идёт по манифесту по порядку. Для каждого
-юнита он читает `manifest.js`/`meta.js` как UTF-8-текст и разбирает payload
+юнита он читает `manifest.js`/`meta.js` как строгий UTF-8-текст и разбирает payload
 после `export default ` через `JSON.parse`, затем статически сканирует и
 декодирует `body-1.js` .. `body-N.js` **по порядку** (код под `content/`
 никогда не исполняется), затем:
@@ -253,9 +279,13 @@ export default {
   "number": "9.9",
   "sep": " ",
   "level": 2,
-  "title": { "en": "Widget Frobnication", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
 
 Примечание: `sep` зависит от текста заголовка, который пишет автор. Для

@@ -68,7 +68,13 @@ verbatim:
 
 ```js
 // frontmatter/meta.js
-export default { "kind": "frontmatter", "number": null, "level": null, "title": null, "bodyParts": 1 };
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
 
 // sec-3.1/meta.js
 export default {
@@ -76,19 +82,38 @@ export default {
   "number": "3.1",
   "sep": " ",
   "level": 3,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 
 // named-appendix-a/meta.js
 export default {
   "kind": "named",
   "number": null,
   "level": 2,
-  "title": { "en": "...", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
+
+The whole file must be byte-identical to `export default ` followed by the
+value serialized as strict JSON (`JSON.stringify(value, null, 2)`) plus one
+trailing newline: one key per line, 2-space indent, LF line endings, no
+trailing semicolon. The payload after `export default ` is parsed as JSON
+(`JSON.parse`), **not** evaluated as a JavaScript object literal — trailing
+commas, comments, unquoted keys, and semicolons are never valid there
+(unlike `body-<k>.js`, which is JS source, just narrowly restricted).
+Duplicate keys are rejected too: the builder compares the file byte-for-byte
+against the canonical serialization above, and a repeated key makes the raw
+file differ from it.
 
 Field meanings:
 
@@ -183,7 +208,7 @@ position manually.
 ## How the generator builds a file
 
 `scripts/build_spec.mjs` walks the manifest in order. For each unit it reads
-`manifest.js`/`meta.js` as UTF-8 text and `JSON.parse`s the payload after
+`manifest.js`/`meta.js` as strict UTF-8 text and `JSON.parse`s the payload after
 `export default `, then statically shape-scans and decodes `body-1.js` ..
 `body-N.js` **in order** (no code under `content/` is ever executed), then:
 
@@ -239,9 +264,13 @@ export default {
   "number": "9.9",
   "sep": " ",
   "level": 2,
-  "title": { "en": "Widget Frobnication", "ru": "...", "zh": "..." },
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
   "bodyParts": 1
-};
+}
 ```
 
 Note: `sep` depends on the heading text the author writes. For a
