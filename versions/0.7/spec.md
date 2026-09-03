@@ -384,15 +384,15 @@ set, not ASCII-only).
                   | <key> "::" <sep-end> <value-part-opt> eol    ; literal String
 
 <key>                ::= <segment> ( <unescaped-dot> <segment> )*
-<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\"
+<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
 <bare-first-token>   ::= <key-escape> | <non-quote-key-char>
 <key-token>          ::= <key-escape> | <key-char>
 <non-quote-key-char> ::= <key-char> excluding "\"", "'", "`"
-<key-escape>         ::= "\" <escapable-byte>
-                        | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
-<escapable-byte>     ::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+<key-escape>         ::= "\\" <escapable-byte>
+                        | "\\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
                         | "." | ":" | "\"" | "'" | "`"
 <hex-digit>          ::= [0-9a-fA-F]
 
@@ -404,7 +404,7 @@ set, not ASCII-only).
 <bt-token>      ::= <key-escape> | <bt-char>
 <dq-char>       ::= any UTF-8 code point except ASCII control bytes
                     < 0x20 other than tab/VT/FF, DEL (0x7F), LF, CR,
-                    "\" (escape lead), and "\"" (the delimiter itself)
+                    "\\" (escape lead), and "\"" (the delimiter itself)
 <sq-char>       ::= same exclusions as <dq-char>, but excluding "'"
                     (its own delimiter) instead of "\""
 <bt-char>       ::= same exclusions as <dq-char>, but excluding "`"
@@ -418,7 +418,7 @@ set, not ASCII-only).
                     DEL (0x7F),
                     line terminator (LF 0x0A, CR 0x0D),
                     "[", "]", "{", "}", "(", ")", ":", ",",
-                    "\" (backslash — now an escape lead, § 3.7),
+                    "\\" (backslash — now an escape lead, § 3.7),
                     "." (dot — now the path separator; use "\." for
                     a literal dot inside a segment)
                     (note: any whitespace code point (§ 3.3) is

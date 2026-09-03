@@ -323,15 +323,15 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                   | <key> "::" <sep-end> <value-part-opt> eol    ; 字面 String
 
 <key>                ::= <segment> ( <unescaped-dot> <segment> )*
-<unescaped-dot>      ::= 非由奇数个 "\" 前导的 "."
+<unescaped-dot>      ::= 非由奇数个 "\\" 前导的 "."
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
 <bare-first-token>   ::= <key-escape> | <non-quote-key-char>
 <key-token>          ::= <key-escape> | <key-char>
 <non-quote-key-char> ::= <key-char>,但排除 "\"", "'", "`"
-<key-escape>         ::= "\" <escapable-byte>
-                        | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
-<escapable-byte>     ::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+<key-escape>         ::= "\\" <escapable-byte>
+                        | "\\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
                         | "." | ":" | "\"" | "'" | "`"
 <hex-digit>          ::= [0-9a-fA-F]
 
@@ -343,7 +343,7 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 <bt-token>      ::= <key-escape> | <bt-char>
 <dq-char>       ::= 任意 UTF-8 码点,但排除 ASCII 控制字节 < 0x20
                     (制表符/VT/FF 除外)、DEL (0x7F)、LF、CR、
-                    "\"(escape 前导)以及 "\""(段自身的分隔符)
+                    "\\"(escape 前导)以及 "\""(段自身的分隔符)
 <sq-char>       ::= 与 <dq-char> 相同的排除项,但排除的是 "'"
                     (自身的分隔符)而非 "\""
 <bt-char>       ::= 与 <dq-char> 相同的排除项,但排除的是 "`"
@@ -357,7 +357,7 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                     DEL (0x7F),
                     行终止符 (LF 0x0A, CR 0x0D),
                     "[", "]", "{", "}", "(", ")", ":", ",",
-                    "\"(反斜杠 —— 现为 escape 前导,§ 3.7),
+                    "\\"(反斜杠 —— 现为 escape 前导,§ 3.7),
                     "."(点 —— 现为路径分隔符;用 "\." 表示段内的
                     字面点)
                     (注意:任意空白码点(§ 3.3)

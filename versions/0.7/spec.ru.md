@@ -416,15 +416,15 @@ MUST быть в верхнем регистре (`0-9A-F`) — парсинг �
                   | <key> "::" <sep-end> <value-part-opt> eol    ; литеральная String
 
 <key>                ::= <segment> ( <unescaped-dot> <segment> )*
-<unescaped-dot>      ::= "." без предшествующего нечётного числа "\"
+<unescaped-dot>      ::= "." без предшествующего нечётного числа "\\"
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
 <bare-first-token>   ::= <key-escape> | <non-quote-key-char>
 <key-token>          ::= <key-escape> | <key-char>
 <non-quote-key-char> ::= <key-char> кроме "\"", "'", "`"
-<key-escape>         ::= "\" <escapable-byte>
-                        | "\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
-<escapable-byte>     ::= "\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+<key-escape>         ::= "\\" <escapable-byte>
+                        | "\\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
                         | "." | ":" | "\"" | "'" | "`"
 <hex-digit>          ::= [0-9a-fA-F]
 
@@ -436,7 +436,7 @@ MUST быть в верхнем регистре (`0-9A-F`) — парсинг �
 <bt-token>      ::= <key-escape> | <bt-char>
 <dq-char>       ::= любая UTF-8 кодовая точка, кроме ASCII управляющих
                     байтов < 0x20 (кроме табуляции/VT/FF), DEL (0x7F),
-                    LF, CR, "\" (escape-лид) и "\"" (сам разделитель)
+                    LF, CR, "\\" (escape-лид) и "\"" (сам разделитель)
 <sq-char>       ::= те же исключения, что и у <dq-char>, но вместо
                     "\"" исключён "'" (собственный разделитель)
 <bt-char>       ::= те же исключения, что и у <dq-char>, но вместо
@@ -450,7 +450,7 @@ MUST быть в верхнем регистре (`0-9A-F`) — парсинг �
                     DEL (0x7F),
                     завершителя строки (LF 0x0A, CR 0x0D),
                     "[", "]", "{", "}", "(", ")", ":", ",",
-                    "\" (обратный слэш — теперь escape-лид, § 3.7),
+                    "\\" (обратный слэш — теперь escape-лид, § 3.7),
                     "." (точка — теперь разделитель пути; для
                     литеральной точки внутри сегмента используйте "\.")
                     (примечание: любая пробельная кодовая точка (§ 3.3)
