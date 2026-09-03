@@ -256,7 +256,13 @@ class TranslationParityTestCase(unittest.TestCase):
             "```\nexample: 1\n```\n",
             "```\n## 9.9 not a real heading\nexample: 1\n```\n")
         en_path = self.write("spec.md", en)
-        ru = self.write("spec.ru.md", RU_DOC_OK)
+        # RU's fence mirrors the same extra line so fence-content line
+        # counts stay in parity; this test is only about the fake heading
+        # not being picked up as a real section, not about content drift.
+        ru_text = RU_DOC_OK.replace(
+            "```\nexample: 1\n```\n",
+            "```\n## 9.9 not a real heading\nexample: 1\n```\n")
+        ru = self.write("spec.ru.md", ru_text)
         code, out = self.run_main(en_path, ru)
         # The fake "## 9.9" heading inside the fence must not be picked up
         # as a real numbered section (which would otherwise report a
@@ -522,6 +528,67 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("EN=3", out)
         self.assertIn("translation=2", out)
         self.assert_no_fail_lines_for(out, "spec.md", "spec.zh.md")
+
+    # -- adversarial: production line dropped from inside an otherwise-
+    # preserved grammar fence (independent review finding 8) ---------------
+
+    def test_dropped_grammar_production_line_inside_preserved_fence_fails(self):
+        # Reproduces the reviewer's exact adversarial case: delete one BNF
+        # production line from inside a § 4-style fence while the
+        # translation still has the same NUMBER of headings (2) and the
+        # same NUMBER of fenced code blocks (1) as EN. Before the
+        # fence-line-count and grammar-LHS-set checks were added, this
+        # produced a false "PASS": the fence-count check alone (1 vs 1)
+        # cannot see a line missing FROM INSIDE a fence, and fence
+        # content was fully excluded from every other content-loss
+        # counter (paragraph/list/table/keyword).
+        grammar_lines_en = [
+            "<document>       ::= <line>*",
+            "<line>           ::= <comment> | <blank>",
+            r'<quoted-segment> ::= "\"" <dq-token>* "\""       ; § 5.3.3',
+            "<dq-token>       ::= <key-escape> | <dq-char>",
+        ]
+        # Drops exactly the <quoted-segment> production line -- heading
+        # count and fence count both still match EN.
+        grammar_lines_translation = [
+            l for l in grammar_lines_en
+            if not l.startswith("<quoted-segment>")
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased — draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_translation))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 4", out)
+        # The per-fence line-count check fires ...
+        self.assertIn(
+            "non-blank line count mismatch (EN=4, translation=3)", out)
+        # ... and so does the grammar nonterminal-set check, naming the
+        # dropped production's left-hand side.
+        self.assertIn("grammar production LHS set mismatch", out)
+        self.assertIn("<quoted-segment>", out)
+
+    def test_grammar_lhs_check_does_not_misfire_without_grammar_fences(self):
+        # Guard against the new grammar-LHS-set check misfiring on
+        # ordinary sections whose fences hold non-grammar example content
+        # (no line matches '^<...>::='): the happy-path fixtures below
+        # have no grammar fence at all, and must stay a clean PASS.
+        en = self.write("spec.md", EN_DOC)
+        ru = self.write("spec.ru.md", RU_DOC_OK)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("grammar production LHS set mismatch", out)
+        self.assertNotIn("non-blank line count mismatch", out)
 
     # -- keyword inside a fence must not mask a dropped keyword in prose ----
 

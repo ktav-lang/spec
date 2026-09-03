@@ -46,11 +46,32 @@ Purpose:
          Together these catch the deletion of an ordinary paragraph that
          contains no RFC 2119 keyword and no code fence.
 
-      6. Named-section parity: unnumbered headings of level >= 2 (the h1
+      6a. Per-fence content-loss counter: for each fenced code block that
+         both EN and the translation still have (matched positionally by
+         order of appearance within the section, 1st fence vs 1st fence,
+         2nd vs 2nd, ...), the non-blank LINE COUNT inside the fence is
+         compared. Item 2 alone only counts fences, so a translator who
+         keeps a section's heading and its single big fence but silently
+         drops one line FROM INSIDE that fence (e.g. one BNF production
+         line cut from an otherwise-preserved grammar block) previously
+         produced no mismatch at all; this line-count comparison catches
+         exactly that case. Applied to numbered and named sections alike.
+      6b. Grammar nonterminal-set parity (§ 4-shaped sections only): for
+         any section whose EN fence(s) contain at least one line matching
+         '^<...>\s*::=' (a BNF production's left-hand side, e.g.
+         '<quoted-segment> ::= ...'), the SET of LHS nonterminal names
+         inside EN's fence(s) is compared against the same set in the
+         translation's fence(s) for that section. A translation missing
+         (or adding) any production name is a failure. This is gated on
+         EN actually containing such lines so it only fires on genuine
+         grammar sections (currently just § 4) and never on sections
+         whose fences hold ordinary example documents that happen to
+         contain a stray '<' or '::='-free BNF-looking comment.
+      7. Named-section parity: unnumbered headings of level >= 2 (the h1
          document title and the front-matter region under it are excluded
          from THIS generic count comparison — RU/ZH legitimately carry an
          "Informative translation" blockquote EN does not have; that
-         region is instead covered by the targeted checks in item 7). Named sections are
+         region is instead covered by the targeted checks in item 8). Named sections are
          matched POSITIONALLY: EN's i-th unnumbered top-level heading is
          paired with the translation's i-th, and the same metrics as for
          numbered sections are compared. Positional matching is required
@@ -64,7 +85,7 @@ Purpose:
          unnumbered top-level headings is the invariant. A named section
          present in EN but missing from the translation is a failure, as
          is a translation-only named section.
-      7. Targeted front-matter checks: the region from the start of the
+      8. Targeted front-matter checks: the region from the start of the
          file to the first heading of any level (the h1 title plus the
          fields under it) is deliberately NOT compared with the generic
          paragraph/list/table counters above — RU/ZH legitimately carry
@@ -174,6 +195,10 @@ NUMBERED_HEADING_RE = re.compile(r'^#{1,6}\s+(\d+(?:\.\d+)*)\b')
 FENCE_RE = re.compile(r'^\s*```')
 LIST_ITEM_RE = re.compile(r'^\s*(?:[-*]|\d+\.)\s+')
 TABLE_ROW_RE = re.compile(r'^\s*\|')
+# A BNF production's left-hand side, e.g. "<quoted-segment> ::= ..." (§ 4).
+# Only whitespace is allowed before the '<' so a mid-sentence "<foo> ::="
+# fragment inside prose is not mistaken for an actual production line.
+GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
 
 # Front-matter recognition: the h1 title line (single '#', not '##' or
 # deeper), blockquote lines (the legitimate per-language disclaimer),
@@ -231,7 +256,7 @@ def parse_file(lines):
     """Single fence-aware pass over a file's lines.
 
     Returns (sections, fence_opens, occurrences, levels, excluded, named,
-    unclosed_fence):
+    unclosed_fence, fence_ranges):
       sections: dict of section-number -> (start_idx, end_idx) text range,
         end_idx exclusive, keyed by the FIRST occurrence of that number.
       fence_opens: sorted list of line indices where a ``` fence OPENS
@@ -254,6 +279,14 @@ def parse_file(lines):
         paragraph/list/table/keyword counts for whatever section(s)
         follow — callers MUST treat this as a fatal condition rather
         than trusting section content counts derived from this parse.
+      fence_ranges: ordered list of (open_idx, content_start, content_end)
+        for every COMPLETE (closed) fence, in document order: open_idx is
+        the line index of the opening ``` delimiter (matching an entry in
+        fence_opens, used to attribute the fence to a section the same
+        way count_code_blocks_per_section does); content_start/content_end
+        bound lines[content_start:content_end], the fence's content lines
+        with both ``` delimiters excluded. A trailing unclosed fence (see
+        unclosed_fence above) contributes no entry here.
 
     Lines matching a heading pattern while inside a fenced code block are
     not treated as headings (see module docstring).
@@ -264,13 +297,18 @@ def parse_file(lines):
     levels = {}
     named = []
     fence_opens = []
+    fence_ranges = []
     excluded = []
     in_fence = False
+    open_idx = None
     for idx, line in enumerate(lines):
         if FENCE_RE.match(line):
             excluded.append(True)
             if not in_fence:
                 fence_opens.append(idx)
+                open_idx = idx
+            else:
+                fence_ranges.append((open_idx, open_idx + 1, idx))
             in_fence = not in_fence
             continue
         if in_fence:
@@ -306,7 +344,8 @@ def parse_file(lines):
                 end = h
                 break
         named[i] = (text, level, start, end)
-    return sections, fence_opens, occurrences, levels, excluded, named, in_fence
+    return (sections, fence_opens, occurrences, levels, excluded, named,
+            in_fence, fence_ranges)
 
 
 def count_content(lines, start, end, excluded):
@@ -347,6 +386,56 @@ def count_code_blocks_per_section(sections, fence_opens):
                 counts[num] += 1
                 break
     return counts
+
+
+def count_fence_line_counts_per_section(sections, fence_ranges, lines):
+    """Map each section to an ORDERED list of non-blank line counts, one
+    entry per fenced code block whose OPENING delimiter falls within that
+    section's [start, end) range (same attribution rule as
+    count_code_blocks_per_section, and same section keys/units — numbered
+    section numbers, or synthetic 0-based indices for named sections).
+
+    count_code_blocks_per_section alone only counts HOW MANY fences a
+    section has, which stays equal if a translator keeps a section's
+    heading and its single big fence but silently drops a line FROM
+    INSIDE that fence (e.g. one BNF production line cut from an
+    otherwise-preserved § 4 grammar block). Comparing this per-fence
+    line-count list, position by position, between EN and a translation
+    catches that case."""
+    counts = {num: [] for num in sections}
+    items = sorted(sections.items(), key=lambda kv: kv[1][0])
+    for open_idx, content_start, content_end in fence_ranges:
+        for num, (start, end) in items:
+            if start <= open_idx < end:
+                nonblank = sum(1 for i in range(content_start, content_end)
+                               if lines[i].strip())
+                counts[num].append(nonblank)
+                break
+    return counts
+
+
+def extract_grammar_lhs(lines, start, end, excluded):
+    """Return the SET of grammar-production left-hand-side nonterminal
+    names (e.g. '<key>') found inside a fenced code block within
+    lines[start:end) -- i.e. on lines where excluded[idx] is True (fence
+    delimiter or fence content) that match GRAMMAR_LHS_RE. Requiring
+    excluded[idx] restricts this to actual fenced grammar blocks (this
+    spec's § 4 convention keeps the whole grammar in one ``` block) and
+    protects against matching a '<foo> ::= ...'-shaped example mentioned
+    in ordinary prose outside a fence.
+
+    Callers gate the whole check on the EN side of this set being
+    non-empty, so it only fires on sections that actually are grammar
+    sections and never misfires on a section whose fence(s) hold, say, an
+    ordinary example ktav document with no BNF-shaped lines at all."""
+    names = set()
+    for idx in range(start, end):
+        if not excluded[idx]:
+            continue
+        m = GRAMMAR_LHS_RE.match(lines[idx])
+        if m:
+            names.add(m.group(1))
+    return names
 
 
 def count_keywords(lines, start, end, excluded):
@@ -594,18 +683,24 @@ def check_front_matter(en_path, en_lines, translation_lines, verbose):
     return n_fail
 
 
-def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
-                       en_levels, en_excluded, en_named, en_named_code_counts,
-                       t_path, t_lines, verbose):
+def check_translation(en_lines, en_sections, en_code_counts,
+                       en_fence_line_counts, en_numbers_sorted, en_levels,
+                       en_excluded, en_named, en_named_code_counts,
+                       en_named_fence_line_counts, t_path, t_lines, verbose):
     """Compare one translation file against EN. Prints [FAIL]/[PASS] lines
     as it goes; returns the count of sections (either direction) with any
     mismatch."""
     (t_sections, t_fence_opens, t_occurrences, t_levels,
-     t_excluded, t_named, t_unclosed_fence) = parse_file(t_lines)
+     t_excluded, t_named, t_unclosed_fence, t_fence_ranges) = parse_file(t_lines)
     t_code_counts = count_code_blocks_per_section(t_sections, t_fence_opens)
+    t_fence_line_counts = count_fence_line_counts_per_section(
+        t_sections, t_fence_ranges, t_lines)
     t_named_code_counts = count_code_blocks_per_section(
         {i: (start, end) for i, (_, _, start, end) in enumerate(t_named)},
         t_fence_opens)
+    t_named_fence_line_counts = count_fence_line_counts_per_section(
+        {i: (start, end) for i, (_, _, start, end) in enumerate(t_named)},
+        t_fence_ranges, t_lines)
 
     n_mismatch = 0
     if t_unclosed_fence:
@@ -636,6 +731,31 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
         if en_code != t_code:
             problems.append("code-block count mismatch (EN=%d, translation=%d)"
                              % (en_code, t_code))
+        en_fence_lines = en_fence_line_counts.get(num, [])
+        t_fence_lines = t_fence_line_counts.get(num, [])
+        for i in range(min(len(en_fence_lines), len(t_fence_lines))):
+            if en_fence_lines[i] != t_fence_lines[i]:
+                problems.append(
+                    "fenced code block #%d non-blank line count mismatch "
+                    "(EN=%d, translation=%d)"
+                    % (i + 1, en_fence_lines[i], t_fence_lines[i]))
+        en_lhs = extract_grammar_lhs(en_lines, en_start, en_end, en_excluded)
+        if en_lhs:
+            t_lhs = extract_grammar_lhs(t_lines, t_start, t_end, t_excluded)
+            missing = sorted(en_lhs - t_lhs)
+            extra = sorted(t_lhs - en_lhs)
+            if missing or extra:
+                detail = []
+                if missing:
+                    detail.append("missing from translation: %s"
+                                   % ", ".join(missing))
+                if extra:
+                    detail.append("extra in translation: %s"
+                                   % ", ".join(extra))
+                problems.append(
+                    "grammar production LHS set mismatch (EN has %d "
+                    "nonterminal(s), translation has %d; %s)"
+                    % (len(en_lhs), len(t_lhs), "; ".join(detail)))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
@@ -687,6 +807,14 @@ def check_translation(en_lines, en_sections, en_code_counts, en_numbers_sorted,
         if en_code != t_code:
             problems.append("code-block count mismatch (EN=%d, translation=%d)"
                             % (en_code, t_code))
+        en_fence_lines = en_named_fence_line_counts.get(i, [])
+        t_fence_lines = t_named_fence_line_counts.get(i, [])
+        for j in range(min(len(en_fence_lines), len(t_fence_lines))):
+            if en_fence_lines[j] != t_fence_lines[j]:
+                problems.append(
+                    "fenced code block #%d non-blank line count mismatch "
+                    "(EN=%d, translation=%d)"
+                    % (j + 1, en_fence_lines[j], t_fence_lines[j]))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
@@ -758,7 +886,7 @@ def main(argv):
         return 2
 
     en_sections, en_fence_opens, en_occurrences, en_levels, en_excluded, \
-        en_named, en_unclosed_fence = parse_file(en_lines)
+        en_named, en_unclosed_fence, en_fence_ranges = parse_file(en_lines)
     if not en_sections:
         print("error: no numbered sections (headings matching '#+ <number>') "
               "found in EN file %s" % args.en_path, file=sys.stderr)
@@ -784,11 +912,16 @@ def main(argv):
         print("OVERALL: FAIL")
         return 1
     en_code_counts = count_code_blocks_per_section(en_sections, en_fence_opens)
+    en_fence_line_counts = count_fence_line_counts_per_section(
+        en_sections, en_fence_ranges, en_lines)
     en_numbers_sorted = sorted(en_sections, key=section_sort_key)
 
     en_named_code_counts = count_code_blocks_per_section(
         {i: (start, end) for i, (_, _, start, end) in enumerate(en_named)},
         en_fence_opens)
+    en_named_fence_line_counts = count_fence_line_counts_per_section(
+        {i: (start, end) for i, (_, _, start, end) in enumerate(en_named)},
+        en_fence_ranges, en_lines)
     translation_lines = {}
     t_occurrence_counts = {}
     for t_path in args.translation_paths:
@@ -798,7 +931,7 @@ def main(argv):
             print("error: could not read translation file %s: %s" % (t_path, e),
                   file=sys.stderr)
             return 2
-        _, _, t_occ, _, _, _, _ = parse_file(translation_lines[t_path])
+        _, _, t_occ, _, _, _, _, _ = parse_file(translation_lines[t_path])
         t_occurrence_counts[t_path] = t_occ
 
     fm_failures = check_front_matter(args.en_path, en_lines,
@@ -813,9 +946,10 @@ def main(argv):
         "shapes)" % fm_failures)
     for t_path in args.translation_paths:
         n_mismatch = check_translation(en_lines, en_sections, en_code_counts,
-                                        en_numbers_sorted, en_levels,
-                                        en_excluded, en_named,
-                                        en_named_code_counts, t_path,
+                                        en_fence_line_counts, en_numbers_sorted,
+                                        en_levels, en_excluded, en_named,
+                                        en_named_code_counts,
+                                        en_named_fence_line_counts, t_path,
                                         translation_lines[t_path], args.verbose)
         if n_mismatch:
             overall = "FAIL"
