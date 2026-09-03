@@ -908,8 +908,10 @@ where:
   before any pair-line processing begins, so it is never parsed as
   a pair line at all. Keeping `##`-prefixed keys parseable is a
   *writer* obligation (§ 5.9.10), not a parser-side error: a
-  canonical writer escapes the leading `#` precisely because a raw
-  `##` would make the line unparseable-as-intended on re-read.
+  canonical writer avoids a raw `##` at the start of the emitted
+  line by choosing quoted form for such a key's first segment —
+  the line then starts with `"`, not `#`, so § 5.1 rule 2's
+  comment dispatch never applies to it on re-read.
   The pair separator is the first **unescaped** `:` (or `::`)
   scanning left-to-right, treating the content of any quoted
   segment along the way as opaque — § 4 gives the exact quote-aware
@@ -984,9 +986,9 @@ rule 2 dispatches any line whose trimmed form begins with `##` as
 a comment (§ 3.4) before any key parsing begins, so such a line
 can never reach this section. The collision is a *writer*
 round-trip hazard, not a parser-side error: the canonical writer
-MUST escape exactly the leading `#` of a `##`-prefixed key
-segment (§ 5.9.10) precisely so that the line still parses as the
-intended pair on re-read.
+MUST emit a `##`-prefixed key's first segment in quoted form
+(§ 5.9.10) precisely so that the emitted line starts with `"`,
+not `#`, and still parses as the intended pair on re-read.
 
 #### 5.3.2 Dotted-Key Expansion
 
@@ -1143,15 +1145,18 @@ content quoted once.
      close under rule 2 (the unterminated `"` swallows the rest of the
      line, closing brace included) and is not a lone `{` under rule 4
      either; it falls to § 5.0.1's note after rules 2–5, diagnosed as
-     `UnterminatedInlineCompound` or `MalformedInlineCompound`
-     (§ 6.11 / § 6.12) — NEVER `UnterminatedQuotedKey` (§ 6.16
-     excludes this context explicitly): the compound-level defect is
-     what a reader can actually see and fix, and there is no separate
-     "the key inside was also unterminated" defect to name on top of
-     it. This is an existing diagnostic path, unmodified by quoted
-     keys; quoting only adds one more way a line can fail to
-     bracket-balance, alongside an already-unterminated `{` / `[` with
-     no quoting involved at all.
+     `UnterminatedInlineCompound` (§ 6.11) — never
+     `MalformedInlineCompound` (§ 6.12 applies only to a structural
+     defect INSIDE an already-closed compound, and this compound
+     never closes: the swallowed closer means no matching `}` / `]`
+     was found on the line at all) and never `UnterminatedQuotedKey`
+     (§ 6.16 excludes this context explicitly): the compound-level
+     defect is what a reader can actually see and fix, and there is
+     no separate "the key inside was also unterminated" defect to
+     name on top of it. This is an existing diagnostic path,
+     unmodified by quoted keys; quoting only adds one more way a
+     line can fail to bracket-balance, alongside an
+     already-unterminated `{` / `[` with no quoting involved at all.
   3. **The document's still-undecided first content line, when that
      line does NOT begin with `{` or `[`** (§ 5.0.1) — a first line
      that DOES begin with `{` or `[` is context 2 above, never this
@@ -1956,23 +1961,30 @@ at least one byte that a `<quoted-segment>` (§ 4) admits as literal,
 unescaped content — the structural bytes `.`, `:`, `,`, `{`, `}`,
 `[`, `]` (bullet 1 below, excluding `\`, LF, and CR), or `(` / `)` (part of
 bullet 2 below, since neither opens a multi-line string at a
-key-segment position) — or the `##`-prefix escape (bullet 4 below)
-or an edge-whitespace escape (bullet 3 below); or (b) the segment's
-decoded content begins with `"`, `'`, or `` ` `` (a leading quote
-character in bare form would be misread as opening a
-`<quoted-segment>` on re-parse, so it always forces quoted form even
-though nothing else in the segment needs escaping); or (c) this
-segment is the first segment of the root Object's first-serialized
-key (§ 5.9.3) and its decoded content begins with U+FEFF — bare form
-would then place the raw 3-byte UTF-8 encoding of U+FEFF at byte
-offset 0 of the entire document, indistinguishable from the metadata
-byte-order mark that § 3.1 requires a conformant reader to strip
-before any key is even recognised, silently losing the code point on
-re-parse; quoted form's opening `"` occupies byte offset 0 instead,
-so the U+FEFF is never mistaken for a BOM and needs no escape of its
-own once quoting moves it off that position (§ 5.9.12 states this
-guard generally, alongside the analogous Array-root-first-item case).
-A need to escape
+key-segment position) — or an edge-whitespace escape (bullet 3
+below); or (b) the segment's decoded content begins with `"`, `'`,
+or `` ` `` (a leading quote character in bare form would be misread
+as opening a `<quoted-segment>` on re-parse, so it always forces
+quoted form even though nothing else in the segment needs escaping);
+or (c) this segment is the first segment of the root Object's
+first-serialized key (§ 5.9.3) and its decoded content begins with
+U+FEFF — bare form would then place the raw 3-byte UTF-8 encoding of
+U+FEFF at byte offset 0 of the entire document, indistinguishable
+from the metadata byte-order mark that § 3.1 requires a conformant
+reader to strip before any key is even recognised, silently losing
+the code point on re-parse; quoted form's opening `"` occupies byte
+offset 0 instead, so the U+FEFF is never mistaken for a BOM and
+needs no escape of its own once quoting moves it off that position
+(§ 5.9.12 states this guard generally, alongside the analogous
+Array-root-first-item case); or (d) this segment is the key's first
+segment and its decoded content begins with the two-byte sequence
+`##` — this is not an escaping requirement at all, unlike (a)–(c):
+no bare-form escape changes the RAW first two bytes § 5.1 rule 2
+inspects on re-read, so no amount of escaping elsewhere in the
+segment prevents a raw `##`-prefixed bare line from being dispatched
+as a comment; quoted form's opening `"` is the only way to avoid
+that collision, since it is the only form whose first byte is never
+`#`. A need to escape
 a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
 `\\`/`\n`/`\r` entries and the control-byte/DEL part of bullet 2 —
 does NOT by itself trigger quoted form: a `<quoted-segment>` excludes
@@ -2009,27 +2021,18 @@ point that `<key-char>` (§ 4) excludes from raw content, plus any
   trimming, since the trimmed text is the escape's own ASCII
   spelling (`\`, then a letter or four hex digits), never the
   whitespace byte itself. Interior whitespace needs no escaping.
-- If the segment being emitted is the key's first segment, and its
-  decoded content begins with the two-byte sequence `##`, the writer
-  MUST additionally escape exactly the first `#` as `\u0023` — on
-  top of, not instead of, whatever bullets 1–3 above already
-  require for every other code point in the same segment. A
-  structural byte or edge-whitespace code point elsewhere in a
-  `##`-prefixed key is still escaped exactly as it would be in
-  any other key: for example the key `##a:b` is emitted as
-  `\u0023#a\:b` — the leading `#` escaped by this bullet, the `:`
-  escaped by bullet 1 regardless of it. Left unescaped, the
-  leading `##` makes § 5.1 rule 2 read the line as a comment
-  (§ 3.4) and drop it silently — this hazard operates at the
-  line-dispatch layer, above § 4's key-segment grammar entirely,
-  so it applies even though `#` is itself an ordinary,
-  unexcluded `<key-char>` that bullets 1–3 never require escaping
-  on their own. Escaping exactly the first `#` is necessary and
-  sufficient for this one hazard: the second `#` needs no escape
-  of its own (once the first is escaped, the line no longer
-  begins with `##`), so two writer-conforming implementations
-  MUST produce the identical `\u0023#…` prefix, never `\u0023\u0023…` or any
-  other variant.
+
+A canonical writer never actually reaches this recipe for a
+`##`-prefixed key's first segment: form-selection rule (d) above
+already routes it to quoted form before bare form is even
+considered, because no escape within bullets 1-3 changes the raw
+first two bytes of the emitted line. \u0023#a\:b (escaping
+only the leading `#`, per the original bare-form recipe this
+replaces) remains a valid, decodable, non-canonical INPUT spelling
+for the key `##a:b` -- a parser MUST still accept it -- but it is
+never the canonical OUTPUT: the canonical form of any key whose
+content begins with `##` is always quoted, `"##a:b"`, per (d), not
+\u0023#a\:b.
 
 When quoted form is selected, the writer emits the segment's decoded
 content between two `"` characters, escaping only:
@@ -2331,15 +2334,20 @@ This category does NOT cover an inline-pair position (§ 5.8.2): an
 unclosed quoted key there (e.g. `{"a: 1}`, or `obj: {"a: 1}`)
 necessarily swallows the rest of the line — including whatever would
 have been the enclosing compound's own closing `}` / `]` — so the
-compound itself never bracket-balances. The balanced-content check
-behind `UnterminatedInlineCompound` (§ 6.11) / `MalformedInlineCompound`
-(§ 6.12) is already quote-opaque for exactly this reason (§ 5.3.3's
-"Inline pairs" bullet), and reports one of those two categories
-instead — never `UnterminatedQuotedKey` — since the compound-level
-defect is what a reader can actually see and fix (add the missing
-closer or the missing quote-closer, whichever the compound's own
-diagnosis points at); there is no separate "the key inside was also
-unterminated" defect to name on top of it. This also never applies
+compound itself never bracket-balances, and never closes at all. The
+balanced-content check behind `UnterminatedInlineCompound` (§ 6.11)
+is already quote-opaque for exactly this reason (§ 5.3.3's "Inline
+pairs" bullet), and reports exactly that category instead — never
+`UnterminatedQuotedKey`, and never `MalformedInlineCompound` (§ 6.12
+applies only to a structural defect INSIDE an already-CLOSED
+compound; a compound whose only candidate closer was swallowed by
+the unterminated quote never closes, so § 6.12 categorically does
+not apply here, not merely as an alternative reading) — since the
+compound-level defect is what a reader can actually see and fix (add
+the missing quote-closer, which is also the only way to give the
+compound its missing `}` / `]`); there is no separate "the key
+inside was also unterminated" defect to name on top of it. This also
+never applies
 to the document's first content line itself, whether or not that
 line begins with `{` / `[`: § 5.0.1 rule 6 uses this same
 separator-scanning rule for its own phase-1 shape test on a line NOT
@@ -2867,9 +2875,11 @@ quoted segment's closing delimiter that is neither `.` nor the pair
 separator) already produces.
 
 The canonical writer (§ 5.9.10) prefers quoted form the moment a
-STRUCTURAL escape (or the `##`-prefix or edge-whitespace hazard)
-would otherwise be needed, rather than leaving bare-with-escape as
-an equally valid canonical choice: a determinism requirement (§ 5.9)
+STRUCTURAL escape (or an edge-whitespace hazard) would otherwise be
+needed, or the key's first segment begins with `##` (a routing rule
+with no escape trade-off at all — see § 5.9.10 rule (d)), rather
+than leaving bare-with-escape as an equally valid canonical choice
+for the escape-driven cases: a determinism requirement (§ 5.9)
 means the writer has no discretion either way, so the rule may as
 well pick the more readable of the two — which was the entire
 motivation for the feature. An escape quoting cannot remove — a
@@ -2960,8 +2970,9 @@ shorter output (§ 10.4).
   in the Value model but not emittable in canonical form at all —
   are emittable for the first time as of 0.7.0, via `\uXXXX`. Also
   newly documented (a pre-existing hazard, not new behaviour): a
-  key beginning with `##` MUST have the first `#` escaped as
-  `\u0023`, or the canonical line is silently read as a comment.
+  key beginning with `##` is always emitted in quoted form (never
+  bare-with-escape), since no bare-form escape changes the raw
+  first two bytes a comment-dispatch check on re-read inspects.
 - **Changed:** `<key-char>` (§ 4) now admits raw VT (`0x0B`) and FF
   (`0x0C`) as literal key content, matching the § 3.3 widening —
   previously only tab was exempted from the control-byte exclusion.
@@ -3053,12 +3064,15 @@ shorter output (§ 10.4).
   The canonical writer (§ 5.9.10) now
   prefers quoted form (delimiter `"`) over bare-with-escape whenever
   escaping a structural byte (`.` `:` `,` `{` `}` `[` `]`), `(` / `)`,
-  a `##`-prefix, or edge whitespace would otherwise be needed
+  or edge whitespace would otherwise be needed, or the key's first
+  segment begins with `##` (routed to quoted form unconditionally —
+  not an escape trade-off, since no bare-form escape changes the
+  raw first two bytes a comment-dispatch check on re-read inspects)
   (escaping only a backslash, LF, CR, a control byte, or DEL does NOT
   switch the form, since quoting does not remove that escape) — this
   changes the canonical bytes of every key previously requiring
-  `\.` / `\:` / a bracket / comma / paren escape, or a `##`-prefix
-  escape (e.g. `a\.b: 1` now canonicalises to `"a.b": 1`, not
+  `\.` / `\:` / a bracket / comma / paren escape, or beginning with
+  `##` (e.g. `a\.b: 1` now canonicalises to `"a.b": 1`, not
   `a\.b: 1`); existing `valid/key_escaping/*.canonical.ktav`
   fixtures update accordingly (tracked separately from this text
   change). New error category
