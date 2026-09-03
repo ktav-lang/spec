@@ -2,7 +2,9 @@
 // build_spec.mjs — assembles versions/0.7/spec{,.ru,.zh}.md from per-section
 // content units in versions/0.7/content/ (manifest.js + unit dirs). Unit bodies
 // come from body-1.js..body-N.js parts (N = meta.bodyParts), each exporting
-// { en, ru, zh } strings.
+// { en, ru, zh } strings. Each body-*.js is shape-checked on its raw source
+// text before dynamic import: only the exact documented literal-object shape
+// is ever executed.
 // Node ESM, built-ins only. Usage:
 //   node scripts/build_spec.mjs            write the three spec files
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
@@ -92,6 +94,9 @@ export function validateMeta(unit, meta) {
     if (typeof t[lang] !== 'string' || t[lang].length === 0) {
       failUnit(unit, `missing/empty title.${lang}`);
     }
+    if (t[lang].includes('\n') || t[lang].includes('\r')) {
+      failUnit(unit, `title.${lang} must be single-line (CR/LF not allowed)`);
+    }
   }
 }
 
@@ -113,6 +118,84 @@ function validateBodyPart(unit, k, mod) {
   for (const l of LANGS) {
     if (typeof d[l] !== 'string') failUnit(unit, `body-${k}.js field ${l} is not a string`);
   }
+}
+
+// Proves `src` (the raw UTF-8 text of a body-N.js file, read via
+// fs.readFileSync BEFORE any dynamic import) is EXACTLY:
+//   export default {\n  en: `...`,\n  ru: `...`,\n  zh: `...`,\n};\n
+// with each `...` a template-literal body where every backslash, backtick,
+// and "${" has been escaped per content/README.md's rule (\\, \`, \${, in
+// that priority order at write time). Returns the DECODED { en, ru, zh }
+// strings for defense-in-depth comparison against the dynamic import's
+// actual runtime value -- this function never executes the file's code.
+function validateBodySourceShape(unit, k, src) {
+  const HEADER = 'export default {\n  en: `';
+  if (!src.startsWith(HEADER)) {
+    failUnit(unit, `body-${k}.js: must start with exactly ${JSON.stringify(HEADER)}`);
+  }
+  let i = HEADER.length;
+
+  // Scans forward from `i` (just after an opening backtick) for the next
+  // UNESCAPED backtick, decoding escapes as it goes and rejecting any
+  // unescaped "${" (real template interpolation) along the way. A single
+  // backslash ALWAYS escapes exactly the next character in this grammar
+  // (the writer only ever emits \\, \`, or \${) -- so a simple greedy
+  // "see backslash, consume it plus the next char as one decoded unit"
+  // scan is correct and unambiguous; no backslash-run parity counting is
+  // needed because the writer fully resolves \\ first, then \`, then \${,
+  // in that fixed order, so escape units never overlap ambiguously.
+  function scanTemplateBody(fieldName) {
+    let decoded = '';
+    while (i < src.length) {
+      const c = src[i];
+      if (c === '\\') {
+        const next = src[i + 1];
+        if (next === '\\') decoded += '\\';
+        else if (next === '`') decoded += '`';
+        else if (next === '$') decoded += '$'; // the following "{" is ordinary, appended next iteration
+        else failUnit(unit, `body-${k}.js: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\$ are valid)`);
+        i += 2;
+        continue;
+      }
+      if (c === '`') {
+        return { end: i, decoded };
+      }
+      if (c === '$' && src[i + 1] === '{') {
+        failUnit(unit, `body-${k}.js: unescaped "\${" (template interpolation) in ${fieldName} at offset ${i} -- interpolation is never allowed, escape it as "\\\${"`);
+      }
+      decoded += c;
+      i += 1;
+    }
+    failUnit(unit, `body-${k}.js: unterminated template literal in ${fieldName} (no closing backtick found)`);
+  }
+
+  const en = scanTemplateBody('en');
+  i = en.end + 1;
+
+  const SEP1 = ',\n  ru: `';
+  if (src.slice(i, i + SEP1.length) !== SEP1) {
+    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(SEP1)} after the en field, at offset ${i}`);
+  }
+  i += SEP1.length;
+
+  const ru = scanTemplateBody('ru');
+  i = ru.end + 1;
+
+  const SEP2 = ',\n  zh: `';
+  if (src.slice(i, i + SEP2.length) !== SEP2) {
+    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(SEP2)} after the ru field, at offset ${i}`);
+  }
+  i += SEP2.length;
+
+  const zh = scanTemplateBody('zh');
+  i = zh.end + 1;
+
+  const TAIL = ',\n};\n';
+  if (src.slice(i) !== TAIL) {
+    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(TAIL)} after the zh field followed immediately by end-of-file, found ${JSON.stringify(src.slice(i, i + 20))}`);
+  }
+
+  return { en: en.decoded, ru: ru.decoded, zh: zh.decoded };
 }
 
 const TOP_LEVEL_ALLOWED_FILES = new Set([
@@ -255,13 +338,34 @@ export async function validateContentDir(contentDir) {
 
     const parts = [];
     for (let k = 1; k <= meta.bodyParts; k++) {
+      const bodyPath = path.join(unitDir, `body-${k}.js`);
+
+      // Read and shape-validate the raw source BEFORE any dynamic import:
+      // a body file that is not exactly the documented literal-object shape
+      // is rejected here, so its code is never executed, not even transiently.
+      let src;
+      try {
+        src = fs.readFileSync(bodyPath, 'utf8');
+      } catch (e) {
+        failUnit(unit, `cannot read body-${k}.js: ${e.message}`);
+      }
+      const decoded = validateBodySourceShape(unit, k, src);
+
       let mod;
       try {
-        mod = await import(pathToFileURL(path.join(unitDir, `body-${k}.js`)));
+        mod = await import(pathToFileURL(bodyPath));
       } catch (e) {
         failUnit(unit, `cannot load body-${k}.js: ${e.message}`);
       }
       validateBodyPart(unit, k, mod);
+
+      // Defense-in-depth: the statically decoded text must equal the
+      // runtime-evaluated text, character for character.
+      for (const lang of LANGS) {
+        if (mod.default[lang] !== decoded[lang]) {
+          failUnit(unit, `body-${k}.js: statically decoded ${lang} text does not match the runtime-evaluated text (source-shape scanner vs dynamic import mismatch)`);
+        }
+      }
       parts.push(mod.default);
     }
 

@@ -19,11 +19,18 @@ function metaJs(obj) {
   return 'export default ' + JSON.stringify(obj) + ';\n';
 }
 
+function escTemplate(s) {
+  return s
+    .replace(/\\/g, '\\\\')
+    .replace(/`/g, '\\`')
+    .replace(/\$\{/g, '\\${');
+}
+
 function bodyJs(en, ru, zh) {
   return 'export default {\n' +
-    '  en: ' + JSON.stringify(en) + ',\n' +
-    '  ru: ' + JSON.stringify(ru) + ',\n' +
-    '  zh: ' + JSON.stringify(zh) + ',\n' +
+    '  en: `' + escTemplate(en) + '`,\n' +
+    '  ru: `' + escTemplate(ru) + '`,\n' +
+    '  zh: `' + escTemplate(zh) + '`,\n' +
     '};\n';
 }
 
@@ -230,7 +237,7 @@ test('body-1.js with a 4th key is rejected', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
       write(path.join(c, 'sec-1', 'body-1.js'), bodyJs('a\n', 'b\n', 'c\n').replace('};', '  de: "d",\n};'))),
-    (e) => /unit "sec-1": body-1\.js must have exactly the keys \{en, ru, zh\}; got unexpected key\(s\) "de"/.test(e.message)
+    (e) => /unit "sec-1": body-1\.js: expected exactly ",\\n\};\\n" after the zh field/.test(e.message)
   );
 });
 
@@ -238,8 +245,8 @@ test('body-1.js with a missing key is rejected', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
       write(path.join(c, 'sec-1', 'body-1.js'),
-        'export default { en: "a\\n", ru: "b\\n" };\n')),
-    (e) => /unit "sec-1": body-1\.js must have exactly the keys \{en, ru, zh\}; got missing key\(s\) "zh"/.test(e.message)
+        'export default {\n  en: `a\n`,\n  ru: `b\n`,\n};\n')),
+    (e) => /unit "sec-1": body-1\.js: expected exactly ",\\n  zh: `" after the ru field/.test(e.message)
   );
 });
 
@@ -339,5 +346,94 @@ test('missing README.ru.md at content/ top level is rejected', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) => fs.rmSync(path.join(c, 'README.ru.md'))),
     (e) => /required file "README\.ru\.md" is missing under content\//.test(e.message)
+  );
+});
+
+// ---- body-N.js raw-source shape scanner (round 19, finding 1) ----
+
+test('body-1.js with an import prefix is rejected before any code executes', async () => {
+  // The import target deliberately does not exist: if the builder ever
+  // executed this file, the failure would be a module-not-found error, not
+  // the shape error -- proving the shape check fires BEFORE dynamic import.
+  const evilBody =
+    "import x from './module-that-does-not-exist.js';\n" +
+    'export default {\n' +
+    '  en: `a\n`,\n' +
+    '  ru: `b\n`,\n' +
+    '  zh: `c\n`,\n' +
+    '};\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
+    (e) =>
+      /unit "sec-1": body-1\.js: must start with exactly "export default \{\\n  en: `"/.test(e.message) &&
+      !/cannot load body-1\.js|Cannot find module|module-that-does-not-exist/.test(e.message)
+  );
+});
+
+test('body-1.js with a raw unescaped ${...} interpolation is rejected', async () => {
+  const evilBody =
+    'export default {\n' +
+    '  en: `value is ${location} here\n`,\n' +
+    '  ru: `b\n`,\n' +
+    '  zh: `c\n`,\n' +
+    '};\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
+    (e) =>
+      /unit "sec-1": body-1\.js: unescaped "\$\{" \(template interpolation\) in en/.test(e.message)
+  );
+});
+
+test('body-1.js with plain double-quoted string fields is rejected (only the exact template-literal shape is accepted)', async () => {
+  const evilBody =
+    'export default {\n' +
+    '  en: "plain string",\n' +
+    '  ru: `b\n`,\n' +
+    '  zh: `c\n`,\n' +
+    '};\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
+    (e) =>
+      /unit "sec-1": body-1\.js: must start with exactly "export default \{\\n  en: `"/.test(e.message)
+  );
+});
+
+test('body-1.js with correctly escaped backslash, backtick and ${ decodes round-trip to the original text', async () => {
+  const RAW = {
+    en: 'backslash \\ backtick ` interpolation ${ done\n',
+    ru: 'слэш \\ кавычка ` доллар ${ конец\n',
+    zh: '反斜杠 \\ 反引号 ` 美元 ${ 结束\n',
+  };
+  // Hand-written escaped form (the documented write-side rule: \\ first,
+  // then \`, then \${), independent of the helpers in this file.
+  const ESC = {
+    en: 'backslash \\\\ backtick \\` interpolation \\${ done\n',
+    ru: 'слэш \\\\ кавычка \\` доллар \\${ конец\n',
+    zh: '反斜杠 \\\\ 反引号 \\` 美元 \\${ 结束\n',
+  };
+  const bodyText =
+    'export default {\n' +
+    '  en: `' + ESC.en + '`,\n' +
+    '  ru: `' + ESC.ru + '`,\n' +
+    '  zh: `' + ESC.zh + '`,\n' +
+    '};\n';
+  const { units } = await validate(baseFixtures(), null, (c) =>
+    write(path.join(c, 'sec-1', 'body-1.js'), bodyText));
+  const part = units.get('sec-1').parts[0];
+  assert.equal(part.en, RAW.en);
+  assert.equal(part.ru, RAW.ru);
+  assert.equal(part.zh, RAW.zh);
+});
+
+test('meta.js title with an embedded newline is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title = { en: 'Abstract', ru: 'Анно\nтация', zh: '摘要' };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": title\.ru must be single-line \(CR\/LF not allowed\)/.test(e.message)
   );
 });
