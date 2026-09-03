@@ -1037,12 +1037,21 @@ content quoted once.
 - **Keys only.** Quoting (this whole § 5.3.3) applies only to key
   segments — § 4's `<key>` production. A quote character in any VALUE
   position — an inline scalar, a multi-line string, an array item —
-  is ordinary content with no special meaning; the existing escaping
-  rules for values (§ 3.7) are completely unchanged by this feature.
-  `{a: "b"}` is the pair `a` mapped to the three-character String
-  `"b"` (quote, `b`, quote — an ordinary bare inline scalar, per
-  § 5.2's existing scalar-typing rules), not an unwrapped String `b`:
-  0.7.0 does not add JSON-style value quoting.
+  is ordinary content with no special meaning: it never opens a
+  `<quoted-segment>`, is never a delimiter, and is never stripped or
+  unwrapped there. `{a: "b"}` is the pair `a` mapped to the
+  three-character String `"b"` (quote, `b`, quote — an ordinary bare
+  inline scalar, per § 5.2's existing scalar-typing rules), not an
+  unwrapped String `b`: 0.7.0 does not add JSON-style value quoting.
+  This is NOT the same as saying the value-escaping rules are
+  unchanged, though: § 3.7's three quote escapes (`\"`, `\'`,
+  `` \` ``) are recognised in every escape-aware context alike,
+  inline scalar values included, exactly as `\.` / `\:` already were
+  — so an inline value's escape processing must now also accept all
+  three quote-escape spellings, each decoding to its literal quote
+  character. What is unchanged is only that raw, unescaped quote
+  characters in a value still carry no structural meaning and are
+  never delimiters.
 - **Positional rule.** A quote character opens a `<quoted-segment>`
   if and only if it is the first code point of a segment's raw text
   *after* the same edge-whitespace trimming § 4 already applies to
@@ -1102,64 +1111,62 @@ content quoted once.
   segment and no matching unescaped closing delimiter is found before
   end-of-line, § 4's separator-scanning rule simply finds no
   separator on that line at all — indistinguishable, at the scanning
-  level, from a line containing no `:` anywhere. What this means
-  depends on where the line sits:
-  - On any line already dispatched as a pair line — every line inside
-    an established Object (§ 5.1 rule 8), and any inline-pair position
-    (§ 5.8.2) — a pair line is mandatory, and finding no separator is
-    always an error. When the specific reason is an unterminated
-    quoted segment, the diagnosis is the more specific
-    `UnterminatedQuotedKey` (§ 6.16) rather than the generic
-    `MissingSeparator` (§ 6.6) that a plain colon-free line would
-    raise — the same precedence a leading unterminated `[` / `{`
-    already takes over a generic pair-candidate read (§ 5.0.1 rule 6).
-    This branch applies to the document's first content line only
-    when that line does NOT begin with `{` or `[`: such a line is
-    routed instead by § 5.0.1 rules 2–5 on the leading bracket/brace,
-    before rule 6's pair-candidate test is ever tried, and an
-    unterminated quoted segment inside it is diagnosed differently —
-    see the note below. For a first line that does NOT begin with `{`
-    or `[`, § 5.0.1 rule 6 uses this SAME separator-scanning rule for
-    its own phase-1 test, so the line already fails phase 1 (next
-    bullet) and never reaches phase 2's pair-line dispatch in the
-    first place.
-  - A first content line that DOES begin with `{` or `[` follows a
-    different path entirely (§ 5.0.1 rules 2–5): its outcome turns on
-    bracket-balance, not on this separator-scanning rule. An
-    unterminated quoted segment inside such a line makes everything
-    from the opening quote to end-of-line opaque to bracket-balance
-    counting, for the same reason described under "Inline pairs"
-    above — so a `}` / `]` that appears only *inside* the unterminated
-    quoted segment's reach does not count as a matching closer.
-    `{"a: 1}` therefore does not close under rule 2 (the unterminated
-    `"` swallows the rest of the line, closing brace included), is not
-    a lone `{` under rule 4 either, and falls to § 5.0.1's note after
-    rules 2–5: a malformed or unterminated inline-compound attempt,
-    diagnosed as `UnterminatedInlineCompound` or `MalformedInlineCompound`
-    (§ 6.11 / § 6.12) — NOT `UnterminatedQuotedKey`, and NOT (contrast
-    the next bullet) an Array-root String item with no error. This is
-    an existing diagnostic path, unmodified by quoted keys; quoting
-    only adds one more way a line can fail to bracket-balance,
-    alongside an already-unterminated `{` / `[` with no quoting
-    involved at all.
-  - On the document's UNDECIDED first content line (§ 5.0.1) that does
-    NOT begin with `{` or `[`, rule 6's phase-1 test is purely about
-    whether a separator exists; finding none for any reason — no
-    colon at all, or an unterminated quoted segment swallowing the
-    rest of the line — is simply not a pair candidate, exactly as
-    today. Root-kind detection falls through to rule 7: the line is
-    an ordinary Array-root String item, quote character and all,
-    with no error. `'tis the season` (no colon
-    anywhere) is unaffected by quoting at all; `'tis the season: fa`
-    — which before 0.7.0's quoted-key addition parses as an Object
-    with the bare key `'tis the season` (an unescaped `'` was always
-    an ordinary `<key-char>`) — is a root-Array String item under the
-    new grammar instead (a breaking change; see Appendix A). A String
-    array item that happens to need a leading quote character AND an
-    unescaped colon to remain unambiguous on re-read can always use
-    the raw-marker form (`:: 'tis the season: fa`, § 5.4 rule 1) — the
-    existing escape hatch for exactly this class of ambiguity,
-    unchanged by this addition.
+  level, from a line containing no `:` anywhere. Bracket-balance
+  scanning is likewise quote-opaque (the "Inline pairs" bullet
+  below): an in-progress quoted segment swallows everything up to
+  end-of-line, colons and brackets alike. Every line falls into
+  exactly one of the following three contexts, and the outcome is
+  determined entirely by which one:
+  1. **Ordinary multi-line pair line, inside an already-established
+     Object.** Every line dispatched as a pair line under § 5.1
+     rule 8 — inside an already-established Object, including the
+     top-level Object body once established — requires a separator;
+     finding none is always an error. When the specific reason is an
+     unterminated quoted segment, the diagnosis is the more specific
+     `UnterminatedQuotedKey` (§ 6.16) rather than the generic
+     `MissingSeparator` (§ 6.6) that a plain colon-free line would
+     raise.
+  2. **Inline key position, inside `{...}` (§ 5.8.2) — including a
+     first content line that itself begins with `{` or `[`**, which
+     § 5.0.1 rules 2–5 route by leading bracket/brace before rule 6's
+     pair-candidate test is ever tried. Here the outcome turns on
+     bracket-balance, not on separator-scanning: an unterminated
+     quoted segment makes everything from the opening quote to
+     end-of-line opaque to bracket-balance counting too, so a `}` /
+     `]` that appears only *inside* the unterminated segment's reach
+     does not count as a matching closer. `{"a: 1}` therefore does not
+     close under rule 2 (the unterminated `"` swallows the rest of the
+     line, closing brace included) and is not a lone `{` under rule 4
+     either; it falls to § 5.0.1's note after rules 2–5, diagnosed as
+     `UnterminatedInlineCompound` or `MalformedInlineCompound`
+     (§ 6.11 / § 6.12) — NEVER `UnterminatedQuotedKey` (§ 6.16
+     excludes this context explicitly): the compound-level defect is
+     what a reader can actually see and fix, and there is no separate
+     "the key inside was also unterminated" defect to name on top of
+     it. This is an existing diagnostic path, unmodified by quoted
+     keys; quoting only adds one more way a line can fail to
+     bracket-balance, alongside an already-unterminated `{` / `[` with
+     no quoting involved at all.
+  3. **The document's still-undecided first content line, when that
+     line does NOT begin with `{` or `[`** (§ 5.0.1) — a first line
+     that DOES begin with `{` or `[` is context 2 above, never this
+     one. Rule 6's phase-1 test is purely about whether a separator
+     exists; finding none for any reason — no colon at all, or an
+     unterminated quoted segment swallowing the rest of the line — is
+     simply not a pair candidate, exactly as today. Root-kind
+     detection falls through to rule 7: the line is an ordinary
+     Array-root String item, quote character and all, with no error.
+     `'tis the season` (no colon anywhere) is unaffected by quoting at
+     all; `'tis the season: fa` — which before 0.7.0's quoted-key
+     addition parses as an Object with the bare key `'tis the season`
+     (an unescaped `'` was always an ordinary `<key-char>`) — is a
+     root-Array String item under the new grammar instead (a breaking
+     change; see Appendix A). A String array item that happens to need
+     a leading quote character AND an unescaped colon to remain
+     unambiguous on re-read can always use the raw-marker form
+     (`:: 'tis the season: fa`, § 5.4 rule 1) — the existing escape
+     hatch for exactly this class of ambiguity, unchanged by this
+     addition.
 - **Per-segment participation in dotted paths.** Quoting applies per
   segment, not to the whole key: `a."b.c".d: 1` is the three-segment
   path `["a", "b.c", "d"]`, expanding (§ 5.3.2) to
