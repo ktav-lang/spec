@@ -219,20 +219,50 @@ GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
 
 # Recognized BNF syntax atoms used by § 4's semi-formal notation: a quoted
 # terminal (with \" / \\ as the only in-terminal escapes, per § 4's own
-# preamble), a <nonterminal>, the "(ws)" whitespace placeholder, the "&eol"
-# / "eol" end-of-line markers, the "::=" production operator, and the
+# preamble), a <nonterminal>, a [char-class] (e.g. <hex-digit>'s
+# "[0-9a-fA-F]"), the "(ws)" whitespace placeholder, an ABNF-style numeric
+# repeat prefix like "1*ws" (<sep-end>'s one-off borrowing from RFC 5234,
+# distinct from this grammar's own postfix "*"), the "&eol" / "eol"
+# end-of-line markers, the "::=" production operator, and the
 # single-character operators "|" "*" "+" "?" "(" ")". Order matters: the
-# 2-char/parenthesized alternatives must be tried before the bare
-# single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")".
+# 2-char/parenthesized/multi-char alternatives must be tried before the bare
+# single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")",
+# and "1*ws" isn't split into a stray "1" plus "*" plus a leftover "ws".
 GRAMMAR_TOKEN_RE = re.compile(
     r'"(?:[^"\\]|\\.)*"'
     r'|<[^<>]+>'
+    r'|\[[^\[\]]*\]'
     r'|\(ws\)'
+    r'|\d+\*ws\b'
     r'|&eol\b'
     r'|::='
     r'|\beol\b'
     r'|[|*+?()]'
 )
+
+# Left-hand-side names whose RHS is intentionally natural-language prose
+# rather than strict terminal/nonterminal BNF syntax -- § 4's own preamble
+# calls the notation "semi-formal", and these productions lean fully into
+# the "semi" half. Each is legitimately translated like any other prose, so
+# none of them are held to cross-language byte parity by the RHS-syntax
+# check below. Every OTHER production's RHS is expected to be pure BNF
+# (verified empirically against the current grammar, and re-checked by
+# find_malformed_grammar_productions below): if some other production ever
+# fails to tokenize as pure BNF, that is treated as a real defect (a typo,
+# a corrupted terminal, a translation mistake) and reported as an error
+# rather than silently excluded, unlike these ten.
+SEMI_FORMAL_PROSE_LHS = frozenset([
+    "<comment>",            # "(ws) \"##\" (any-chars until line-end)"
+    "<unescaped-dot>",      # "\".\" that is NOT preceded by ..."
+    "<non-quote-key-char>", # "<key-char> excluding \"\\\"\", \"'\", \"`\""
+    "<dq-char>",            # "any UTF-8 code point except ..." (multi-line prose)
+    "<sq-char>",            # "same exclusions as <dq-char>, but excluding ..."
+    "<bt-char>",            # "same exclusions as <dq-char>, but excluding ..."
+    "<key-char>",           # "any UTF-8 code point except ..." (long multi-paragraph prose)
+    "<scalar-body>",        # "(ws) any-chars-until-eol"
+    "<inline-scalar>",      # "sequence of bytes terminated by an unescaped ..."
+    "<multiline-content-line>",  # "any line within an open <multiline>; ..."
+])
 
 # Front-matter recognition: the h1 title line (single '#', not '##' or
 # deeper), blockquote lines (the legitimate per-language disclaimer),
@@ -498,28 +528,41 @@ def _is_pure_bnf(fragment):
 
 
 def extract_grammar_productions(lines, start, end, excluded):
-    """Return {lhs: [fragment, ...]} for each production whose declaration
-    line matches GRAMMAR_LHS_RE, plus any immediately-following '|'-prefixed
-    continuation lines (this grammar's convention for further alternatives
-    of the same production), restricted to lines inside a fence
-    (excluded[idx] True). Continuation collection stops at the first line
-    that is blank, outside the fence, or does not start with '|' after
-    stripping -- which is exactly how this spec's grammar block already
-    distinguishes a real alternative line from a wrapped prose explanation
-    attached to the same production (see <header-line>'s multi-paragraph
-    "Context-dependence" note, which is exactly this shape and must NOT be
-    swept into the production's RHS).
+    """Return (productions, malformed):
 
-    Each fragment is filtered through _is_pure_bnf: only fragments that are
-    unambiguously syntax (no leftover prose words) are kept, so a
-    translator's legitimate natural-language rendering of a semi-formal
-    RHS (e.g. <inline-scalar>, <scalar-body>) is never held to a
-    byte-for-byte match. Grammar syntax itself is never translated by this
-    spec's own convention (confirmed by every existing translated
-    section), so any two conformant copies of a genuinely syntactic
-    fragment MUST already be byte-identical -- this only ever fires on a
-    real divergence, mutation, or corruption."""
+      - productions: {lhs: [fragment, ...]} for each production whose
+        declaration line matches GRAMMAR_LHS_RE, plus any immediately-
+        following '|'-prefixed continuation lines (this grammar's
+        convention for further alternatives of the same production),
+        restricted to lines inside a fence (excluded[idx] True).
+        Continuation collection stops at the first line that is blank,
+        outside the fence, or does not start with '|' after stripping --
+        which is exactly how this spec's grammar block already
+        distinguishes a real alternative line from a wrapped prose
+        explanation attached to the same production (see <header-line>'s
+        multi-paragraph "Context-dependence" note, which is exactly this
+        shape and must NOT be swept into the production's RHS). Only
+        fragments that pass _is_pure_bnf (or belong to an LHS listed in
+        SEMI_FORMAL_PROSE_LHS) are kept here.
+
+      - malformed: [(lhs, fragment), ...] -- one entry per non-empty
+        fragment that FAILED _is_pure_bnf for an LHS that is NOT in
+        SEMI_FORMAL_PROSE_LHS. Every production outside that allowlist is
+        expected to always be pure BNF (verified against this grammar's
+        actual current text); a fragment that isn't is a real defect --
+        a malformed terminal, a typo, a translation mistake -- not
+        legitimate prose, and callers MUST treat this as fail-closed
+        (an error to report), never silently drop it the way an
+        allowlisted production's prose is dropped.
+
+    Grammar syntax itself is never translated by this spec's own
+    convention (confirmed by every existing translated section), so any
+    two conformant copies of a genuinely syntactic fragment MUST already
+    be byte-identical -- a `productions` mismatch between EN and a
+    translation only ever fires on a real divergence, mutation, or
+    corruption."""
     productions = {}
+    malformed = []
     idx = start
     while idx < end:
         if not excluded[idx]:
@@ -530,23 +573,30 @@ def extract_grammar_productions(lines, start, end, excluded):
             idx += 1
             continue
         lhs = m.group(1)
+        prose_ok = lhs in SEMI_FORMAL_PROSE_LHS
         fragments = []
         frag = _rhs_fragment(lines[idx][m.end():])
-        if frag and _is_pure_bnf(frag):
-            fragments.append(frag)
+        if frag:
+            if _is_pure_bnf(frag):
+                fragments.append(frag)
+            elif not prose_ok:
+                malformed.append((lhs, frag))
         j = idx + 1
         while j < end and excluded[j]:
             stripped = lines[j].strip()
             if not stripped.startswith('|'):
                 break
             frag = _rhs_fragment(stripped[1:])
-            if frag and _is_pure_bnf(frag):
-                fragments.append('| ' + frag)
+            if frag:
+                if _is_pure_bnf(frag):
+                    fragments.append('| ' + frag)
+                elif not prose_ok:
+                    malformed.append((lhs, '| ' + frag))
             j += 1
         if fragments:
             productions[lhs] = fragments
         idx = j if j > idx + 1 else idx + 1
-    return productions
+    return productions, malformed
 
 
 def count_keywords(lines, start, end, excluded):
@@ -867,9 +917,9 @@ def check_translation(en_lines, en_sections, en_code_counts,
                     "grammar production LHS set mismatch (EN has %d "
                     "nonterminal(s), translation has %d; %s)"
                     % (len(en_lhs), len(t_lhs), "; ".join(detail)))
-            en_prod = extract_grammar_productions(
+            en_prod, _ = extract_grammar_productions(
                 en_lines, en_start, en_end, en_excluded)
-            t_prod = extract_grammar_productions(
+            t_prod, t_malformed = extract_grammar_productions(
                 t_lines, t_start, t_end, t_excluded)
             for lhs in sorted(en_prod):
                 if en_prod[lhs] != t_prod.get(lhs):
@@ -877,6 +927,13 @@ def check_translation(en_lines, en_sections, en_code_counts,
                         "grammar production RHS mismatch for %s "
                         "(EN=%r, translation=%r)"
                         % (lhs, en_prod[lhs], t_prod.get(lhs)))
+            for lhs, frag in t_malformed:
+                problems.append(
+                    "grammar production %s failed to parse as pure BNF "
+                    "in translation (fragment: %r) -- not on the "
+                    "semi-formal prose allowlist, so this is a corrupted "
+                    "terminal/nonterminal, not legitimate translated prose"
+                    % (lhs, frag))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
@@ -1036,6 +1093,27 @@ def main(argv):
     en_fence_line_counts = count_fence_line_counts_per_section(
         en_sections, en_fence_ranges, en_lines)
     en_numbers_sorted = sorted(en_sections, key=section_sort_key)
+
+    en_grammar_malformed = []
+    for num in en_numbers_sorted:
+        start, end = en_sections[num]
+        if extract_grammar_lhs(en_lines, start, end, en_excluded):
+            _, malformed = extract_grammar_productions(
+                en_lines, start, end, en_excluded)
+            for lhs, frag in malformed:
+                en_grammar_malformed.append((num, lhs, frag))
+    if en_grammar_malformed:
+        for num, lhs, frag in en_grammar_malformed:
+            print("[FAIL] %s Sec %s: grammar production %s failed to "
+                  "parse as pure BNF (fragment: %r) -- not on the "
+                  "semi-formal prose allowlist, so this is a malformed "
+                  "terminal/nonterminal, not legitimate prose"
+                  % (args.en_path, num, lhs, frag))
+        print("error: EN file %s has %d malformed grammar production(s); "
+              "EN is canonical, so translations are not compared"
+              % (args.en_path, len(en_grammar_malformed)), file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
 
     en_named_code_counts = count_code_blocks_per_section(
         {i: (start, end) for i, (_, _, start, end) in enumerate(en_named)},

@@ -624,6 +624,140 @@ class TranslationParityTestCase(unittest.TestCase):
         # Only the new RHS-syntax check must fire, naming the production.
         self.assertIn("grammar production RHS mismatch for <pair-line>", out)
 
+    def test_malformed_syntax_production_in_en_is_fatal(self):
+        # Round-16 finding 2: a production whose LHS is NOT on the
+        # semi-formal prose allowlist (SEMI_FORMAL_PROSE_LHS) is expected
+        # to always be pure BNF. If EN's OWN copy fails to tokenize -- a
+        # malformed terminal, like the pre-round-16 backslash-terminal bug
+        # ("\"" written where "\\"" belongs) -- that is a spec-authoring
+        # defect, not a translation issue, and must halt before any
+        # translation is even compared (same severity class as a
+        # duplicate section number or an unclosed fence).
+        grammar_lines_en = [
+            "<document>   ::= <line>*",
+            r'<pair-line>  ::= <key> ":" <sep-end> <value-part-opt> eol',
+            # Malformed: a terminal meant to mean a literal backslash,
+            # written as the 3-byte escaped-quote-with-no-closer "\"
+            # instead of the well-formed 4-byte "\\".
+            r'<key>        ::= <segment>+ "\"',
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased — draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_en))  # identical -- irrelevant, EN itself is broken
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("grammar production <key> failed to parse as pure BNF", out)
+        # Must stop before any per-translation comparison runs: exactly
+        # the one EN-fatal [FAIL] line, nothing else.
+        fail_lines = [l for l in out.splitlines() if "[FAIL]" in l]
+        self.assertEqual(len(fail_lines), 1, out)
+
+    def test_malformed_syntax_production_in_translation_only_is_reported(self):
+        # A production that tokenizes fine in EN but is corrupted into
+        # something unparseable in the translation (not merely DIFFERENT,
+        # but no longer valid BNF at all) must be reported distinctly from
+        # an ordinary RHS mismatch, not silently dropped the way a
+        # legitimately prose-shaped production's RHS is.
+        grammar_lines_en = [
+            "<document>   ::= <line>*",
+            r'<pair-line>  ::= <key> ":" <sep-end> <value-part-opt> eol',
+            "<key>        ::= <segment>+",
+        ]
+        grammar_lines_ru = [
+            "<document>   ::= <line>*",
+            r'<pair-line>  ::= <key> ":" <sep-end> <value-part-opt> eol',
+            # Corrupted: same backslash-terminal defect, introduced only
+            # in the translation this time.
+            r'<key>        ::= <segment>+ "\"',
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased — draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_ru))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF "
+            "in translation", out)
+
+    def test_escapable_byte_style_terminal_swap_without_semicolon_caught(self):
+        # Reproduces round-16's exact adversarial case: mutate a
+        # non-colon, non-semicolon terminal (here "," -> "!", matching the
+        # review's own <escapable-byte> example) on a production's
+        # DECLARATION line, with no trailing "; comment" on the line at
+        # all -- so _rhs_fragment's semicolon-based comment-stripping
+        # plays no role in detection, unlike the round-15 test's
+        # ":" -> ";" mutation (which happened to also get caught via a
+        # side effect of comment-stripping truncation). This isolates that
+        # the RHS-syntax comparison itself, not that side effect, is what
+        # catches a corrupted terminal.
+        grammar_lines_en = [
+            "<document>        ::= <line>*",
+            r'<escapable-byte>  ::= "\\" | "," | "}" | "]"',
+        ]
+        grammar_lines_ru = [
+            "<document>        ::= <line>*",
+            r'<escapable-byte>  ::= "\\" | "!" | "}" | "]"',
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased — draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_ru))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn(
+            "grammar production RHS mismatch for <escapable-byte>", out)
+
+    def test_real_spec_grammar_has_no_malformed_productions(self):
+        # Protective test over the ACTUAL versions/0.7/spec.md: fixes the
+        # expected set of productions this checker holds to exact BNF
+        # parity, and asserts zero malformed productions right now. If
+        # this count or set ever drifts, it means either a new production
+        # was added (update the expected numbers) or -- the case this
+        # guards against -- a real production silently stopped
+        # tokenizing and fell through the allowlist gap undetected.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        spec_path = os.path.join(repo_root, "versions", "0.7", "spec.md")
+        with open(spec_path, encoding="utf-8") as f:
+            lines = [l.rstrip("\n") for l in f.readlines()]
+        sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+        start, end = sections["4"]
+        lhs_set = ctp.extract_grammar_lhs(lines, start, end, excluded)
+        productions, malformed = ctp.extract_grammar_productions(
+            lines, start, end, excluded)
+        self.assertEqual(malformed, [])
+        self.assertEqual(len(lhs_set), 38)
+        self.assertEqual(len(productions), 28)
+        self.assertEqual(lhs_set - set(productions), ctp.SEMI_FORMAL_PROSE_LHS)
+
     def test_grammar_lhs_check_does_not_misfire_without_grammar_fences(self):
         # Guard against the new grammar-LHS-set check misfiring on
         # ordinary sections whose fences hold non-grammar example content
