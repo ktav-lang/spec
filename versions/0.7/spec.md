@@ -1756,11 +1756,18 @@ A pair separator is selected by the kind/content of its value:
   prefix is not required to be a grammatically valid key at this
   stage, exactly as rule 6 itself does not require one (a first
   item like `a,b: 1` is a pair candidate here for the same reason
-  it is one for root detection). Only the Array root's
+  it is one for root detection). Independently of the pair-candidate
+  test, the bare form is also not used — regardless of whether that
+  test applies — when the item is the first item of an Array root and
+  the body begins with U+FEFF (§ 5.9.12): bare form would place the
+  raw 3-byte UTF-8 encoding of U+FEFF at byte offset 0 of the
+  document, which § 3.1 requires a conformant reader to strip as a
+  metadata byte-order mark, silently losing the code point on
+  re-parse. Only the Array root's
   first item is exposed to § 5.0.1's root-kind detection; every
   other item position is dispatched directly as an array-item line
-  regardless of its shape (§ 5.1 rules 7–8), so this exclusion does
-  not apply there.
+  regardless of its shape (§ 5.1 rules 7–8), so neither exclusion
+  applies there.
 - **Raw-marker item:** `:: <bytes>` — when the body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
@@ -1769,12 +1776,17 @@ A pair separator is selected by the kind/content of its value:
   exactly `}` or `]`, or starting with `##` or with the two-byte
   sequence `::`), or (when the
   item is the first item of an Array root) would otherwise satisfy
-  § 5.0.1 rule 6's phase-1 pair-candidate test as described above.
+  § 5.0.1 rule 6's phase-1 pair-candidate test as described above, or
+  (likewise only for the first item of an Array root) begins with
+  U+FEFF (§ 5.9.12).
   The raw-marker form
-  itself is immune to this last hazard: a line beginning `::` has
+  itself is immune to both of these first-item hazards: a line
+  beginning `::` has
   no key segment before the separator, so it never matches
   `<pair-line>`'s grammar and is read as this Array's first item
-  (§ 5.0.1 rule 7) without needing the root-wrap of § 5.9.3.
+  (§ 5.0.1 rule 7) without needing the root-wrap of § 5.9.3, and its
+  content begins only after the literal `:: ` prefix, never at byte
+  offset 0.
 - **Empty Object item:** `{}` on its own line.
 - **Empty Array item:** `[]` on its own line.
 - **Non-empty Object item:** `{` opening line, body lines at
@@ -1949,7 +1961,18 @@ or an edge-whitespace escape (bullet 3 below); or (b) the segment's
 decoded content begins with `"`, `'`, or `` ` `` (a leading quote
 character in bare form would be misread as opening a
 `<quoted-segment>` on re-parse, so it always forces quoted form even
-though nothing else in the segment needs escaping). A need to escape
+though nothing else in the segment needs escaping); or (c) this
+segment is the first segment of the root Object's first-serialized
+key (§ 5.9.3) and its decoded content begins with U+FEFF — bare form
+would then place the raw 3-byte UTF-8 encoding of U+FEFF at byte
+offset 0 of the entire document, indistinguishable from the metadata
+byte-order mark that § 3.1 requires a conformant reader to strip
+before any key is even recognised, silently losing the code point on
+re-parse; quoted form's opening `"` occupies byte offset 0 instead,
+so the U+FEFF is never mistaken for a BOM and needs no escape of its
+own once quoting moves it off that position (§ 5.9.12 states this
+guard generally, alongside the analogous Array-root-first-item case).
+A need to escape
 a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
 `\\`/`\n`/`\r` entries and the control-byte/DEL part of bullet 2 —
 does NOT by itself trigger quoted form: a `<quoted-segment>` excludes
@@ -2058,7 +2081,16 @@ before this addition — quoting it (`"path\\to"`) would need the
 identical `\\` escape for no benefit; the key `"port"` (six
 characters: a leading and a trailing `"`) is emitted as `"\"port\""`
 (quoted is forced by the leading `"` alone, even though the interior
-needs only the one escape for the delimiter's own two occurrences).
+needs only the one escape for the delimiter's own two occurrences);
+the key U+FEFF followed by `host` (five code points), when it is the
+root Object's first-serialized key, is emitted as `"` immediately
+followed by a raw U+FEFF and then `host"` (quoted by rule (c) above;
+the U+FEFF itself is emitted raw, needing no escape, since quoting
+alone already moves it off byte offset 0) —
+but the identical five-code-point key at any OTHER pair position
+(not the document's first-serialized key) is emitted bare and
+unchanged, since only the root's first-serialized key's first
+segment can ever land at byte offset 0 (§ 5.9.12).
 
 #### 5.9.11 Order
 
@@ -2066,6 +2098,54 @@ Object pairs are emitted in insertion order — the order in which
 they appear in the parsed input, or the order in which the Value
 was constructed. Implementations MUST preserve and emit this order.
 Array items are emitted in natural array order.
+
+#### 5.9.12 First-output-byte guard
+
+§ 3.1 requires a conformant reader to strip exactly one leading
+U+FEFF — decoded from the raw 3-byte UTF-8 sequence `EF BB BF` — if
+and only if it is the very first code point of the entire document,
+and requires the canonical writer to never emit a leading
+byte-order mark. These two rules interact badly with ordinary
+content: if the writer ever placed the raw 3-byte encoding of
+U+FEFF at byte offset 0 of otherwise-ordinary output, a conformant
+reader would strip it as a metadata BOM per § 3.1, silently losing
+that code point on re-parse — a canonicalisation that would not be
+idempotent or round-trip-safe. This can only happen at two
+positions; nowhere else in canonical output can a Value's own
+content reach byte offset 0, since every other position is preceded
+by at least one byte of surrounding structure (a parent key, a
+separator, a line terminator, indentation, a compound opener, or an
+array-item marker).
+
+- **Root Object, first-serialized key.** If the root is a non-empty
+  Object and the first segment of its first-serialized key's decoded
+  content begins with U+FEFF, § 5.9.10's form-selection rule forces
+  quoted form for that segment (rule (c)). The segment is then
+  written `"…"`, so byte offset 0 of the document is `"` (`0x22`),
+  never the raw encoding of U+FEFF; the U+FEFF itself appears later
+  in the byte stream, as ordinary quoted content, and needs no
+  escape of its own (§ 5.3.3 permits U+FEFF raw inside a
+  `<quoted-segment>` — it is neither a control byte nor DEL).
+- **Root Array, first item.** If the root is a non-empty Array and
+  its first item is a String whose canonical form would otherwise be
+  the bare, one-line form of § 5.9.7 with content beginning with
+  U+FEFF, the writer MUST instead use the raw-marker form
+  (`:: <body>`, § 5.9.6) for that one item, even though § 5.9.7's
+  ordinary bare-form conditions are otherwise satisfied. The
+  raw-marker's own two bytes (`::`) occupy byte offset 0, so the
+  item's content — including the leading U+FEFF, carried through
+  unescaped since the raw-marker form applies no escape processing
+  (§ 5.4 rule 1: "literal String, no type inference") — begins only
+  after `:: `, never at byte offset 0.
+
+Both cases are narrow, form-selection overrides: they change which
+of two already-normative forms the writer must pick for the one
+position (the root's first-serialized key, or its first item) whose
+content the format ever places at byte offset 0. They do not add a
+new non-representability case to § 5.9.0 — a key or first-item
+String beginning with U+FEFF remains representable — and they do
+not apply to any other key or item position, since no other
+position's content can ever reach byte offset 0 of the document.
 
 ## 6. Errors
 
@@ -3001,6 +3081,20 @@ shorter output (§ 10.4).
   hatch (§ 5.4 rule 1) already available for an Array item that needs
   an unambiguous leading quote character. No document whose keys
   avoid a leading `"` / `'` / `` ` `` is affected in any way.
+- **Added:** § 5.9.12 (new) — a first-output-byte guard preventing
+  the canonical writer from ever placing the raw 3-byte UTF-8
+  encoding of U+FEFF at byte offset 0 of the document, which § 3.1's
+  leading-BOM-strip rule would otherwise silently consume on
+  re-parse. This closes a gap between § 3.1 (added earlier in this
+  same release) and §§ 5.9.0 / 5.9.10's key-representability rules,
+  which did not previously account for the interaction: a key or
+  Array-root first item beginning with U+FEFF was representable but
+  not round-trip-safe in canonical form. Affects exactly two
+  positions: a root Object's first-serialized key beginning with
+  U+FEFF is now forced into quoted form (§ 5.9.10 rule (c)); a root
+  Array's first item being a bare-form String beginning with U+FEFF
+  is now forced into raw-marker (`::`) form (§ 5.9.6). New fixtures
+  `valid/bom_boundary/*`.
 
 ### 0.6.0 — 2026-06-01
 
