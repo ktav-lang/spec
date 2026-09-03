@@ -578,6 +578,52 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("grammar production LHS set mismatch", out)
         self.assertIn("<quoted-segment>", out)
 
+    def test_grammar_production_terminal_swap_fails_despite_matching_lhs(self):
+        # Reproduces round-15's adversarial case: a translation swaps one
+        # terminal inside an existing production (":" -> ";" in
+        # <pair-line>) while heading count, fence non-blank line count, AND
+        # the grammar LHS-name set all stay identical to EN. Before the
+        # RHS-syntax check was added, this passed silently: the LHS-set
+        # check only compares nonterminal NAMES, never each production's
+        # actual right-hand side.
+        grammar_lines_en = [
+            "<document>   ::= <line>*",
+            r'<pair-line>  ::= <key> ":"  <sep-end> <value-part-opt> eol',
+            r'                  | <key> "::" <sep-end> <value-part-opt> eol',
+            "<key>        ::= <segment>+",
+        ]
+        grammar_lines_mutated = [
+            l.replace('<key> ":"', '<key> ";"')
+            for l in grammar_lines_en
+        ]
+        self.assertNotEqual(grammar_lines_en, grammar_lines_mutated)
+        self.assertEqual(
+            [len(l) for l in grammar_lines_en],
+            [len(l) for l in grammar_lines_mutated])
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased — draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("Sec 4", out)
+        # The checks round-15 already found sufficient must NOT be what
+        # catches this -- heading count, fence line count, and the LHS
+        # name set are all unchanged by construction.
+        self.assertNotIn("non-blank line count mismatch", out)
+        self.assertNotIn("grammar production LHS set mismatch", out)
+        # Only the new RHS-syntax check must fire, naming the production.
+        self.assertIn("grammar production RHS mismatch for <pair-line>", out)
+
     def test_grammar_lhs_check_does_not_misfire_without_grammar_fences(self):
         # Guard against the new grammar-LHS-set check misfiring on
         # ordinary sections whose fences hold non-grammar example content

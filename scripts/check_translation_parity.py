@@ -67,6 +67,23 @@ Purpose:
          grammar sections (currently just § 4) and never on sections
          whose fences hold ordinary example documents that happen to
          contain a stray '<' or '::='-free BNF-looking comment.
+      6c. Grammar production RHS-syntax parity (same gate as 6b): item 6b
+         alone only compares nonterminal NAMES, so a translation that
+         swaps or corrupts a terminal INSIDE an existing production (e.g.
+         the pair separator ":" replaced by ";" in <pair-line>) previously
+         passed silently as long as every LHS name was still present. For
+         each production whose left-hand side appears in both EN and the
+         translation, the syntactic right-hand side (declaration line plus
+         any immediately-following '|'-prefixed alternative lines, each
+         cut at its first ';' comment lead-in) is compared verbatim.
+         Fragments that mix in natural-language prose instead of strict
+         terminal/nonterminal syntax (this grammar's own preamble calls
+         the notation "semi-formal" -- e.g. <inline-scalar>'s RHS is an
+         English sentence) are excluded from this comparison so a
+         translator's legitimate prose rendering is never flagged; only
+         fragments fully accounted for by recognized BNF tokens are held
+         to exact parity, since this spec's convention never translates
+         actual grammar syntax.
       7. Named-section parity: unnumbered headings of level >= 2 (the h1
          document title and the front-matter region under it are excluded
          from THIS generic count comparison — RU/ZH legitimately carry an
@@ -199,6 +216,23 @@ TABLE_ROW_RE = re.compile(r'^\s*\|')
 # Only whitespace is allowed before the '<' so a mid-sentence "<foo> ::="
 # fragment inside prose is not mistaken for an actual production line.
 GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
+
+# Recognized BNF syntax atoms used by § 4's semi-formal notation: a quoted
+# terminal (with \" / \\ as the only in-terminal escapes, per § 4's own
+# preamble), a <nonterminal>, the "(ws)" whitespace placeholder, the "&eol"
+# / "eol" end-of-line markers, the "::=" production operator, and the
+# single-character operators "|" "*" "+" "?" "(" ")". Order matters: the
+# 2-char/parenthesized alternatives must be tried before the bare
+# single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")".
+GRAMMAR_TOKEN_RE = re.compile(
+    r'"(?:[^"\\]|\\.)*"'
+    r'|<[^<>]+>'
+    r'|\(ws\)'
+    r'|&eol\b'
+    r'|::='
+    r'|\beol\b'
+    r'|[|*+?()]'
+)
 
 # Front-matter recognition: the h1 title line (single '#', not '##' or
 # deeper), blockquote lines (the legitimate per-language disclaimer),
@@ -436,6 +470,83 @@ def extract_grammar_lhs(lines, start, end, excluded):
         if m:
             names.add(m.group(1))
     return names
+
+
+def _rhs_fragment(text):
+    """Cut a raw RHS fragment at its first ';' (this grammar's own comment
+    lead-in convention, e.g. "; object open") and collapse whitespace runs
+    to single spaces so line-wrapping differences don't cause a false
+    mismatch. Comment TEXT itself is never compared -- only what precedes
+    the ';' is a syntax claim."""
+    idx = text.find(';')
+    if idx != -1:
+        text = text[:idx]
+    return ' '.join(text.split())
+
+
+def _is_pure_bnf(fragment):
+    """True if `fragment` is fully accounted for by GRAMMAR_TOKEN_RE, with
+    no leftover natural-language words. Several productions in this
+    grammar (its own preamble calls the notation "semi-formal") describe
+    their RHS in English prose instead of strict terminal/nonterminal
+    syntax (e.g. "sequence of bytes terminated by an unescaped ..." for
+    <inline-scalar>) -- those are meant to be translated like any other
+    prose and must NOT be held to exact-byte parity. A fragment is only
+    treated as normative syntax, gated for exact cross-language parity,
+    when consuming every recognized token leaves nothing behind."""
+    return GRAMMAR_TOKEN_RE.sub('', fragment).strip() == ''
+
+
+def extract_grammar_productions(lines, start, end, excluded):
+    """Return {lhs: [fragment, ...]} for each production whose declaration
+    line matches GRAMMAR_LHS_RE, plus any immediately-following '|'-prefixed
+    continuation lines (this grammar's convention for further alternatives
+    of the same production), restricted to lines inside a fence
+    (excluded[idx] True). Continuation collection stops at the first line
+    that is blank, outside the fence, or does not start with '|' after
+    stripping -- which is exactly how this spec's grammar block already
+    distinguishes a real alternative line from a wrapped prose explanation
+    attached to the same production (see <header-line>'s multi-paragraph
+    "Context-dependence" note, which is exactly this shape and must NOT be
+    swept into the production's RHS).
+
+    Each fragment is filtered through _is_pure_bnf: only fragments that are
+    unambiguously syntax (no leftover prose words) are kept, so a
+    translator's legitimate natural-language rendering of a semi-formal
+    RHS (e.g. <inline-scalar>, <scalar-body>) is never held to a
+    byte-for-byte match. Grammar syntax itself is never translated by this
+    spec's own convention (confirmed by every existing translated
+    section), so any two conformant copies of a genuinely syntactic
+    fragment MUST already be byte-identical -- this only ever fires on a
+    real divergence, mutation, or corruption."""
+    productions = {}
+    idx = start
+    while idx < end:
+        if not excluded[idx]:
+            idx += 1
+            continue
+        m = GRAMMAR_LHS_RE.match(lines[idx])
+        if not m:
+            idx += 1
+            continue
+        lhs = m.group(1)
+        fragments = []
+        frag = _rhs_fragment(lines[idx][m.end():])
+        if frag and _is_pure_bnf(frag):
+            fragments.append(frag)
+        j = idx + 1
+        while j < end and excluded[j]:
+            stripped = lines[j].strip()
+            if not stripped.startswith('|'):
+                break
+            frag = _rhs_fragment(stripped[1:])
+            if frag and _is_pure_bnf(frag):
+                fragments.append('| ' + frag)
+            j += 1
+        if fragments:
+            productions[lhs] = fragments
+        idx = j if j > idx + 1 else idx + 1
+    return productions
 
 
 def count_keywords(lines, start, end, excluded):
@@ -756,6 +867,16 @@ def check_translation(en_lines, en_sections, en_code_counts,
                     "grammar production LHS set mismatch (EN has %d "
                     "nonterminal(s), translation has %d; %s)"
                     % (len(en_lhs), len(t_lhs), "; ".join(detail)))
+            en_prod = extract_grammar_productions(
+                en_lines, en_start, en_end, en_excluded)
+            t_prod = extract_grammar_productions(
+                t_lines, t_start, t_end, t_excluded)
+            for lhs in sorted(en_prod):
+                if en_prod[lhs] != t_prod.get(lhs):
+                    problems.append(
+                        "grammar production RHS mismatch for %s "
+                        "(EN=%r, translation=%r)"
+                        % (lhs, en_prod[lhs], t_prod.get(lhs)))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
