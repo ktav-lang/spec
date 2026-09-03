@@ -44,9 +44,9 @@ This directory is the **per-section source of truth** for
   `appendix-d`.
 - **`frontmatter/`** is the special unit holding everything before the first
   section heading: the h1 title line, the `**Languages:**` / `**Version:**` /
-  `**Date:**` field block, and — in `ru.md`/`zh.md` only — the
+  `**Date:**` field block, and — in the `ru`/`zh` body strings only — the
   informative-translation disclaimer blockquote. The h1 title lives **inside**
-  the frontmatter body files, verbatim; `frontmatter` has no heading of its
+  the frontmatter body content, verbatim; `frontmatter` has no heading of its
   own.
 
 ## Unit contents
