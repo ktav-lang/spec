@@ -174,6 +174,10 @@ SEMI_GRAMMAR_LINES_EN = [
     r'<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"',
     r'<non-quote-key-char> ::= <key-char> excluding "\"", "\'", "`"',
     "<key-char>      ::= any UTF-8 code point except",
+    "                    ASCII control bytes < 0x20 other than the whitespace",
+    "                    members (tab 0x09, VT 0x0B, FF 0x0C — LF 0x0A and",
+    "                    CR 0x0D are excluded separately as line terminators),",
+    "                    DEL (0x7F),",
     '                    "[", "]", "{", "}", "(", ")", ":", ",",',
     r'                    "\\" (backslash), "." (the path separator; use "\." for',
     '                    a literal dot), "#" is allowed; "##" only starts a comment',
@@ -1020,6 +1024,61 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
 
+    def test_semi_formal_dq_char_hex_0x20_mutated_to_0x21_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                    < 0x20",
+            "                    < 0x21 other than tab/VT/FF, DEL (0x7F), "
+            "LF, CR,")
+        self.run_semi_mutation(mutated, "<dq-char>")
+
+    def test_semi_formal_dq_char_del_0x7f_clause_removed_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                    < 0x20",
+            "                    < 0x20 other than tab/VT/FF, LF, CR,")
+        self.run_semi_mutation(mutated, "<dq-char>")
+
+    def test_semi_formal_key_char_vt_ff_dropped_fails(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                    members (tab 0x09,",
+            "                    members (tab 0x09 — LF 0x0A and")
+        self.run_semi_mutation(mutated, "<key-char>")
+
+    def test_semi_formal_key_char_cr_letter_dropped_fails(self):
+        # A multiset-changing LF/CR mutation: bare "CR" removed while the
+        # byte literal 0x0D stays. (A pure ORDER swap of "LF, CR" is NOT a
+        # multiset change and is deliberately still a PASS -- see the
+        # order-insensitivity test below.)
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN,
+            "                    CR 0x0D are excluded separately",
+            "                    0x0D are excluded separately as line "
+            "terminators,")
+        self.run_semi_mutation(mutated, "<key-char>")
+
+    def test_semi_formal_dq_char_lf_cr_reorder_still_passes(self):
+        # The significant-token comparison is a MULTISET contract: swapping
+        # the order of "LF, CR" does not change the multiset and must stay a
+        # PASS (mirrors the shipped translations' legitimate phrasing
+        # differences). Documented so a future reviewer does not mistake
+        # the order-insensitivity for a blind spot.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                    < 0x20",
+            "                    < 0x20 other than tab/VT/FF, DEL (0x7F), "
+            "CR, LF,")
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+        self.assertNotIn("embedded grammar terminal mismatch", out)
+
+    def test_semi_formal_key_char_hex_0x0a_dropped_fails(self):
+        # Byte-literal loss inside <key-char>: "LF 0x0A" loses its hex form.
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "                    members (tab 0x09,",
+            "                    members (tab 0x09, VT 0x0B, FF 0x0C — LF")
+        self.run_semi_mutation(mutated, "<key-char>")
+
     # -- unit tests: extract_embedded_tokens / significant_grammar_tokens --
 
     def test_extract_embedded_tokens_returns_all_matches_in_order(self):
@@ -1042,6 +1101,15 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertNotIn("(", sig)
         self.assertNotIn(")", sig)
         self.assertNotIn('"first name: alice"', sig)
+
+    def test_significant_grammar_tokens_includes_language_independent_atoms(self):
+        text = '< 0x20 other than tab/VT/FF, DEL (0x7F), LF, CR,'
+        sig = ctp.significant_grammar_tokens(text)
+        self.assertEqual(
+            sorted(sig),
+            sorted(["0x20", "VT", "FF", "DEL", "0x7F", "LF", "CR"]))
+        # "tab" is deliberately excluded (legitimately translated prose).
+        self.assertNotIn("tab", sig)
 
     # -- protective real-spec test for the embedded-terminal check ----------
 

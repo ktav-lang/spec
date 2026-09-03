@@ -281,11 +281,35 @@ SEMI_FORMAL_OPERATOR_TOKENS = frozenset(["(", ")", "|", "*", "+", "?"])
 # characters are dropped by significant_grammar_tokens.
 PUNCTUATION_ONLY_QUOTED_RE = re.compile(r'[!-/:-@\[-`{-~]+')
 
+# Language-independent atoms embedded in the semi-formal productions' prose
+# RHS: hex byte literals (0x20, 0x7F, 0x09, 0x0B, 0x0C, 0x0A, 0x0D) and the
+# Latin control-byte abbreviations LF, CR, VT, FF, DEL. Observed against the
+# shipped files: the RU and ZH renderings of <dq-char> and <key-char> (the
+# only semi-formal productions carrying these constraints) keep every one of
+# these tokens verbatim -- e.g. RU "DEL (0x7F)", "LF, CR", "табуляция 0x09" --
+# so they are normative cross-language contract even though the surrounding
+# prose is legitimately translated. Deliberately NOT included: the English
+# word "tab", which IS translated (RU "табуляции"/"таб", ZH "制表符");
+# requiring it verbatim would false-fail the shipped translations. Scoped to
+# extract_embedded_tokens only (semi-formal RHS extraction); the general-
+# purpose GRAMMAR_TOKEN_RE used for the 28 fully-BNF productions is untouched.
+LANGUAGE_INDEPENDENT_ATOM_RE = re.compile(r'\b0x[0-9A-Fa-f]+\b|\b(?:LF|CR|VT|FF|DEL)\b')
+
 
 def extract_embedded_tokens(rhs_text):
-    """Return the ORDERED list of every GRAMMAR_TOKEN_RE match in a
-    semi-formal production's RHS text (the raw token stream, unfiltered)."""
-    return [m.group(0) for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
+    """Return the ORDERED list of every GRAMMAR_TOKEN_RE match PLUS every
+    LANGUAGE_INDEPENDENT_ATOM_RE match in a semi-formal production's RHS
+    text (the raw token stream, unfiltered). The atom regex captures the
+    hex byte literals and Latin control-byte abbreviations (LF, CR, VT, FF,
+    DEL) that the semi-formal <dq-char>/<key-char> prose states as plain
+    text rather than as quoted terminals -- they are language-independent
+    normative contract (kept verbatim by the shipped RU/ZH translations)
+    and must join the significant-token multiset even though the
+    punctuation-only quoted-terminal filter cannot see them."""
+    tokens = [m.group(0) for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
+    tokens.extend(m.group(0) for m in
+                  LANGUAGE_INDEPENDENT_ATOM_RE.finditer(rhs_text))
+    return tokens
 
 
 def significant_grammar_tokens(rhs_text):
@@ -308,6 +332,16 @@ def significant_grammar_tokens(rhs_text):
          terminals -- '"##"', '"."', '"\\\\"', '"\\."', '"#"', the quote
          exclusions, '","', '"}"', '"]"', '")"', '"))"' -- are
          punctuation-only and survive.
+
+    Language-independent atoms (see LANGUAGE_INDEPENDENT_ATOM_RE) are added
+    to the token stream by extract_embedded_tokens and always survive both
+    filters: they are hex byte literals (0x20, 0x7F, 0x09, 0x0B, 0x0C, 0x0A,
+    0x0D) and the Latin abbreviations LF, CR, VT, FF, DEL stated inside the
+    <dq-char>/<key-char> prose. "tab" is deliberately NOT an atom: unlike
+    the hex/abbreviation tokens it is legitimately translated (RU
+    "табуляции", ZH "制表符"), so holding it to cross-language parity would
+    false-fail the shipped files; VT/FF/0x09 surrounding it carry the same
+    constraint and are held.
 
     The surviving lists are compared as MULTISETS (sorted(a) !=
     sorted(b)), NOT as ordered lists. This deliberately deviates from a
