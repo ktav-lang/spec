@@ -1,6 +1,7 @@
 // test_build_spec.mjs — adversarial node:test suite for scripts/build_spec.mjs
 // Run: node --test scripts/test_build_spec.mjs
-// Builds self-contained fixtures in temp dirs; no real repo content needed.
+// Builds self-contained fixtures in temp dirs; the one real-repo input is
+// versions/0.7/content/README.md, read by the README acceptance test.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -8,7 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { validateContentDir } from './build_spec.mjs';
+import { validateContentDir, hasLoneSurrogate } from './build_spec.mjs';
 
 function write(p, content) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -16,7 +17,7 @@ function write(p, content) {
 }
 
 function metaJs(obj) {
-  return 'export default ' + JSON.stringify(obj) + '\n';
+  return 'export default ' + JSON.stringify(obj, null, 2) + '\n';
 }
 
 function escTemplate(s) {
@@ -72,7 +73,7 @@ function makeContent(dir, unitDefs, manifestNames) {
     }
   }
   write(path.join(dir, 'content', 'manifest.js'),
-    'export default ' + JSON.stringify(manifestNames) + '\n');
+    'export default ' + JSON.stringify(manifestNames, null, 2) + '\n');
 }
 
 const LAST = ['end.\n', 'конец.\n', '结束。\n'];
@@ -512,10 +513,152 @@ test('meta.js without exactly one trailing newline is rejected', async () => {
     validate(baseFixtures(), null, (c) =>
       write(path.join(c, 'named-abstract', 'meta.js'),
         'export default ' + JSON.stringify(unitMeta('named')) + '\n\n')),
-    (e) => /meta\.js must end with exactly one trailing newline/.test(e.message)
+    (e) => /must be byte-identical to the canonical serialization/.test(e.message)
   );
 });
 
+// ---- canonical byte form, strict UTF-8, lone surrogates (round 21) ----
+
+test('README-documented sec-9.9 meta.js example is accepted verbatim (docs and builder agree)', async () => {
+  // Acceptance test for the content README: the example documented there is
+  // copied byte-for-byte out of the real file and must pass the real
+  // validator unchanged.
+  const readme = fs.readFileSync(
+    new URL('../versions/0.7/content/README.md', import.meta.url), 'utf8');
+  const m = readme.match(/`sec-9\.9\/meta\.js`:\s*\n+```js\n([\s\S]*?)```/);
+  assert.ok(m, 'sec-9.9/meta.js example not found in README.md');
+  const documented = m[1];
+  assert.ok(documented.startsWith('export default {\n'));
+  assert.ok(documented.endsWith('}\n'), 'example must end with a single newline and no semicolon');
+  assert.ok(!documented.includes(';'), 'meta.js example must not contain a semicolon');
+  const fx = [
+    { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['fm.\n\n', 'фм.\n\n', '前言。\n\n']] },
+    { name: 'sec-9.9', meta: unitMeta('numbered', { __num: '9.9' }), bodies: [LAST] },
+  ];
+  const { units } = await validate(fx, ['frontmatter', 'sec-9.9'], (c) =>
+    write(path.join(c, 'sec-9.9', 'meta.js'), documented));
+  const meta = units.get('sec-9.9').meta;
+  assert.equal(meta.number, '9.9');
+  assert.equal(meta.title.en, 'Widget Frobnication');
+});
+
+test('meta.js with a duplicate top-level key is rejected by the canonical byte check', async () => {
+  const dupMeta =
+    'export default {\n' +
+    '  "kind": "named",\n' +
+    '  "number": null,\n' +
+    '  "level": 2,\n' +
+    '  "title": { "en": "A", "ru": "Б", "zh": "甲" },\n' +
+    '  "title": { "en": "B", "ru": "В", "zh": "乙" },\n' +
+    '  "bodyParts": 1\n' +
+    '}\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), dupMeta)),
+    (e) => /must be byte-identical to the canonical serialization/.test(e.message) &&
+      /first difference at byte offset \d+/.test(e.message) &&
+      !/title keys must be exactly/.test(e.message)
+  );
+});
+
+test('meta.js with a duplicate key nested inside title is rejected by the canonical byte check', async () => {
+  const dupTitle =
+    'export default {\n' +
+    '  "kind": "named",\n' +
+    '  "number": null,\n' +
+    '  "level": 2,\n' +
+    '  "title": {\n' +
+    '    "en": "stale English title",\n' +
+    '    "en": "effective English title",\n' +
+    '    "ru": "Аннотация",\n' +
+    '    "zh": "摘要"\n' +
+    '  },\n' +
+    '  "bodyParts": 1\n' +
+    '}\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), dupTitle)),
+    (e) => /must be byte-identical to the canonical serialization/.test(e.message) &&
+      !/title keys must be exactly|missing key/.test(e.message)
+  );
+});
+
+test('meta.js with CRLF line endings is rejected (also closes round-21 finding 4)', async () => {
+  const crlf = metaJs(unitMeta('named')).replace(/\n/g, '\r\n');
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), crlf)),
+    (e) => /must be byte-identical to the canonical serialization/.test(e.message)
+  );
+});
+
+test('meta.js with a trailing tab or space before the final newline is rejected (finding 4)', async () => {
+  const base = metaJs(unitMeta('named'));
+  for (const [label, broken] of [
+    ['tab', base.replace(/\}\n$/, '}\t\n')],
+    ['space', base.replace(/\}\n$/, '} \n')],
+  ]) {
+    await assert.rejects(
+      validate(baseFixtures(), null, (c) =>
+        write(path.join(c, 'named-abstract', 'meta.js'), broken)),
+      (e) => /must be byte-identical to the canonical serialization/.test(e.message),
+      `trailing ${label} before the final newline must be rejected`
+    );
+  }
+});
+
+test('meta.js with invalid UTF-8 bytes is rejected instead of silently decoded', async () => {
+  // A JS string cannot represent invalid UTF-8, so corrupt one continuation
+  // byte of a multi-byte character at the raw Buffer level.
+  const good = Buffer.from(metaJs(unitMeta('named')), 'utf8');
+  const anchor = Buffer.from('Аннотация', 'utf8');
+  const at = good.indexOf(anchor);
+  assert.notEqual(at, -1);
+  const broken = Buffer.from(good);
+  broken[at + 1] = 0xFF; // 0xD0 0x90 ("А") -> 0xD0 0xFF: invalid continuation byte
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), broken)),
+    (e) => /meta\.js is not valid UTF-8/.test(e.message)
+  );
+});
+
+test('body-1.js with invalid UTF-8 bytes is rejected instead of silently decoded', async () => {
+  const good = Buffer.from(bodyJs('x\n', 'ы\n', 'z\n'), 'utf8');
+  const anchor = Buffer.from('ы', 'utf8');
+  const at = good.indexOf(anchor);
+  assert.notEqual(at, -1);
+  const broken = Buffer.from(good);
+  broken[at + 1] = 0x41; // 0xD1 0x8B ("ы") -> 0xD1 0x41: invalid continuation byte
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), broken)),
+    (e) => /unit "sec-1": body-1\.js is not valid UTF-8/.test(e.message)
+  );
+});
+
+test('meta.js title containing an unpaired surrogate escape is rejected as a lone surrogate', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title.ru = 'Аннотация \uD800 конец';
+  // Canonical JSON.stringify escapes the lone surrogate as "\ud800", so the
+  // file passes the canonical byte check and must then be rejected by the
+  // dedicated lone-surrogate check in validateMeta.
+  await assert.rejects(
+    validate(fx),
+    (e) => /title\.ru contains an unpaired UTF-16 surrogate/.test(e.message)
+  );
+});
+
+test('hasLoneSurrogate flags unpaired surrogates and accepts valid surrogate pairs', () => {
+  assert.equal(hasLoneSurrogate('plain text'), false);
+  assert.equal(hasLoneSurrogate('汉字 и буквы'), false);
+  assert.equal(hasLoneSurrogate('a\uD800b'), true);
+  assert.equal(hasLoneSurrogate('\uDC00'), true);
+  assert.equal(hasLoneSurrogate('before\uDEAD'), true);
+  assert.equal(hasLoneSurrogate('pair \uD83D\uDE00 done'), false);
+  assert.equal(hasLoneSurrogate('汉字😀'), false);
+});
 
 // ---- escape grammar: "$" without "{" is not a valid escape (round 20, finding 3) ----
 

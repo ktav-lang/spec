@@ -4,7 +4,9 @@
 // come from body-1.js..body-N.js parts (N = meta.bodyParts), each holding
 // { en, ru, zh } strings. No content file is ever executed: body-*.js is
 // decoded by a raw-source scanner without running its code, and manifest.js /
-// meta.js are read as text and parsed as JSON.
+// meta.js are decoded as strict UTF-8 and parsed as JSON, and must be
+// byte-identical to the canonical serialization (`export default ` +
+// JSON.stringify(value, null, 2) + one newline).
 // Node ESM, built-ins only. Usage:
 //   node scripts/build_spec.mjs            write the three spec files
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
@@ -13,7 +15,7 @@
 // Importable API (no build on import):
 //   validateContentDir(contentDir)  -> async closed-world validation; throws Error
 //   buildBuffers(contentDir)        -> async { bufs, totalLen, manifest }
-//   validateMeta(unit, meta), LANGS, OUT_FILES
+//   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -22,12 +24,38 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const LANGS = ['en', 'ru', 'zh'];
 export const OUT_FILES = { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' };
 
+const utf8Strict = new TextDecoder('utf-8', { fatal: true });
+
 function fail(msg) {
   throw new Error(msg);
 }
 
 function failUnit(unit, problem) {
   fail(`unit "${unit}": ${problem}`);
+}
+
+// Strict UTF-8: reject malformed byte sequences instead of silently
+// substituting U+FFFD replacement characters (lenient decoding would let a
+// corrupted multi-byte sequence pass as different, valid-looking text).
+function decodeUtf8Strict(buf, label) {
+  try {
+    return utf8Strict.decode(buf);
+  } catch (e) {
+    fail(`${label} is not valid UTF-8: ${e.message}`);
+  }
+}
+
+// True if `str` contains an unpaired UTF-16 surrogate. Such a string cannot
+// be encoded as UTF-8, so writing it into the generated spec files would
+// silently substitute U+FFFD. Iterating the string resolves valid surrogate
+// pairs into single code points; a lone surrogate shows up as its own
+// one-code-unit "character" in the 0xD800..0xDFFF range.
+export function hasLoneSurrogate(str) {
+  for (const ch of str) {
+    const cp = ch.codePointAt(0);
+    if (cp >= 0xD800 && cp <= 0xDFFF) return true;
+  }
+  return false;
 }
 
 export function validateMeta(unit, meta) {
@@ -97,6 +125,9 @@ export function validateMeta(unit, meta) {
     if (t[lang].includes('\n') || t[lang].includes('\r')) {
       failUnit(unit, `title.${lang} must be single-line (CR/LF not allowed)`);
     }
+    if (hasLoneSurrogate(t[lang])) {
+      failUnit(unit, `title.${lang} contains an unpaired UTF-16 surrogate, which cannot be represented in UTF-8 output`);
+    }
   }
 }
 
@@ -116,6 +147,9 @@ function validateBodyPart(unit, k, d) {
   }
   for (const l of LANGS) {
     if (typeof d[l] !== 'string') failUnit(unit, `body-${k}.js field ${l} is not a string`);
+    if (hasLoneSurrogate(d[l])) {
+      failUnit(unit, `body-${k}.js field ${l} contains an unpaired UTF-16 surrogate, which cannot be represented in UTF-8 output`);
+    }
   }
 }
 
@@ -202,34 +236,53 @@ const TOP_LEVEL_ALLOWED_FILES = new Set([
 ]);
 
 function readJsonDefault(filePath) {
-  let raw;
+  let buf;
   try {
-    raw = fs.readFileSync(filePath, 'utf8');
+    buf = fs.readFileSync(filePath);
   } catch (e) {
     fail(`cannot read ${filePath}: ${e.message}`);
   }
+  const raw = decodeUtf8Strict(buf, filePath);
   const PREFIX = 'export default ';
   if (!raw.startsWith(PREFIX)) {
     fail(`${filePath} must start with exactly ${JSON.stringify(PREFIX)} followed by a JSON literal (content files are data, never executable code)`);
   }
-  if (!raw.endsWith('\n') || raw.endsWith('\n\n')) {
-    fail(`${filePath} must end with exactly one trailing newline and nothing else`);
-  }
+  let value;
   try {
-    return JSON.parse(raw.slice(PREFIX.length, -1));
+    value = JSON.parse(raw.slice(PREFIX.length, -1));
   } catch (e) {
     fail(`${filePath} is not "export default " + JSON + "\\n": JSON.parse failed: ${e.message}`);
   }
+  // Canonical byte representation. JSON.parse collapses duplicate keys
+  // (last one wins; the first vanishes without a trace) and accepts many
+  // spellings of the same value: CRLF line endings, trailing whitespace or
+  // semicolons, any indentation. Requiring the file to be byte-identical to
+  // the canonical re-serialization closes all of those at once -- a
+  // duplicate key makes the raw file differ from it, and so does every
+  // non-canonical byte (JSON.stringify always emits LF-only, 2-space
+  // indented, no-trailing-whitespace, no-semicolon output ending in exactly
+  // one newline).
+  const canonical = PREFIX + JSON.stringify(value, null, 2) + '\n';
+  if (raw !== canonical) {
+    const rawBytes = Buffer.from(raw, 'utf8');
+    const canonBytes = Buffer.from(canonical, 'utf8');
+    const min = Math.min(rawBytes.length, canonBytes.length);
+    let off = 0;
+    while (off < min && rawBytes[off] === canonBytes[off]) off++;
+    fail(`${filePath} must be byte-identical to the canonical serialization "export default " + JSON.stringify(value, null, 2) + "\\n" (rejects duplicate JSON keys, CRLF line endings, trailing whitespace, trailing semicolons, and any other formatting drift); first difference at byte offset ${off}`);
+  }
+  return value;
 }
 
 // Closed-world validation of a content dir. Throws Error on first violation.
 // Returns { manifest, units } where units is a Map unit -> { meta, parts }.
 // Content sources are data, never code. manifest.js and meta.js are written
-// in exactly one shape: `export default ` immediately followed by a JSON
-// literal, then exactly one trailing newline and nothing else (no trailing
-// semicolon). They are read as UTF-8 text and parsed with JSON.parse, which
-// cannot execute code -- nothing under content/ is ever dynamic-import()ed
-// or otherwise evaluated.
+// in exactly one shape: byte-identical to `export default ` +
+// JSON.stringify(value, null, 2) + '\n' (strict JSON: no duplicate keys, no
+// comments, no trailing commas or semicolons; LF-only, 2-space indent,
+// exactly one trailing newline). They are decoded as strict UTF-8 and
+// parsed with JSON.parse, which cannot execute code -- nothing under
+// content/ is ever dynamic-import()ed or otherwise evaluated.
 export async function validateContentDir(contentDir) {
   const manifestPath = path.join(contentDir, 'manifest.js');
   if (!fs.existsSync(manifestPath)) fail(`manifest not found: ${manifestPath}`);
@@ -376,12 +429,13 @@ export async function validateContentDir(contentDir) {
       // exactly the documented literal-object shape is rejected here, and
       // its statically decoded text is used as the body content -- no code
       // from it is ever run.
-      let src;
+      let buf;
       try {
-        src = fs.readFileSync(bodyPath, 'utf8');
+        buf = fs.readFileSync(bodyPath);
       } catch (e) {
         failUnit(unit, `cannot read body-${k}.js: ${e.message}`);
       }
+      const src = decodeUtf8Strict(buf, `unit "${unit}": body-${k}.js`);
       const decoded = validateBodySourceShape(unit, k, src);
 
       // The decoded values ARE the body content: no code from the file is
