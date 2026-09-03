@@ -222,9 +222,17 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   ordinary content needing no escape, and content is never trimmed.
   Three new named escapes, `\"` / `\'` / `` \` `` (§ 3.7), let a
   segment's own delimiter appear literally inside it — the escape
-  table grows from eleven entries to fourteen. Purely additive to the
-  grammar (a new alternative `<quoted-segment>` production); the one
-  narrow behavior change — a key or segment already beginning with a
+  table grows from eleven entries to fourteen. These same three
+  escapes are also recognised inside inline scalar **values**, not
+  only keys — `\"` / `\'` / `` \` `` now decode to a literal quote
+  byte there too (previously each was `BadEscapeSequence` in every
+  context, values included); a quote character still has no
+  structural role in a value, so it is never a delimiter and is never
+  stripped, escaped or not. Adds a `<quoted-segment>` production to
+  the grammar and narrows the existing `<bare-segment>` production (a
+  bare segment's first token now excludes an unescaped leading quote
+  character) — not purely additive; the one behavior change this
+  narrowing introduces — a key or segment already beginning with a
   quote character — is a separate Breaking entry above, not covered
   by this bullet. New error category `UnterminatedQuotedKey` (§ 6.16)
   is reported when a quote

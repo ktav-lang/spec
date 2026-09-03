@@ -23,16 +23,21 @@ below.
 to a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3);
 § 4's key-segment trimming widens from ASCII-only to the same fixed
 set, resolving a standing internal contradiction; adds the `\uXXXX`
-escape (§ 3.7.1); the `(…)` multi-line string form now also strips
+escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters `"` / `'` /
+`` ` ``); the `(…)` multi-line string form now also strips
 trailing whitespace from every content line — `(…)` already removed
-each line's shared leading indent (§ 5.6). Two independently-scoped breaking
-changes: value/key-edge trimming now covers the 19 non-ASCII
+each line's shared leading indent (§ 5.6). Three independently-scoped
+breaking changes: value/key-edge trimming now covers the 19 non-ASCII
 code points in the § 3.3 set in addition to space/tab — non-breaking
 in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the `(…)` trailing-edge strip is
 breaking even for the Rust core, which previously preserved
 trailing whitespace (including plain ASCII space/tab) on every line
-of a stripped-form block.
+of a stripped-form block; and a line whose first content begins with
+an unescaped `"`, `'`, or `` ` `` no longer necessarily parses as
+before — the quote character now opens a quoted segment there instead
+of being ordinary content, so e.g. an Object pair `"port": 1` now
+names the key `port`, not `"port"` (§ 5.3.3, § 10.7, Appendix D).
 
 ## 1. Introduction
 
@@ -2751,9 +2756,14 @@ Three delimiters, not the one or two most formats offer, because
 self-escaping (a segment's own delimiter needs `\"` / `\'` / `` \` ``
 to appear literally inside it; the two OTHER quote characters need no
 escape at all, § 3.7) means the choice of delimiter is a convenience
-for the writer, not a representational limit: a key containing `"`
-is simply written with `'` or `` ` `` instead, needing zero escapes
-for it. A design offering only `"` (JSON5's key quoting) would force
+for a human AUTHOR writing input by hand, not a representational
+limit: an author whose key contains `"` may simply write it with `'`
+or `` ` `` instead, needing zero escapes for it. This choice belongs
+to the author, not to the canonical writer: § 5.9.10 (see also below)
+fixes the canonical delimiter at `"` unconditionally, regardless of
+content, so a writer-conforming implementation never has — or
+exercises — this choice. A design offering only `"` (JSON5's key
+quoting) would force
 a choice between escaping the delimiter or accepting the smaller
 "needs no escape" set; three delimiters make "pick one the content
 doesn't contain" available for any content using at most two of the
@@ -2935,13 +2945,24 @@ shorter output (§ 10.4).
   characters are ordinary content needing no escape, and content is
   never trimmed. Three new named escapes, `\"` / `\'` / `` \` ``
   (§ 3.7), let a segment's own delimiter appear literally inside it —
-  the escape table grows from eleven entries to fourteen. A new
+  the escape table grows from eleven entries to fourteen. These same
+  three escapes are also recognised inside inline scalar **values**,
+  not only keys: `\"` / `\'` / `` \` `` now decode to a literal quote
+  byte there too, in every context the ten pre-0.7.0 escapes already
+  applied to (previously each was a `BadEscapeSequence`, § 6.13, in
+  every context, values included). A quote character has no
+  structural role in an inline value — it is never a delimiter and is
+  never stripped, escaped or not — so the escape is valid but
+  redundant there, exactly as `\.` / `\:` already are in values. A new
   `<escapable-byte>` alternative and `<quoted-segment>` production
-  (§ 4) are purely additive to the grammar (a new alternative
-  production, not a change to any existing one); the one narrow
-  behavior change this introduces — a key or segment beginning with a
-  quote character — is captured separately in the Breaking entry
-  below, not claimed here. A related side effect outside key
+  (§ 4) are added to the grammar; `<bare-segment>` is also narrowed,
+  not left untouched — its first token now comes from the new
+  `<bare-first-token>`, which excludes an unescaped leading `"` / `'`
+  / `` ` `` (§ 4), so this IS a change to an existing production, not
+  purely additive. The one behavior change this narrowing introduces —
+  a key or segment beginning with a quote character — is captured
+  separately in the Breaking entry below, not claimed here. A related
+  side effect outside key
   canonicalization: § 5.9.6's Array-root first-item bare-form test
   shares this same quote-aware separator scan, so a first item such as
   `'tis the season: fa` — whose only `:` now scans as inside an
@@ -3132,7 +3153,7 @@ identically under 0.7.0. Only implementations that followed the old
 § 4 text literally (ASCII-only key trimming) rather than matching the
 Rust core's actual behaviour need to change.
 
-One breaking change applies to every implementation, Rust included:
+Two breaking changes apply to every implementation, Rust included:
 
 1. **`(…)` multi-line strings no longer preserve trailing whitespace
    (§ 3.3 — any of the 25 code points, not just space/tab) on each
@@ -3140,6 +3161,25 @@ One breaking change applies to every implementation, Rust included:
    a `(…)` block being preserved verbatim, switch that block to
    `((…))`, which keeps both edges byte-for-byte in both 0.6.x and
    0.7.0.
+2. **A key segment's leading, unescaped `"`, `'`, or `` ` `` now opens
+   a quoted segment (§ 5.3.3, § 10.7) instead of being ordinary key
+   content.** In 0.6.x, an Object pair whose key began with one of
+   these three characters kept that character as literal key text —
+   e.g. `"port": 1` named the key `"port"`, quotes included. In
+   0.7.0, the same line either names the shorter key `port` (if a
+   matching closing quote character is also present before the pair
+   separator) or, if there is no matching closer, either raises
+   `UnterminatedQuotedKey` (§ 6.16, when the root is already known to
+   be an Object) or falls through to a root-level Array String item
+   (§ 5.3.3 gives the exact, context-dependent rule). **To keep a
+   0.6.x document's old meaning**, escape that leading quote
+   character — `\"`, `\'`, `` \` ``, or `\uXXXX` — so it reads as
+   ordinary bare key content rather than a quoted-segment opener. The
+   `::` raw-marker form (§ 5.4 rule 1) remains the explicit way to
+   force a root-level Array item to be read as a literal String when
+   it deliberately starts with a matched pair of quote characters
+   around a colon (e.g. `:: 'tis the season: fa`), unaffected by this
+   quoted-segment scan.
 
 Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
