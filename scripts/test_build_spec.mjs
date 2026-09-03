@@ -515,3 +515,52 @@ test('meta.js without exactly one trailing newline is rejected', async () => {
     (e) => /meta\.js must end with exactly one trailing newline/.test(e.message)
   );
 });
+
+
+// ---- escape grammar: "$" without "{" is not a valid escape (round 20, finding 3) ----
+
+test('body field with bare \\$ escape before "5" is rejected as an unrecognised escape', async () => {
+  const evilBody =
+    'export default {\n' +
+    '  en: `price is \\$5 here\n`,\n' +
+    '  ru: `b\n`,\n' +
+    '  zh: `c\n`,\n' +
+    '};\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
+    (e) =>
+      /unit "sec-1": body-1\.js: unrecognised escape "\\\$" in en/.test(e.message) &&
+      /only \\\\, \\`, and \\\$\{ are valid\)/.test(e.message)
+  );
+});
+
+test('body field with bare \\$ escape before "x" is rejected as an unrecognised escape', async () => {
+  const evilBody =
+    'export default {\n' +
+    '  en: `a\n`,\n' +
+    '  ru: `name \\$x here\n`,\n' +
+    '  zh: `c\n`,\n' +
+    '};\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
+    (e) =>
+      /unit "sec-1": body-1\.js: unrecognised escape "\\\$" in ru/.test(e.message)
+  );
+});
+
+test('body field with correctly escaped \\${ is accepted and decodes to the two literal characters "${"', async () => {
+  const bodyText =
+    'export default {\n' +
+    '  en: `cost \\${x\n`,\n' +
+    '  ru: `цена \\${y\n`,\n' +
+    '  zh: `价格 \\${z\n`,\n' +
+    '};\n';
+  const { units } = await validate(baseFixtures(), null, (c) =>
+    write(path.join(c, 'sec-1', 'body-1.js'), bodyText));
+  const part = units.get('sec-1').parts[0];
+  assert.equal(part.en, 'cost ${x\n');
+  assert.equal(part.ru, 'цена ${y\n');
+  assert.equal(part.zh, '价格 ${z\n');
+});

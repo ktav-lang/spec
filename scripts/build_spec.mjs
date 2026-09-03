@@ -136,25 +136,25 @@ function validateBodySourceShape(unit, k, src) {
 
   // Scans forward from `i` (just after an opening backtick) for the next
   // UNESCAPED backtick, decoding escapes as it goes and rejecting any
-  // unescaped "${" (real template interpolation) along the way. A single
-  // backslash ALWAYS escapes exactly the next character in this grammar
-  // (the writer only ever emits \\, \`, or \${) -- so a simple greedy
-  // "see backslash, consume it plus the next char as one decoded unit"
-  // scan is correct and unambiguous; no backslash-run parity counting is
-  // needed because the writer fully resolves \\ first, then \`, then \${,
-  // in that fixed order, so escape units never overlap ambiguously.
+  // unescaped "${" (real template interpolation) along the way. The
+  // documented write-side grammar (content/README.md) has exactly three
+  // escape forms: \\ and \` are two-character units decoding to one
+  // character each; \${ is a three-character unit decoding to the two
+  // literal characters "${". Any other backslash sequence -- including a
+  // bare "\$" not followed by "{" -- is rejected as an unrecognised escape.
   function scanTemplateBody(fieldName) {
     let decoded = '';
     while (i < src.length) {
       const c = src[i];
       if (c === '\\') {
         const next = src[i + 1];
-        if (next === '\\') decoded += '\\';
-        else if (next === '`') decoded += '`';
-        else if (next === '$') decoded += '$'; // the following "{" is ordinary, appended next iteration
-        else failUnit(unit, `body-${k}.js: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\$ are valid)`);
-        i += 2;
-        continue;
+        if (next === '\\') { decoded += '\\'; i += 2; continue; }
+        if (next === '`') { decoded += '`'; i += 2; continue; }
+        // "\${" is one three-character escape unit decoding to the two
+        // literal characters "${"; a bare "\$" whose next character is not
+        // "{" is NOT part of the documented grammar and is rejected below.
+        if (next === '$' && src[i + 2] === '{') { decoded += '${'; i += 3; continue; }
+        failUnit(unit, `body-${k}.js: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\\${ are valid)`);
       }
       if (c === '`') {
         return { end: i, decoded };
@@ -201,14 +201,6 @@ const TOP_LEVEL_ALLOWED_FILES = new Set([
   'README.md', 'README.ru.md', 'README.zh.md', 'manifest.js', 'package.json',
 ]);
 
-// Closed-world validation of a content dir. Throws Error on first violation.
-// Returns { manifest, units } where units is a Map unit -> { meta, parts }.
-// Content sources are data, never code. manifest.js and meta.js are written
-// in exactly one shape: `export default ` immediately followed by a JSON
-// literal, then exactly one trailing newline and nothing else (no trailing
-// semicolon). They are read as UTF-8 text and parsed with JSON.parse, which
-// cannot execute code -- nothing under content/ is ever dynamic-import()ed
-// or otherwise evaluated.
 function readJsonDefault(filePath) {
   let raw;
   try {
@@ -230,6 +222,14 @@ function readJsonDefault(filePath) {
   }
 }
 
+// Closed-world validation of a content dir. Throws Error on first violation.
+// Returns { manifest, units } where units is a Map unit -> { meta, parts }.
+// Content sources are data, never code. manifest.js and meta.js are written
+// in exactly one shape: `export default ` immediately followed by a JSON
+// literal, then exactly one trailing newline and nothing else (no trailing
+// semicolon). They are read as UTF-8 text and parsed with JSON.parse, which
+// cannot execute code -- nothing under content/ is ever dynamic-import()ed
+// or otherwise evaluated.
 export async function validateContentDir(contentDir) {
   const manifestPath = path.join(contentDir, 'manifest.js');
   if (!fs.existsSync(manifestPath)) fail(`manifest not found: ${manifestPath}`);
