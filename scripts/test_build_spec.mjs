@@ -16,7 +16,7 @@ function write(p, content) {
 }
 
 function metaJs(obj) {
-  return 'export default ' + JSON.stringify(obj) + ';\n';
+  return 'export default ' + JSON.stringify(obj) + '\n';
 }
 
 function escTemplate(s) {
@@ -72,7 +72,7 @@ function makeContent(dir, unitDefs, manifestNames) {
     }
   }
   write(path.join(dir, 'content', 'manifest.js'),
-    'export default ' + JSON.stringify(manifestNames) + ';\n');
+    'export default ' + JSON.stringify(manifestNames) + '\n');
 }
 
 const LAST = ['end.\n', 'конец.\n', '结束。\n'];
@@ -435,5 +435,83 @@ test('meta.js title with an embedded newline is rejected', async () => {
   await assert.rejects(
     validate(fx),
     (e) => /unit "named-abstract": title\.ru must be single-line \(CR\/LF not allowed\)/.test(e.message)
+  );
+});
+
+// ---- manifest.js / meta.js are JSON data, never executed (round 20, finding 1) ----
+
+test('manifest.js with an import prefix is rejected before any code executes', async () => {
+  // The import target deliberately does not exist: if the builder ever
+  // executed this file, the failure would be a module-not-found error, not
+  // the shape error -- proving the shape check fires BEFORE any import.
+  const evilManifest =
+    "import fs from './module-that-does-not-exist.js';\n" +
+    'export default ' + JSON.stringify(['frontmatter', 'named-abstract', 'sec-1']) + ';\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'manifest.js'), evilManifest)),
+    (e) =>
+      /manifest\.js must start with exactly "export default "/.test(e.message) &&
+      !/Cannot find module|module-that-does-not-exist|ERR_MODULE_NOT_FOUND/.test(e.message)
+  );
+});
+
+test('manifest.js that is a symlink is rejected as not a regular file before any read', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  // The target's content would fail every content check; getting the
+  // file-type error instead proves the target was never opened.
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      const outside = path.join(c, '..', 'outside-manifest.js');
+      fs.writeFileSync(outside, 'totally not JavaScript\n');
+      fs.rmSync(path.join(c, 'manifest.js'));
+      fs.symlinkSync(outside, path.join(c, 'manifest.js'), 'file');
+    }),
+    (e) =>
+      /manifest\.js is not a regular file/.test(e.message) &&
+      !/must start with exactly|JSON\.parse failed/.test(e.message)
+  );
+});
+
+test('meta.js with an import prefix is rejected before any code executes', async () => {
+  const evilMeta =
+    "import en from './evil.js';\n" +
+    'export default ' + JSON.stringify(unitMeta('named')) + ';\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), evilMeta)),
+    (e) =>
+      /meta\.js must start with exactly "export default "/.test(e.message) &&
+      !/Cannot find module|evil\.js|ERR_MODULE_NOT_FOUND/.test(e.message)
+  );
+});
+
+test('meta.js with a computed title value is rejected at JSON parse, not at a later runtime-shape check', async () => {
+  const evilMeta =
+    'export default {\n' +
+    '  "kind": "named",\n' +
+    '  "number": null,\n' +
+    '  "level": 2,\n' +
+    '  "title": { "en": "Ab" + "stract", "ru": "Аннотация", "zh": "摘要" },\n' +
+    '  "bodyParts": 1\n' +
+    '}\n';
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'), evilMeta)),
+    (e) =>
+      /meta\.js is not "export default " \+ JSON \+ "\\n": JSON\.parse failed/.test(e.message) &&
+      !/title keys must be exactly|title\.en/.test(e.message)
+  );
+});
+
+test('meta.js without exactly one trailing newline is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'named-abstract', 'meta.js'),
+        'export default ' + JSON.stringify(unitMeta('named')) + '\n\n')),
+    (e) => /meta\.js must end with exactly one trailing newline/.test(e.message)
   );
 });

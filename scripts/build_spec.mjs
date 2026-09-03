@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // build_spec.mjs — assembles versions/0.7/spec{,.ru,.zh}.md from per-section
 // content units in versions/0.7/content/ (manifest.js + unit dirs). Unit bodies
-// come from body-1.js..body-N.js parts (N = meta.bodyParts), each exporting
-// { en, ru, zh } strings. Each body-*.js is shape-checked on its raw source
-// text before dynamic import: only the exact documented literal-object shape
-// is ever executed.
+// come from body-1.js..body-N.js parts (N = meta.bodyParts), each holding
+// { en, ru, zh } strings. No content file is ever executed: body-*.js is
+// decoded by a raw-source scanner without running its code, and manifest.js /
+// meta.js are read as text and parsed as JSON.
 // Node ESM, built-ins only. Usage:
 //   node scripts/build_spec.mjs            write the three spec files
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
@@ -100,8 +100,7 @@ export function validateMeta(unit, meta) {
   }
 }
 
-function validateBodyPart(unit, k, mod) {
-  const d = mod.default;
+function validateBodyPart(unit, k, d) {
   if (typeof d !== 'object' || d === null || Array.isArray(d)) {
     failUnit(unit, `body-${k}.js default export is not an object`);
   }
@@ -121,13 +120,13 @@ function validateBodyPart(unit, k, mod) {
 }
 
 // Proves `src` (the raw UTF-8 text of a body-N.js file, read via
-// fs.readFileSync BEFORE any dynamic import) is EXACTLY:
+// fs.readFileSync) is EXACTLY:
 //   export default {\n  en: `...`,\n  ru: `...`,\n  zh: `...`,\n};\n
 // with each `...` a template-literal body where every backslash, backtick,
 // and "${" has been escaped per content/README.md's rule (\\, \`, \${, in
 // that priority order at write time). Returns the DECODED { en, ru, zh }
-// strings for defense-in-depth comparison against the dynamic import's
-// actual runtime value -- this function never executes the file's code.
+// strings; they are used directly as the body part's content. This function
+// never executes the file's code.
 function validateBodySourceShape(unit, k, src) {
   const HEADER = 'export default {\n  en: `';
   if (!src.startsWith(HEADER)) {
@@ -202,24 +201,57 @@ const TOP_LEVEL_ALLOWED_FILES = new Set([
   'README.md', 'README.ru.md', 'README.zh.md', 'manifest.js', 'package.json',
 ]);
 
-async function importDefault(p) {
-  return (await import(pathToFileURL(p))).default;
-}
-
 // Closed-world validation of a content dir. Throws Error on first violation.
 // Returns { manifest, units } where units is a Map unit -> { meta, parts }.
+// Content sources are data, never code. manifest.js and meta.js are written
+// in exactly one shape: `export default ` immediately followed by a JSON
+// literal, then exactly one trailing newline and nothing else (no trailing
+// semicolon). They are read as UTF-8 text and parsed with JSON.parse, which
+// cannot execute code -- nothing under content/ is ever dynamic-import()ed
+// or otherwise evaluated.
+function readJsonDefault(filePath) {
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (e) {
+    fail(`cannot read ${filePath}: ${e.message}`);
+  }
+  const PREFIX = 'export default ';
+  if (!raw.startsWith(PREFIX)) {
+    fail(`${filePath} must start with exactly ${JSON.stringify(PREFIX)} followed by a JSON literal (content files are data, never executable code)`);
+  }
+  if (!raw.endsWith('\n') || raw.endsWith('\n\n')) {
+    fail(`${filePath} must end with exactly one trailing newline and nothing else`);
+  }
+  try {
+    return JSON.parse(raw.slice(PREFIX.length, -1));
+  } catch (e) {
+    fail(`${filePath} is not "export default " + JSON + "\\n": JSON.parse failed: ${e.message}`);
+  }
+}
+
 export async function validateContentDir(contentDir) {
   const manifestPath = path.join(contentDir, 'manifest.js');
   if (!fs.existsSync(manifestPath)) fail(`manifest not found: ${manifestPath}`);
 
-  const manifest = await importDefault(manifestPath);
+  // Enumerate the top level and prove manifest.js is a REGULAR file BEFORE
+  // any attempt to read its contents: a symlink (or any other special
+  // entry) named manifest.js must never have its target opened, let alone
+  // parsed.
+  const entries = fs.readdirSync(contentDir, { withFileTypes: true });
+  const manifestEnt = entries.find((ent) => ent.name === 'manifest.js');
+  if (!manifestEnt) fail('manifest.js is missing under content/');
+  if (!manifestEnt.isFile()) {
+    fail('manifest.js is not a regular file (symlinks, directories and other special entries are not allowed under content/)');
+  }
+
+  const manifest = readJsonDefault(manifestPath);
   if (!Array.isArray(manifest) || manifest.length === 0 ||
       !manifest.every((n) => typeof n === 'string' && n.length > 0) ||
       new Set(manifest).size !== manifest.length) {
     fail('manifest.js must export a non-empty array of unique non-empty strings');
   }
 
-  const entries = fs.readdirSync(contentDir, { withFileTypes: true });
   const manifestSet = new Set(manifest);
 
   // 1. Top-level allowlist + 2. exact directory-set match.
@@ -268,10 +300,10 @@ export async function validateContentDir(contentDir) {
     const unitDir = path.join(contentDir, unit);
     const isLast = idx === manifest.length - 1;
 
-    // 4. Exact per-unit file set (before dynamic import so our message wins).
-    // Every entry must be a REGULAR file: a symlink named meta.js/body-N.js
-    // would otherwise pass the name allowlist and its target would be loaded
-    // by dynamic import(), possibly outside the unit or outside content/.
+    // 4. Exact per-unit file set. Every entry must be a REGULAR file: a
+    // symlink named meta.js/body-N.js would otherwise pass the name
+    // allowlist and its target would later be read (and, for meta.js,
+    // JSON-parsed), possibly outside the unit or outside content/.
     const unitEntries = fs.readdirSync(unitDir, { withFileTypes: true });
     for (const ent of unitEntries) {
       if (ent.isDirectory()) {
@@ -297,7 +329,7 @@ export async function validateContentDir(contentDir) {
       failUnit(unit, `unexpected file ${name} in unit directory`);
     }
 
-    const meta = await importDefault(path.join(unitDir, 'meta.js'));
+    const meta = readJsonDefault(path.join(unitDir, 'meta.js'));
     validateMeta(unit, meta);
 
     if (meta.kind === 'frontmatter') {
@@ -340,9 +372,10 @@ export async function validateContentDir(contentDir) {
     for (let k = 1; k <= meta.bodyParts; k++) {
       const bodyPath = path.join(unitDir, `body-${k}.js`);
 
-      // Read and shape-validate the raw source BEFORE any dynamic import:
-      // a body file that is not exactly the documented literal-object shape
-      // is rejected here, so its code is never executed, not even transiently.
+      // Read and shape-validate the raw source: a body file that is not
+      // exactly the documented literal-object shape is rejected here, and
+      // its statically decoded text is used as the body content -- no code
+      // from it is ever run.
       let src;
       try {
         src = fs.readFileSync(bodyPath, 'utf8');
@@ -351,22 +384,10 @@ export async function validateContentDir(contentDir) {
       }
       const decoded = validateBodySourceShape(unit, k, src);
 
-      let mod;
-      try {
-        mod = await import(pathToFileURL(bodyPath));
-      } catch (e) {
-        failUnit(unit, `cannot load body-${k}.js: ${e.message}`);
-      }
-      validateBodyPart(unit, k, mod);
-
-      // Defense-in-depth: the statically decoded text must equal the
-      // runtime-evaluated text, character for character.
-      for (const lang of LANGS) {
-        if (mod.default[lang] !== decoded[lang]) {
-          failUnit(unit, `body-${k}.js: statically decoded ${lang} text does not match the runtime-evaluated text (source-shape scanner vs dynamic import mismatch)`);
-        }
-      }
-      parts.push(mod.default);
+      // The decoded values ARE the body content: no code from the file is
+      // ever executed anywhere.
+      validateBodyPart(unit, k, decoded);
+      parts.push(decoded);
     }
 
     // 6. Terminal-newline invariant (per language).
