@@ -78,9 +78,10 @@ Compared with 0.5.0, version 0.7.0:
 ## 2. Conventions
 
 The key words **MUST**, **MUST NOT**, **SHOULD**, **SHOULD NOT**, and
-**MAY** in this document are to be interpreted as described in RFC 2119
-when they appear in all capitals. A lowercase use of these words is
-ordinary English.
+**MAY** in this document are to be interpreted as described in RFC 2119,
+as clarified by RFC 8174, when, and only when, they appear in all
+capitals. Lowercase uses of these words are ordinary English and do not
+carry requirement-level meaning.
 
 ## 3. Lexical Structure
 
@@ -788,9 +789,10 @@ handled per § 5.3 / § 5.4 / § 5.8 as raw Strings. Rules 1–4 (the
 multi-line Object/Array/string openers) never apply to an inline
 scalar body either: § 5.8.5 already dispatches an inline value's
 leading `{`/`[` to nested-compound parsing before § 5.2 is ever
-reached, and a lone `(`/`((` in inline position is an ordinary
-one-byte String, not a multi-line opener, since an inline compound
-cannot continue onto a later line.
+reached, and a lone inline `(` token or `((` token is an ordinary
+String containing one ASCII byte (`"("`) or two ASCII bytes
+(`"(("`), respectively, not a multi-line opener, since an inline
+compound cannot continue onto a later line.
 
 1. If the body is exactly `{` → open a new Object scope (multi-line).
 2. If the body is exactly `[` → open a new Array scope (multi-line).
@@ -1440,17 +1442,16 @@ overly-deep input.
   the same line; a `{` / `[` not followed by a matching closer is a
   `UnterminatedInlineCompound` error.
 
-If a `(` or `((` byte appears as the first non-whitespace code point of an
-inline scalar value, it is treated as the start of an inline scalar
-(per § 5.8.1). Because no inline terminator (`,`, `}`, `]`) follows
-on the same line, this raises `UnterminatedInlineCompound` (§ 6.11).
-When an inline terminator instead follows immediately on the same
-line (e.g. `{a: (, b: 1}`), the value is complete before end-of-line
-and is read as the ordinary one-byte String `"("` — not an error;
-the `UnterminatedInlineCompound` case above is specifically the
-common situation where nothing else appears on the line after the
-`(`/`((`. Multi-line string openers are not permitted inside inline
-compounds.
+When an inline scalar begins with `(` or `((`, these leading parentheses
+remain ordinary content inside inline compounds, not multi-line string
+openers. The raw body runs until the first unescaped inline terminator (`,`,
+`}`, or `]`). Surrounding whitespace is then trimmed from the raw bytes,
+and escape processing is performed according to § 5.8.1 and § 3.7. For a lone
+`(` or lone `((` immediately before a terminator (e.g. `{a: (, b: 1}` or
+`{a: ((, b: 1}`), the result is `String("(")` or `String("((")`,
+respectively. If no inline terminator occurs before the end of the line, the
+outer inline compound yields `UnterminatedInlineCompound` (§ 6.11).
+Multi-line string openers are not permitted inside inline compounds.
 
 The following document is therefore an error:
 
@@ -2046,13 +2047,13 @@ A canonical writer never actually reaches this recipe for a
 `##`-prefixed key's first segment: form-selection rule (d) above
 already routes it to quoted form before bare form is even
 considered, because no escape within bullets 1-3 changes the raw
-first two bytes of the emitted line. \u0023#a\:b (escaping
+first two bytes of the emitted line. `\u0023#a\:b` (escaping
 only the leading `#`, per the original bare-form recipe this
 replaces) remains a valid, decodable, non-canonical INPUT spelling
-for the key `##a:b` -- a parser MUST still accept it -- but it is
+for the key `##a:b` — a parser MUST still accept it — but it is
 never the canonical OUTPUT: the canonical form of any key whose
 content begins with `##` is always quoted, `"##a:b"`, per (d), not
-\u0023#a\:b.
+`\u0023#a\:b`.
 
 When quoted form is selected, the writer emits the segment's decoded
 content between two `"` characters, escaping only:
@@ -2776,12 +2777,13 @@ set for inline scalars. 0.6.0 extends it to keys with `\.` and
 byte in inline form (`,`, `}`, `]`, `{`, `[`), the key-structural
 bytes (`.`, `:`), the literal backslash (`\\`), plus two
 convenience escapes (`\n`, `\r`) for embedded newlines. 0.7.0 adds
-an eleventh, `\uXXXX` (§ 3.7.1), for the rare case of needing to
-name an arbitrary code point by number rather than typing it
-directly, and three more — `\"`, `\'`, `` \` `` — for the quote
-characters that quoted keys (§ 5.3.3) use as delimiters, giving
-fourteen named escapes in total — most byte values are still
-written literally, since they need no escape at all.
+a generic Unicode form, `\uXXXX` (§ 3.7.1), for the rare case of
+needing to name an arbitrary code point by number rather than typing it
+directly, and three more named escapes — `\"`, `\'`, `` \` `` —
+for the quote characters that quoted keys (§ 5.3.3) use as delimiters,
+giving thirteen named escape forms plus one generic Unicode form,
+fourteen forms in total — most byte values are still written literally,
+since they need no escape at all.
 
 The bracket pair-set is full and symmetric: `\}` / `\{` and
 `\]` / `\[`. `\{` and `\[` are only ambiguity-relevant as the

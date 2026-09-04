@@ -1,1 +1,4 @@
-\na: v
+\nlf_start: value_lf_start
+lf_end\n: value_lf_end
+\rcr_start: value_cr_start
+cr_end\r: value_cr_end

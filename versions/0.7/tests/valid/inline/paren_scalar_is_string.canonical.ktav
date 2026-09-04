@@ -1,4 +1,7 @@
 cfg: {
     a:: (
-    b: 1
+    b:: ((
+    c: 1
+    d: (tail
+    e: ((double-tail
 }

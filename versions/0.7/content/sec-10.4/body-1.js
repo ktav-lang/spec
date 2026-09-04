@@ -7,12 +7,13 @@ set for inline scalars. 0.6.0 extends it to keys with \`\\.\` and
 byte in inline form (\`,\`, \`}\`, \`]\`, \`{\`, \`[\`), the key-structural
 bytes (\`.\`, \`:\`), the literal backslash (\`\\\\\`), plus two
 convenience escapes (\`\\n\`, \`\\r\`) for embedded newlines. 0.7.0 adds
-an eleventh, \`\\uXXXX\` (§ 3.7.1), for the rare case of needing to
-name an arbitrary code point by number rather than typing it
-directly, and three more — \`\\"\`, \`\\'\`, \`\` \\\` \`\` — for the quote
-characters that quoted keys (§ 5.3.3) use as delimiters, giving
-fourteen named escapes in total — most byte values are still
-written literally, since they need no escape at all.
+a generic Unicode form, \`\\uXXXX\` (§ 3.7.1), for the rare case of
+needing to name an arbitrary code point by number rather than typing it
+directly, and three more named escapes — \`\\"\`, \`\\'\`, \`\` \\\` \`\` —
+for the quote characters that quoted keys (§ 5.3.3) use as delimiters,
+giving thirteen named escape forms plus one generic Unicode form,
+fourteen forms in total — most byte values are still written literally,
+since they need no escape at all.
 
 The bracket pair-set is full and symmetric: \`\\}\` / \`\\{\` and
 \`\\]\` / \`\\[\`. \`\\{\` and \`\\[\` are only ambiguity-relevant as the
@@ -51,12 +52,13 @@ contexts. (Keys gained escape processing in 0.6.0; see § 3.7.)
 каждый структурно значимый байт в inline-форме (\`,\`, \`}\`, \`]\`,
 \`{\`, \`[\`), структурные байты ключа (\`.\`, \`:\`), литеральный обратный
 слэш (\`\\\\\`), плюс два удобных escape (\`\\n\`, \`\\r\`) для встроенных
-переводов строки. 0.7.0 добавляет одиннадцатый, \`\\uXXXX\`
+переводов строки. 0.7.0 добавляет обобщённую Unicode-форму, \`\\uXXXX\`
 (§ 3.7.1), — для редкого случая, когда произвольную кодовую точку
-нужно назвать числом, а не набирать напрямую, — и ещё три —
-\`\\"\`, \`\\'\`, \`\` \\\` \`\` — для символов кавычек, которые квотированные
-ключи (§ 5.3.3) используют как разделители, что даёт четырнадцать
-именованных escape в сумме; большинство значений байтов по-прежнему
+нужно назвать числом, а не набирать напрямую, — и ещё три именованных
+escape — \`\\"\`, \`\\'\`, \`\` \\\` \`\` — для символов кавычек, которые
+квотированные ключи (§ 5.3.3) используют как разделители, что даёт
+тринадцать именованных escape-форм плюс одну обобщённую Unicode-форму,
+всего четырнадцать форм; большинство значений байтов по-прежнему
 пишутся буквально, поскольку им вообще не нужно экранирование.
 
 Скобочный парный набор полон и симметричен: \`\\}\` / \`\\{\` и
@@ -96,9 +98,9 @@ Ktav 的值由人书写。繁重的 escape 规则是正确性上的陷阱。0.5.
 inline 标量的最小闭合集。0.6.0 通过 \`\\.\` 与 \`\\:\` 将其扩展到键,共十个命名
 escape —— inline 形式中每个结构上有意义的字节(\`,\`、\`}\`、\`]\`、\`{\`、\`[\`)、键结构
 字节(\`.\`、\`:\`)、字面反斜杠(\`\\\\\`),外加两个用于嵌入换行的便利 escape(\`\\n\`、
-\`\\r\`)。0.7.0 增加第十一个 \`\\uXXXX\`(§ 3.7.1),用于需要按编号指称任意码点而非直接
-键入的少见情形,以及再增加三个 —— \`\\"\`、\`\\'\`、\`\` \\\` \`\` —— 用于 quoted
-键(§ 5.3.3)用作分隔符的引号字符,总计十四个命名 escape —— 大多数
+\`\\r\`)。0.7.0 增加一种通用 Unicode 形式 \`\\uXXXX\`(§ 3.7.1),用于需要按编号指称任意码点而非直接
+键入的少见情形,以及再增加三个命名 escape —— \`\\"\`、\`\\'\`、\`\` \\\` \`\` —— 用于 quoted
+键(§ 5.3.3)用作分隔符的引号字符,共计十三个命名 escape 形式,加上一种通用 Unicode 形式,总计十四种形式 —— 大多数
 字节值仍按字面书写,因为它们根本无需 escape。
 
 括号 escape 集完整且对称: \`\\}\` / \`\\{\` 与 \`\\]\` / \`\\[\`。\`\\{\` 与 \`\\[\` 只有作为
