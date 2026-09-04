@@ -389,9 +389,9 @@ Runner соответствия MUST обходить каждую фиксту�
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav`: `.ktav` —
   вход; `.json` — ожидаемый разобранный `Value`, отображённый 1:1
   (`Null`→`null`, `Bool`→`bool`, `String`→`string`, `Array`→`array`,
-  `Object`→`object` — числа типизируются по лексической форме,
-  целочисленное тело даёт JSON-целое, десятичное — JSON-float, любой
-  другой скаляр остаётся строкой, `::` форсит литеральную строку);
+  `Object`→`object`). JSON-токен числа без `.`, `e` и `E` обозначает
+  Integer; токен с любым из них обозначает Float, включая `-0.0`.
+  Любой другой скаляр остаётся строкой, а `::` форсит литеральную строку.
   `.canonical.ktav` — ожидаемый байт-точный вывод writer'а для того
   же `Value`. Порядок полей объекта значим.
 - **`invalid/`** — документы, которые conforming-парсер MUST
@@ -404,19 +404,22 @@ Runner соответствия MUST обходить каждую фиксту�
   есть единственный `<name>.json` ровно с полями `value`,
   `unrepresentable_reason` и непустым `note`; отображение Value и
   точная форма sentinel `$float` определены в § 5.9.0. Код причины MUST
+  быть только `ScalarRoot`, `EmptyKeyName` или `NonFiniteFloat`,
   иметь рекурсивное свидетельство и MUST NOT выводиться из имени файла.
 - **`parseable-unrepresentable/`** *(с 0.7)* — порождённые парсером
   Value, которые conforming-writer MUST отвергнуть. Каждый случай —
   пара `<name>.ktav` + `<name>.json`: парсинг MUST дать JSON `value`, а
   запись MUST завершиться отказом с указанным кодом причины. Это пары,
-  а не тройки, без canonical-output; JSON использует ту же точную схему,
-  что и `unrepresentable/`.
+  допускающие только String-причины `CRByte`, `BothFormsRequired`,
+  `TrailingWhitespaceCollision` и `LeadingWhitespaceCollision`, без иных
+  файлов и без canonical-output.
 
-Versioned `scripts/locks/corpus-inventory.0.7.lock.json` независимо
-фиксирует полный inventory для `valid/`, `invalid/`, `unrepresentable/`
-и `parseable-unrepresentable/`; CI передаёт его в
-`validate_corpus.py --corpus-inventory-lock`, поэтому добавление или
-удаление fixture не может пройти незамеченным.
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json` отображает каждый
+относительный путь corpus-файла в `valid/`, `invalid/`, `unrepresentable/`
+и `parseable-unrepresentable/`, а также `boundary-fixtures.json`, в его
+SHA-256. CI передаёт lock в `validate_corpus.py --corpus-inventory-lock`,
+который отвергает добавления, удаления, изменение содержимого и неизвестные
+верхнеуровневые элементы; lock дополняет, а не заменяет semantic/schema checks.
 
 Прохождение каждого теста из каждой категории, присутствующей в
 наборе этой версии, — необходимое условие выпуска (release gate), но

@@ -11,6 +11,7 @@ Run:  python scripts/test_validate_corpus.py
 """
 
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -74,6 +75,27 @@ class CorpusTestCase(unittest.TestCase):
             code = validate_corpus.main([tests_dir] + list(flags))
         return code, out.getvalue()
 
+    def write_corpus_lock(self, tests_dir, relpath="lock/corpus.json"):
+        files = {}
+        for dirname in sorted(validate_corpus.LOCKED_CORPUS_DIRS):
+            directory = os.path.join(tests_dir, dirname)
+            for root, _dirs, names in os.walk(directory):
+                for name in names:
+                    path = os.path.join(root, name)
+                    rpath = os.path.relpath(path, tests_dir).replace(os.sep, "/")
+                    with open(path, "rb") as stream:
+                        files[rpath] = hashlib.sha256(stream.read()).hexdigest()
+        boundary = os.path.join(tests_dir, "boundary-fixtures.json")
+        if os.path.isfile(boundary):
+            with open(boundary, "rb") as stream:
+                files["boundary-fixtures.json"] = hashlib.sha256(
+                    stream.read()
+                ).hexdigest()
+        return self.write(relpath, json.dumps({
+            "version": "0.7.0",
+            "files": dict(sorted(files.items())),
+        }))
+
     # -- mutation 1: NaN/Infinity in a JSON oracle --------------------
 
     def test_mutation_1_nonfinite_json_constant_rejected(self):
@@ -118,16 +140,31 @@ class CorpusTestCase(unittest.TestCase):
             "ScalarRoot": 42,
             "EmptyKeyName": {"nested": [{"": "v"}]},
             "NonFiniteFloat": {"nested": [{"f": {"$float": "NaN"}}]},
-            "CRByte": {"nested": [{"s": "a\rb"}]},
-            "BothFormsRequired": {"nested": [{"s": "))\n)"}]},
-            "TrailingWhitespaceCollision": {"nested": [{"s": "))\nx "}]},
-            "LeadingWhitespaceCollision": {"nested": [{"s": " ))\n x"}]},
         }
         for index, (reason, value) in enumerate(values.items()):
             self.write("tests/unrepresentable/%02d.json" % index,
                        json.dumps({"value": value,
                                    "unrepresentable_reason": reason,
                                    "note": "recursive witness"}))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_parseable_unrepresentable_reason_witnesses_are_recursive(self):
+        tests = self.build_minimal()
+        values = {
+            "CRByte": {"nested": [{"s": "a\rb"}]},
+            "BothFormsRequired": {"nested": [{"s": "))\n)"}]},
+            "TrailingWhitespaceCollision": {"nested": [{"s": "))\nx "}]},
+            "LeadingWhitespaceCollision": {"nested": [{"s": " ))\n x"}]},
+        }
+        for index, (reason, value) in enumerate(values.items()):
+            base = "tests/parseable-unrepresentable/%02d" % index
+            self.write(base + ".ktav", "{s: value}")
+            self.write(base + ".json", json.dumps({
+                "value": value,
+                "unrepresentable_reason": reason,
+                "note": "recursive witness",
+            }))
         code, out = self.run_main(tests)
         self.assertEqual(code, 0, out)
 
@@ -160,7 +197,9 @@ class CorpusTestCase(unittest.TestCase):
 
     def test_multiline_collision_requires_common_prefix_from_position_zero(self):
         tests = self.build_minimal()
-        self.write("tests/unrepresentable/non_common_prefix.json",
+        self.write("tests/parseable-unrepresentable/non_common_prefix.ktav",
+                   "{s: value}")
+        self.write("tests/parseable-unrepresentable/non_common_prefix.json",
                    json.dumps({
                        "value": {"s": " \t))\n\t\tx"},
                        "unrepresentable_reason": "LeadingWhitespaceCollision",
@@ -169,6 +208,46 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
         self.assertIn("does not contain a recursive witness", out)
+
+    def test_single_segment_trailing_collision_is_a_witness(self):
+        tests = self.build_minimal()
+        self.write("tests/parseable-unrepresentable/trailing.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/trailing.json", json.dumps({
+            "value": {"s": ")) "},
+            "unrepresentable_reason": "TrailingWhitespaceCollision",
+            "note": "single segment",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_single_segment_leading_collision_is_a_witness(self):
+        tests = self.build_minimal()
+        self.write("tests/parseable-unrepresentable/leading.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/leading.json", json.dumps({
+            "value": {"s": " ))"},
+            "unrepresentable_reason": "LeadingWhitespaceCollision",
+            "note": "single segment",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_reason_sets_are_category_specific(self):
+        tests = self.build_minimal()
+        self.write("tests/unrepresentable/cr.json", json.dumps({
+            "value": {"s": "a\rb"},
+            "unrepresentable_reason": "CRByte",
+            "note": "wrong category",
+        }))
+        self.write("tests/parseable-unrepresentable/nonfinite.ktav", "{f: value}")
+        self.write("tests/parseable-unrepresentable/nonfinite.json", json.dumps({
+            "value": {"f": {"$float": "NaN"}},
+            "unrepresentable_reason": "NonFiniteFloat",
+            "note": "wrong category",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("CRByte", out)
+        self.assertIn("NonFiniteFloat", out)
 
     def test_unrepresentable_exact_schema_and_sentinel_shape(self):
         tests = self.build_minimal()
@@ -180,6 +259,59 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("unexpected field(s)", out)
         self.assertIn("'$float' must be the only field", out)
+
+    def test_json_number_kind_comes_from_lexical_token(self):
+        parsed = validate_corpus.loads_strict(
+            '{"integer": 0, "fraction": -0.0, "exponent": 1e0}'
+        )
+        self.assertEqual(validate_corpus._semantic_kind(parsed["integer"]),
+                         "Integer")
+        self.assertEqual(validate_corpus._semantic_kind(parsed["fraction"]),
+                         "Float")
+        self.assertEqual(validate_corpus._semantic_kind(parsed["exponent"]),
+                         "Float")
+
+    def test_parser_produced_value_oracle_requires_compound_root(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json", "42")
+        self.write("tests/parseable-unrepresentable/case.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/case.json", json.dumps({
+            "value": "a\rb",
+            "unrepresentable_reason": "CRByte",
+            "note": "scalar root",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertGreaterEqual(out.count("root must be Object or Array"), 2)
+
+    def test_value_oracles_reject_lone_surrogates_in_keys_and_strings(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json",
+                   '{"\\ud800": {"value": "\\udfff"}}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("Object key contains lone surrogate U+D800", out)
+        self.assertIn("String contains lone surrogate U+DFFF", out)
+
+    def test_value_oracle_rejects_nonfinite_ordinary_json_number(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json", '{"value": 1e400}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("non-finite JSON number '1e400' is not allowed", out)
+
+    def test_parser_produced_value_oracle_rejects_float_sentinel(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json", '{"f": {"$float": "NaN"}}')
+        self.write("tests/parseable-unrepresentable/case.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/case.json", json.dumps({
+            "value": {"s": {"$float": "NaN"}, "cr": "a\rb"},
+            "unrepresentable_reason": "CRByte",
+            "note": "sentinel is programmatic-only",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertEqual(out.count("'$float' sentinel is not allowed"), 2)
 
     def test_parseable_unrepresentable_is_a_pair_without_canonical_output(self):
         tests = self.build_minimal()
@@ -194,6 +326,20 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
         self.assertIn("canonical output is not allowed", out)
+
+    def test_each_corpus_category_rejects_files_outside_its_allowed_set(self):
+        tests = self.build_full()
+        self.write("tests/valid/extra.txt", "extra")
+        self.write("tests/invalid/extra.txt", "extra")
+        self.write("tests/unrepresentable/extra.ktav", "extra")
+        self.write("tests/parseable-unrepresentable/extra.txt", "extra")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected file type under valid/", out)
+        self.assertIn("unexpected file type under invalid/", out)
+        self.assertIn("unrepresentable/ (only .json allowed)", out)
+        self.assertIn("parseable-unrepresentable/ (only .ktav and .json allowed)",
+                      out)
 
     # -- closed set is version-specific ---------------------------------
 
@@ -285,6 +431,13 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 0, out)
 
+    def test_v06_without_corpus_lock_ignores_local_idea_directory(self):
+        root = "versions/0.6/tests"
+        tests = self.build_minimal(root)
+        self.write(root + "/.idea/workspace.xml", "<project />")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
     def test_all_v07_categories_accepted_in_07_layout(self):
         root = "versions/0.7/tests"
         tests = self.build_minimal(root)
@@ -364,40 +517,97 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 0, out)
 
-    # -- corpus inventory lock catches fixture deletion ------------------
+    # -- full corpus SHA-256 lock and closed top level -------------------
 
-    def test_corpus_inventory_lock_catches_deleted_fixture(self):
-        tests = self.build_minimal()
-        self.write("tests/valid/beta.ktav", KTAV_DOC)
-        self.write("tests/valid/beta.json", ALPHA_JSON)
-        self.write("tests/valid/beta.canonical.ktav", KTAV_DOC)
-        lock = {
-            "version": "0.7.0",
-            "valid": ["alpha", "beta"],
-            "invalid": ["bad"],
-            "unrepresentable": [],
-            "parseable_unrepresentable": [],
-        }
-        lock_path = self.write("lock/corpus-inventory.0.7.lock.json",
-                               json.dumps(lock))
-        for suffix in (".ktav", ".json", ".canonical.ktav"):
-            os.remove(os.path.join(tests, "valid", "beta" + suffix))
+    def test_corpus_inventory_lock_catches_deleted_file(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        os.remove(os.path.join(tests, "invalid", "bad.ktav"))
         code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 1)
-        self.assertIn("corpus inventory lock", out)
-        self.assertIn("beta", out)
+        self.assertIn("invalid/bad.ktav: missing from corpus", out)
+
+    def test_corpus_inventory_lock_catches_content_drift_for_all_triple_files(self):
+        paths = [
+            "valid/alpha.ktav",
+            "valid/alpha.json",
+            "valid/alpha.canonical.ktav",
+        ]
+        for index, rpath in enumerate(paths):
+            with self.subTest(path=rpath):
+                root = "case%d/tests" % index
+                tests = self.build_full(root)
+                lock_path = self.write_corpus_lock(
+                    tests, "lock/corpus-%d.json" % index
+                )
+                path = os.path.join(tests, *rpath.split("/"))
+                with open(path, "a", encoding="utf-8", newline="\n") as stream:
+                    stream.write("\n")
+                code, out = self.run_main(
+                    tests, "--corpus-inventory-lock", lock_path
+                )
+                self.assertEqual(code, 1)
+                self.assertIn(rpath + ": content hash mismatch", out)
+
+    def test_corpus_inventory_lock_catches_boundary_content_drift(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        path = os.path.join(tests, "boundary-fixtures.json")
+        with open(path, "a", encoding="utf-8", newline="\n") as stream:
+            stream.write("\n")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("boundary-fixtures.json: content hash mismatch", out)
+
+    def test_corpus_inventory_lock_rejects_added_file_and_unknown_category(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        self.write("tests/valid/extra.txt", "extra")
+        self.write("tests/future/case.ktav", "value")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("valid/extra.txt: not present in lock", out)
+        self.assertIn("unexpected top-level entry 'future'", out)
+
+    def test_corpus_inventory_lock_requires_exact_top_level_entries(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        os.remove(os.path.join(tests, "boundary-fixtures.json"))
+        shutil.rmtree(os.path.join(tests, "unrepresentable"))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("missing top-level file 'boundary-fixtures.json'", out)
+        self.assertIn("missing top-level directory 'unrepresentable'", out)
+
+    def test_corpus_inventory_lock_rejects_unknown_regular_top_level_file(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        self.write("tests/notes.txt", "extra")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected top-level entry 'notes.txt'", out)
+
+    @unittest.skipUnless(os.name == "posix", "special entries require POSIX")
+    def test_corpus_inventory_lock_rejects_unknown_special_top_level_entry(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        os.mkfifo(os.path.join(tests, "extra.pipe"))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected top-level entry 'extra.pipe'", out)
+
+    @unittest.skipUnless(os.name == "posix", "symlinks require POSIX")
+    def test_corpus_inventory_lock_rejects_unknown_top_level_symlink(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        os.symlink(os.path.join(tests, "valid"), os.path.join(tests, "extra-link"))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected top-level entry 'extra-link'", out)
 
     def test_corpus_inventory_lock_happy_path(self):
-        tests = self.build_minimal()
-        lock = {
-            "version": "0.7.0",
-            "valid": ["alpha"],
-            "invalid": ["bad"],
-            "unrepresentable": [],
-            "parseable_unrepresentable": [],
-        }
-        lock_path = self.write("lock/corpus-inventory.0.7.lock.json",
-                               json.dumps(lock))
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
         code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
@@ -473,16 +683,7 @@ class CorpusTestCase(unittest.TestCase):
 
     def test_happy_path_full_corpus_passes_with_flags(self):
         tests = self.build_full()
-        lock_path = self.write(
-            "lock/corpus-inventory.0.7.lock.json",
-            json.dumps({
-                "version": "0.7.0",
-                "valid": ["alpha"],
-                "invalid": ["bad"],
-                "unrepresentable": ["nan"],
-                "parseable_unrepresentable": ["nan"],
-            }),
-        )
+        lock_path = self.write_corpus_lock(tests)
         code, out = self.run_main(tests, "--require-unrepresentable",
                                   "--require-boundary",
                                   "--corpus-inventory-lock", lock_path)

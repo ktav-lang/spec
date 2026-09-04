@@ -196,7 +196,9 @@ N-1 个切割点。若某语言的内部空行不足以提供 N-1 个切割点,�
 `["frontmatter", "named-abstract", "sec-1", ...]` 开头,以
 `[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
 `"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的
-真实位置。新增单元时,请手动把名字插入正确位置。
+真实位置。独立的 lock `scripts/locks/section-inventory.0.7.lock.json`
+保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
+仅修改 manifest 会被 lock 检查拒绝。
 
 ## 生成器如何构建文件
 
@@ -220,8 +222,9 @@ node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
 node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
 
-`--check` 在内存中重新生成三个文件,并与已提交的文件逐字节比较。
-成功时:退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
+`--check` 会验证 inventory lock,在内存中重新生成全部六个文件,并与
+已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
+退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
 信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。
 
 `node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
@@ -242,8 +245,8 @@ closed-world 不变量都会被拒绝。
 
 1. 创建各单元的文件夹、`meta.js`(含 `"bodyParts": 1`)与
    `body-1.js`(注意上面的末尾空行规则)。
-2. 把两个文件夹名按正确的文档位置插入 `manifest.js`(位于紧邻
-   9.9 之前的单元之后)。
+2. 把两个文件夹名按正确的文档位置插入 `manifest.js` 与 inventory
+   lock 的 `units` 数组(位于紧邻 9.9 之前的单元之后)。
 3. 运行 `node scripts/build_spec.mjs`,检查 `git diff`,运行对等性
    检查,然后把单元与重新生成的 `.md` 文件一起提交。
 

@@ -2,38 +2,9 @@ export default {
   en: `
 Let *body* be the byte sequence of a String Value.
 
-- **Empty String (\`""\`):** emit as \`key:\` (no body after the
-  colon) for a pair, or \`::\` (no body) for an array item.
-- **Position-specific selection:** the writer MUST apply the exhaustive
-  rule for the actual syntactic position before selecting a one-line
-  form. For a pair, apply § 5.9.5. Its plain \`key: <body>\` form is
-  available only when all of § 5.9.5's conditions hold: the body is a
-  one-line scalar with no edge-whitespace, does not match the integer or
-  float grammar or the \`null\` / \`true\` / \`false\` keywords, does not
-  start with \`{\` or \`[\`, and is not one of the \`(\`, \`((\`, \`()\`, or
-  \`(())\` dispatch forms. Otherwise § 5.9.5 requires the raw marker
-  \`key:: <body>\` for a one-line String. For an array item, apply
-  § 5.9.6. Its bare \`<body>\` form is available only when the same
-  plain-form conditions hold and none of § 5.9.6's item-position hazards
-  apply: the body is not exactly \`}\` or \`]\`, does not start with
-  \`##\` or \`::\`, and, for the first item of an Array root, is neither
-  a pair-shape candidate nor prefixed by U+FEFF. Otherwise § 5.9.6
-  requires the raw marker \`:: <body>\` for a one-line String. These
-  delegated pair/item rules cover numeric and keyword collisions, \`{\` /
-  \`[\` prefixes, all listed structural tokens, and the first-root-item
-  pair-shape/BOM cases; they are exhaustive and take precedence over
-  this section's general guidance. In particular, this section MUST NOT
-  select bare form when § 5.9.5 or § 5.9.6 requires a raw marker.
-- **Contains \`LF\`, leading/trailing whitespace, or any control byte
-  (\`0x00\`–\`0x1F\` other than \`0x09\` \`TAB\` and \`0x0A\` \`LF\`, and not
-  \`0x0D\` \`CR\`, which the next bullet handles separately):** emit
-  as verbatim multi-line \`((\` … \`))\`. The opener \`((\` is emitted
-  on the value line (preceded by \`key: \` for a pair, or alone for
-  an item) at the current indent. The body is split on \`LF\`; each
-  resulting segment is emitted as one line at **indent 0** (no
-  leading whitespace — because verbatim form preserves bytes
-  exactly, any indentation would be injected into the value). The
-  closer \`))\` is emitted on its own line at the current indent.
+The writer MUST test the following branches in order; the first matching
+branch determines the result or form-selection path:
+
 - **Contains a \`CR\` byte (\`0x0D\`):** the Value is **not
   representable** in canonical form. A \`CR\` byte in a String can
   only be produced through the \`\\r\` escape or the generic \`\\uXXXX\`
@@ -44,6 +15,42 @@ Let *body* be the byte sequence of a String Value.
   than serialise it; it is outside the scope of the round-trip
   property of § 8.3. Portable documents SHOULD NOT rely on \`CR\`
   bytes in String values.
+- **Requires multi-line representation:** when *body* contains \`LF\`,
+  has leading or trailing whitespace (§ 3.3), or contains an ASCII
+  control byte in \`0x00\`–\`0x1F\` other than \`0x09\` \`TAB\`, \`0x0A\`
+  \`LF\`, and \`0x0D\` \`CR\` (which the preceding branch rejects), select
+  multi-line representation and apply the collision and
+  representability checks below. Subject to those checks, use verbatim
+  form \`((\` … \`))\`: emit the opener on the value line (preceded by
+  \`key: \` for a pair, or alone for an item) at the current indent,
+  split *body* on \`LF\`, emit every resulting segment as one line at
+  **indent 0**, and emit the closer \`))\` on its own line at the current
+  indent. Verbatim body segments have no writer-added indentation,
+  because verbatim form preserves bytes exactly. The checks below
+  override this default by requiring stripped form or rejection where
+  applicable.
+- **Empty String (\`""\`):** emit as \`key:\` (no body after the
+  colon) for a pair, or \`::\` (no body) for an array item.
+- **Physically safe non-empty one-line String:** this branch applies
+  only when no preceding branch matched. The writer MUST then apply the
+  exhaustive rule for the actual syntactic position. For a pair, apply
+  § 5.9.5: use plain \`key: <body>\` only when its dispatch conditions
+  hold, and otherwise use raw-marker \`key:: <body>\`. For an array item,
+  apply § 5.9.6: use bare \`<body>\` only when the same plain-form
+  dispatch conditions hold and none of the item-position hazards apply,
+  and otherwise use raw-marker \`:: <body>\`. These delegated rules
+  include numeric and \`null\` / \`true\` / \`false\` collisions, \`{\` /
+  \`[\` prefixes, the \`(\` / \`((\` / \`()\` / \`(())\` dispatch forms,
+  item bodies exactly \`}\` or \`]\`, item bodies starting with \`##\` or
+  \`::\`, and the first-Array-root-item pair-shape and U+FEFF hazards.
+  They are exhaustive within this branch; this section MUST NOT select
+  plain or bare form where § 5.9.5 or § 5.9.6 requires a raw marker.
+
+For example, String bodies \`" x"\` and \`"x "\` select the multi-line
+branch and round-trip through verbatim form, whereas \`"{abc"\` reaches
+the physically safe one-line branch and uses \`key:: {abc\` in a pair or
+\`:: {abc\` in an array-item position because its \`{\` prefix collides
+with compound dispatch.
 
 The canonical writer prefers verbatim multi-line form \`((\` … \`))\`
 for strings requiring multi-line representation. If any segment of
@@ -103,39 +110,9 @@ requires a segment trimming to \`))\`.
   ru: `
 Пусть *body* — байтовая последовательность String Value.
 
-- **Пустая String (\`""\`):** выводить как \`key:\` (без тела после
-  двоеточия) для пары или \`::\` (без тела) для элемента массива.
-- **Выбор по позиции:** writer MUST сначала применить исчерпывающее
-  правило для фактической синтаксической позиции, а затем выбирать
-  однострочную форму. Для пары применяется § 5.9.5. Его обычная форма
-  \`key: <body>\` допустима только при выполнении всех условий § 5.9.5:
-  тело однострочное, без крайних пробелов, не совпадает с грамматикой
-  integer/float или ключевыми словами \`null\` / \`true\` / \`false\`, не
-  начинается с \`{\` или \`[\` и не является одной из форм диспетчеризации
-  \`(\`, \`((\`, \`()\` или \`(())\`. В противном случае § 5.9.5 требует
-  raw-маркер \`key:: <body>\` для однострочной String. Для элемента
-  массива применяется § 5.9.6. Его голая форма \`<body>\` допустима
-  только при тех же условиях обычной формы и если не возникает ни одна
-  из позиционных коллизий § 5.9.6: тело не равно в точности \`}\` или
-  \`]\`, не начинается с \`##\` или \`::\`, а для первого элемента
-  корневого Array не является pair-shape-кандидатом и не начинается с
-  U+FEFF. В противном случае § 5.9.6 требует raw-маркер \`:: <body>\`.
-  Эти делегированные правила для пар и элементов охватывают числовые и
-  ключевые коллизии, префиксы \`{\` / \`[\`, все перечисленные структурные
-  токены и случаи pair-shape/BOM первого элемента корня; они исчерпывающие
-  и имеют приоритет над общими указаниями этого раздела. В частности,
-  этот раздел MUST NOT выбирать голую форму, если § 5.9.5 или § 5.9.6
-  требует raw-маркер.
-- **Содержит \`LF\`, ведущий/хвостовой пробел, или управляющий байт
-  (\`0x00\`–\`0x1F\` кроме \`0x09\` \`TAB\` и \`0x0A\` \`LF\`, и не \`0x0D\`
-  \`CR\`, который обрабатывает следующий пункт отдельно):** выводить
-  как verbatim multi-line \`((\` … \`))\`. Опенер \`((\` выводится на строке
-  значения (с предшествующим \`key: \` для пары или отдельно для
-  элемента) на текущем отступе. Тело разбивается по \`LF\`; каждый
-  сегмент выводится одной строкой на **отступе 0** (без ведущих
-  пробелов — verbatim сохраняет байты в точности, любая индентация
-  была бы инжектирована в значение). Закрытие \`))\` выводится
-  отдельной строкой на текущем отступе.
+Writer MUST проверять следующие ветви по порядку; первая совпавшая ветвь
+определяет результат или путь выбора формы:
+
 - **Содержит байт \`CR\` (\`0x0D\`):** Value **не представимо** в
   канонической форме. Байт \`CR\` в String может появиться только
   через escape \`\\r\` либо через обобщённый escape \`\\uXXXX\`,
@@ -146,6 +123,46 @@ requires a segment trimming to \`))\`.
   сериализовать его; это вне области действия round-trip свойства
   § 8.3. Переносимые документы SHOULD NOT полагаться на байты \`CR\`
   в String-значениях.
+- **Требует multi-line представления:** когда *body* содержит \`LF\`,
+  имеет ведущий или хвостовой пробел (§ 3.3) либо содержит ASCII
+  управляющий байт из диапазона \`0x00\`–\`0x1F\`, кроме \`0x09\` \`TAB\`,
+  \`0x0A\` \`LF\` и \`0x0D\` \`CR\` (который отклоняет предыдущая ветвь),
+  выбрать
+  multi-line представление и применить описанные ниже проверки коллизий
+  и представимости. С учётом этих проверок используется verbatim-форма
+  \`((\` … \`))\`: опенер выводится на строке значения (с предшествующим
+  \`key: \` для пары или отдельно для элемента) на текущем отступе, *body*
+  разбивается по \`LF\`, каждый получившийся сегмент выводится отдельной
+  строкой на **отступе 0**, а закрытие \`))\` — отдельной строкой на
+  текущем отступе. Writer не добавляет отступ к сегментам verbatim-тела,
+  поскольку verbatim-форма сохраняет байты в точности. Проверки ниже
+  имеют приоритет над этой формой по умолчанию и требуют stripped-форму
+  либо отклонение там, где это применимо.
+- **Пустая String (\`""\`):** выводить как \`key:\` (без тела после
+  двоеточия) для пары или \`::\` (без тела) для элемента массива.
+- **Физически безопасная непустая однострочная String:** эта ветвь
+  применяется, только если ни одна предыдущая ветвь не совпала. Затем
+  writer MUST применить исчерпывающее правило для фактической
+  синтаксической позиции. Для пары применяется § 5.9.5: обычная форма
+  \`key: <body>\` используется только при выполнении её условий
+  диспетчеризации, иначе используется raw-маркер \`key:: <body>\`. Для
+  элемента массива применяется § 5.9.6: голая форма \`<body>\`
+  используется только при выполнении тех же условий обычной формы и
+  отсутствии позиционных коллизий элемента, иначе используется
+  raw-маркер \`:: <body>\`. Эти делегированные правила включают числовые
+  коллизии и \`null\` / \`true\` / \`false\`, префиксы \`{\` / \`[\`, формы
+  диспетчеризации \`(\` / \`((\` / \`()\` / \`(())\`, тела элементов,
+  равные в точности \`}\` или \`]\`, тела элементов с префиксом \`##\` или
+  \`::\`, а также pair-shape- и U+FEFF-коллизии первого элемента корневого
+  Array. Внутри этой ветви они исчерпывающи; этот раздел MUST NOT
+  выбирать обычную или голую форму, если § 5.9.5 или § 5.9.6 требует
+  raw-маркер.
+
+Например, тела String \`" x"\` и \`"x "\` выбирают multi-line ветвь и
+round-trip через verbatim-форму, тогда как \`"{abc"\` достигает ветви
+физически безопасной однострочной String и из-за коллизии префикса \`{\`
+с диспетчеризацией составного значения использует \`key:: {abc\` в паре
+или \`:: {abc\` в позиции элемента массива.
 
 Канонический эмиттер предпочитает verbatim multi-line \`((\` … \`))\`
 для строк, требующих многострочного представления. Если какой-то
@@ -207,30 +224,8 @@ String, которая также требует сегмента, обреза�
   zh: `
 设 *body* 为 String Value 的字节序列。
 
-- **空 String (\`""\`)**:对输出 \`key:\`(冒号后无体);数组项输出
-  \`::\`(无体)。
-- **按位置选择:** writer MUST 先应用实际语法位置的完整规则,
-  然后再选择单行形式。对 pair 应用 § 5.9.5。其普通形式
-  \`key: <body>\` 只有在满足 § 5.9.5 全部条件时才可用:体为单行、
-  无边缘空白,不匹配 integer/float 语法或 \`null\` / \`true\` /
-  \`false\` 关键字,不以 \`{\` 或 \`[\` 开头,且不恰好是
-  \`(\`、\`((\`、\`()\` 或 \`(())\` 这些分发形式。否则 § 5.9.5 要求
-  单行 String 使用原始标记 \`key:: <body>\`。对数组项应用 § 5.9.6。
-  其裸形式 \`<body>\` 只有在满足相同的普通形式条件且不触发
-  § 5.9.6 的项位置冲突时才可用:体不恰好是 \`}\` 或 \`]\`,不以
-  \`##\` 或 \`::\` 开头,并且对于根 Array 的第一项,既不是 pair-shape
-  候选也不以 U+FEFF 开头。否则 § 5.9.6 要求单行 String 使用原始标记
-  \`:: <body>\`。这些委托给 pair/项的规则涵盖 number/keyword 冲突、
-  \`{\` / \`[\` 前缀、所有列出的结构 token,以及根第一项的
-  pair-shape/BOM 情况;它们是完整规则,优先于本节的一般说明。特别是,
-  当 § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择裸形式。
-- **含 \`LF\`、前后空白或控制字节(\`0x00\`–\`0x1F\` 除 \`0x09\` \`TAB\`
-  与 \`0x0A\` \`LF\`,且非 \`0x0D\` \`CR\`—— 由下一条单独处理)**:输出
-  为 verbatim 多行 \`((\` … \`))\`。开启
-  \`((\` 在值行上输出(对前缀 \`key: \`,项单独),位于当前缩进。
-  体按 \`LF\` 切分;每段以一行的形式在**缩进 0**(无前导空白 ——
-  verbatim 精确保留字节,任何缩进会被注入值)输出。关闭 \`))\` 在
-  自身行上、当前缩进输出。
+Writer MUST 按顺序检查以下分支;第一个匹配的分支决定结果或形式选择路径:
+
 - **含 \`CR\` 字节(\`0x0D\`)**:Value 在规范形式中**不可表示**。
   String 中的 \`CR\` 字节只能通过 inline 复合值内的 \`\\r\` 转义,
   或指称码点 000D 的通用 \`\\uXXXX\` escape(§ 3.7、§ 3.7.1)生成,
@@ -238,6 +233,35 @@ String, которая также требует сегмента, обреза�
   writer-conforming 实现 MUST 以错误拒绝此类 Value,而不是将其
   序列化;它不在 § 8.3 round-trip 性质的范围内。可移植文档
   SHOULD NOT 在 String 值中依赖 \`CR\` 字节。
+- **需要多行表示:** 当 *body* 含 \`LF\`、带前导或尾部空白
+  (§ 3.3),或含 \`0x00\`–\`0x1F\` 范围内除 \`0x09\` \`TAB\`、\`0x0A\`
+  \`LF\` 和 \`0x0D\` \`CR\` 之外的 ASCII 控制字节(\`CR\` 由前一分支
+  拒绝)时,选择多行
+  表示并应用下文的碰撞与可表示性检查。在这些检查约束下,使用
+  verbatim 形式 \`((\` … \`))\`:在当前缩进的值行输出开启符(对带
+  \`key: \` 前缀,项则单独输出),按 \`LF\` 切分 *body*,将每个所得段
+  作为一行在**缩进 0**输出,并在当前缩进的单独一行输出关闭符
+  \`))\`。Writer 不为 verbatim 体段添加缩进,因为 verbatim 形式精确
+  保留字节。下文的检查优先于此默认形式,在适用时要求 stripped
+  形式或拒绝该 Value。
+- **空 String (\`""\`)**:对输出 \`key:\`(冒号后无体);数组项输出
+  \`::\`(无体)。
+- **物理安全的非空单行 String:** 仅当此前分支均不匹配时才进入
+  此分支。Writer MUST 随后应用实际语法位置的完整规则。对 pair
+  应用 § 5.9.5:仅当其分发条件成立时使用普通形式
+  \`key: <body>\`,否则使用原始标记 \`key:: <body>\`。对数组项应用
+  § 5.9.6:仅当相同的普通形式条件成立且不存在项位置冲突时使用裸
+  形式 \`<body>\`,否则使用原始标记 \`:: <body>\`。这些委托规则包括
+  number 与 \`null\` / \`true\` / \`false\` 冲突、\`{\` / \`[\` 前缀、
+  \`(\` / \`((\` / \`()\` / \`(())\` 分发形式、恰好为 \`}\` 或 \`]\` 的
+  项体、以 \`##\` 或 \`::\` 开头的项体,以及根 Array 第一项的
+  pair-shape 和 U+FEFF 风险。在此分支内这些规则是完整的;当
+  § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择普通或裸形式。
+
+例如,String 体 \`" x"\` 和 \`"x "\` 选择多行分支并通过 verbatim
+形式 round-trip,而 \`"{abc"\` 到达物理安全的单行分支;由于其 \`{\`
+前缀与复合值分发冲突,它在 pair 中使用 \`key:: {abc\`,在数组项位置
+使用 \`:: {abc\`。
 
 规范 writer 对需要多行表示的字符串优先 verbatim 多行 \`((\` …
 \`))\`。若体的某个段(按 \`LF\` 切分后),在修剪前后空白(§ 3.3)后

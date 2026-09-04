@@ -693,6 +693,8 @@ class TranslationParityTestCase(unittest.TestCase):
             "<line-end>      ::= eol | EOF",
             "<comment-body>  ::= any-chars-until-line-end",
             "<lookahead>     ::= &line-end",
+            '<item-literal>  ::= (ws) "::" <sep-end> '
+            'any-chars-until-line-end <line-end>',
         ]
 
         def doc(fence_lines):
@@ -776,6 +778,69 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertTrue(
             any("&line-end" in fragment
                 for fragment in signatures[0]["<value-start>"]))
+
+    def test_item_literal_bounded_body_signature_mismatch_fails(self):
+        grammar_lines_en = [
+            "<document>      ::= <line>*",
+            '<item-literal>  ::= (ws) "::" <sep-end> '
+            'any-chars-until-line-end <line-end>',
+        ]
+        grammar_lines_ru = [
+            "<document>      ::= <line>*",
+            '<item-literal>  ::= (ws) "::" <sep-end> '
+            '<any-chars>? <line-end>',
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased - draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", doc(grammar_lines_ru))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production RHS mismatch for <item-literal>", out)
+        self.assertNotIn("failed to parse as pure BNF", out)
+
+    def test_source_item_literal_has_bounded_zero_or_more_body(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        body_path = os.path.join(
+            repo_root, "versions", "0.7", "content", "sec-4", "body-3.js")
+        with open(body_path, encoding="utf-8") as f:
+            source = f.read()
+
+        production = (
+            '<item-literal>  ::= (ws) "::" <sep-end> '
+            'any-chars-until-line-end <line-end>')
+        self.assertEqual(source.count(production), 3)
+        self.assertNotIn("<any-chars>", source)
+        self.assertIn("denotes zero or more source bytes", source)
+        self.assertIn("обозначает ноль или более байтов исходного", source)
+        self.assertIn("表示零个或多个源字节", source)
+
+    def test_source_ws_is_line_bounded_in_all_languages(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        body_path = os.path.join(
+            repo_root, "versions", "0.7", "content", "sec-4", "body-1.js")
+        with open(body_path, encoding="utf-8") as f:
+            source = f.read()
+
+        for marker in (
+                "is line-bounded",
+                "ограничен строкой",
+                "均受行边界限制"):
+            self.assertIn(marker, source)
+        for marker in (
+                "not consumed by either ws form",
+                "не поглощаются ни одной формой ws",
+                "两种 ws 形式均不消耗它们"):
+            self.assertIn(marker, source)
 
     def test_malformed_syntax_production_in_en_is_fatal(self):
         # Round-16 finding 2: a production whose LHS is NOT on the

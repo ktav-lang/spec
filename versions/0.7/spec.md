@@ -353,9 +353,13 @@ Terminals are in double quotes; `<name>` denotes a non-terminal;
 alternation. Within a terminal, `\"` denotes a literal double-quote
 character and `\\` denotes a literal backslash — this notation is
 used only where a terminal must itself contain a quote or backslash
-byte (e.g. the quoted-segment delimiters, § 4). `(ws)` stands for
-zero or more whitespace code points (§ 3.3 — the fixed 25-code-point
-set, not ASCII-only).
+byte (e.g. the quoted-segment delimiters, § 4). In every line and inline
+production below, `ws` is line-bounded: it denotes a whitespace code
+point from § 3.3 other than LF or CR; `(ws)` is zero or more such code
+points, and `1*ws` is one or more. LF and CR are reserved for eol in
+`<line-end>` and are not consumed by either ws form. This source-matching
+rule does not change value trimming or the treatment of code points produced
+by decoded escapes.
 
 ```
 <document>      ::= <line>*
@@ -551,7 +555,7 @@ set, not ASCII-only).
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw string item
+<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw string item
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -582,11 +586,11 @@ set, not ASCII-only).
 
 Notes on the notation:
 
-- `(ws)` stands for zero or more whitespace code points (§ 3.3 — the
-  fixed 25-code-point set, not ASCII-only).
-- `1*ws` stands for **one or more** whitespace code points (§ 3.3).
-- `<sep-end>` stands for "at least one whitespace code point, or the end of
-  the line". It is used after the multi-line pair separators (`:`,
+- `(ws)` stands for zero or more line-bounded `ws` code points defined
+  above; LF and CR are excluded.
+- `1*ws` stands for **one or more** of those same line-bounded code points.
+- `<sep-end>` stands for "at least one line-bounded whitespace code point,
+  or the end of the line". It is used after the multi-line pair separators (`:`,
   `::`). Writing `key:value` (no whitespace, no EOL after the
   separator) is a syntax error in the multi-line pair form — see
   § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
@@ -598,9 +602,10 @@ Notes on the notation:
   the final line production and the `<line-end>` at EOF may be consumed at
   most once; this prevents `<line>*` from repeating a zero-width `blank`
   production when `(ws)=0` at EOF.
-- `any-chars-until-line-end` and an inline scalar's `<line-end>`
-  terminator stop before (and do not consume) `<line-end>`; the enclosing
-  line production consumes it.
+- `any-chars-until-line-end` denotes zero or more source bytes and stops
+  before (without consuming) `<line-end>`; the enclosing line production
+  consumes it. The zero-length case permits an empty `<comment-body>` and
+  an empty raw-marker `<item-literal>`.
 - The `<inline-value>` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is `{`, the value is a nested inline object (matching one of
@@ -1601,35 +1606,49 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. Every file in `versions/0.7/tests/unrepresentable/` and
-`versions/0.7/tests/parseable-unrepresentable/` MUST be a JSON object
+it. Every `.json` file in `versions/0.7/tests/unrepresentable/`
+and `versions/0.7/tests/parseable-unrepresentable/` MUST be a JSON object
 with exactly these three fields and no others:
 
 - `value`: a recursively valid JSON mapping of the Value. JSON objects
-  map to Objects and arrays to Arrays; JSON null, booleans, strings,
-  and finite JSON numbers map to the corresponding scalar kinds.
+  map to Objects and arrays to Arrays; JSON null, booleans, and strings
+  map to the corresponding scalar kinds. An ordinary JSON number maps
+  to Integer when its lexical token contains none of `.`, `e`, or
+  `E`, and to Float otherwise, including `-0.0`; it MUST be finite.
 - `unrepresentable_reason`: exactly one of the seven reason codes in
   the table below.
 - `note`: a non-empty explanatory String.
 
+Only the following category-specific file sets and reason codes are allowed:
+
+- `unrepresentable/` contains one `<name>.json` per fixture and no
+  other files. Its reason MUST be `ScalarRoot`, `EmptyKeyName`, or
+  `NonFiniteFloat`; these Values are programmatic-only.
+- `parseable-unrepresentable/` contains one `<name>.ktav` plus one
+  `<name>.json` per fixture and no other files. Its reason MUST be one
+  of the parser-producible String cases `CRByte`, `BothFormsRequired`,
+  `TrailingWhitespaceCollision`, or `LeadingWhitespaceCollision`.
+  A canonical-output file MUST NOT be present.
+
 The `value` mapping MUST be checked recursively. An empty Object key
-is the witness for the `EmptyKeyName` case. The sole representation of a
-non-finite Float is a sentinel object with exactly one field,
+is the witness for the `EmptyKeyName` case. A String or Object key
+MUST NOT contain a lone surrogate. The sole representation of a
+non-finite Float in `unrepresentable/` is a sentinel object with
+exactly one field,
 `{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
 `{"$float": "-Infinity"}`; a `$float` field in any other
-object shape is invalid.
-An ordinary Value MUST NOT use a `$float` object for another purpose.
+shape is invalid. This sentinel is permitted only in `unrepresentable/`;
+a parser-produced Value MUST NOT contain a `$float` Object field, and
+its `value` root MUST be an Object or Array.
 A reason code is valid for a fixture only when
 its case occurs somewhere in the Value tree, except `ScalarRoot`,
 which requires that the root itself is a scalar. The root MUST be an
 Object or Array for every other reason code. These checks MUST NOT infer
-meaning from a fixture filename.
+meaning from a fixture filename. For the three collision reason codes,
+segments are separated by LF; a String containing no LF has one segment.
 
-The `parseable-unrepresentable/` category additionally has a sibling
-`<name>.ktav` for each `<name>.json`. The parser MUST accept that
-input and produce the JSON's `value`; the writer MUST then reject that
-Value with the JSON's reason code. These fixtures intentionally have no
-canonical-output file.
+The parser and writer obligations for `parseable-unrepresentable/` are
+specified separately by § 8.1 and § 8.2.
 
 A writer-conforming implementation's own error type MAY take any shape
 (exception class, error enum, tagged union, ...) — only the code names
@@ -1660,10 +1679,8 @@ does not mandate a specific traversal order or a deterministic
 "first" violation — that question belongs to the still-open
 structured-error contract (rust#12).
 
-The three `NonFiniteFloat` fixtures use the sentinel separately for
-NaN, positive Infinity, and negative Infinity. JSON has no portable
-literal for those values, so the sentinel is the only escape hatch and
-is reserved throughout both writer-unrepresentable categories.
+The three `NonFiniteFloat` fixtures separately cover NaN, positive
+Infinity, and negative Infinity.
 
 #### 5.9.1 Whitespace, indentation, line endings
 
@@ -1871,38 +1888,9 @@ A pair separator is selected by the kind/content of its value:
 
 Let *body* be the byte sequence of a String Value.
 
-- **Empty String (`""`):** emit as `key:` (no body after the
-  colon) for a pair, or `::` (no body) for an array item.
-- **Position-specific selection:** the writer MUST apply the exhaustive
-  rule for the actual syntactic position before selecting a one-line
-  form. For a pair, apply § 5.9.5. Its plain `key: <body>` form is
-  available only when all of § 5.9.5's conditions hold: the body is a
-  one-line scalar with no edge-whitespace, does not match the integer or
-  float grammar or the `null` / `true` / `false` keywords, does not
-  start with `{` or `[`, and is not one of the `(`, `((`, `()`, or
-  `(())` dispatch forms. Otherwise § 5.9.5 requires the raw marker
-  `key:: <body>` for a one-line String. For an array item, apply
-  § 5.9.6. Its bare `<body>` form is available only when the same
-  plain-form conditions hold and none of § 5.9.6's item-position hazards
-  apply: the body is not exactly `}` or `]`, does not start with
-  `##` or `::`, and, for the first item of an Array root, is neither
-  a pair-shape candidate nor prefixed by U+FEFF. Otherwise § 5.9.6
-  requires the raw marker `:: <body>` for a one-line String. These
-  delegated pair/item rules cover numeric and keyword collisions, `{` /
-  `[` prefixes, all listed structural tokens, and the first-root-item
-  pair-shape/BOM cases; they are exhaustive and take precedence over
-  this section's general guidance. In particular, this section MUST NOT
-  select bare form when § 5.9.5 or § 5.9.6 requires a raw marker.
-- **Contains `LF`, leading/trailing whitespace, or any control byte
-  (`0x00`–`0x1F` other than `0x09` `TAB` and `0x0A` `LF`, and not
-  `0x0D` `CR`, which the next bullet handles separately):** emit
-  as verbatim multi-line `((` … `))`. The opener `((` is emitted
-  on the value line (preceded by `key: ` for a pair, or alone for
-  an item) at the current indent. The body is split on `LF`; each
-  resulting segment is emitted as one line at **indent 0** (no
-  leading whitespace — because verbatim form preserves bytes
-  exactly, any indentation would be injected into the value). The
-  closer `))` is emitted on its own line at the current indent.
+The writer MUST test the following branches in order; the first matching
+branch determines the result or form-selection path:
+
 - **Contains a `CR` byte (`0x0D`):** the Value is **not
   representable** in canonical form. A `CR` byte in a String can
   only be produced through the `\r` escape or the generic `\uXXXX`
@@ -1913,6 +1901,42 @@ Let *body* be the byte sequence of a String Value.
   than serialise it; it is outside the scope of the round-trip
   property of § 8.3. Portable documents SHOULD NOT rely on `CR`
   bytes in String values.
+- **Requires multi-line representation:** when *body* contains `LF`,
+  has leading or trailing whitespace (§ 3.3), or contains an ASCII
+  control byte in `0x00`–`0x1F` other than `0x09` `TAB`, `0x0A`
+  `LF`, and `0x0D` `CR` (which the preceding branch rejects), select
+  multi-line representation and apply the collision and
+  representability checks below. Subject to those checks, use verbatim
+  form `((` … `))`: emit the opener on the value line (preceded by
+  `key: ` for a pair, or alone for an item) at the current indent,
+  split *body* on `LF`, emit every resulting segment as one line at
+  **indent 0**, and emit the closer `))` on its own line at the current
+  indent. Verbatim body segments have no writer-added indentation,
+  because verbatim form preserves bytes exactly. The checks below
+  override this default by requiring stripped form or rejection where
+  applicable.
+- **Empty String (`""`):** emit as `key:` (no body after the
+  colon) for a pair, or `::` (no body) for an array item.
+- **Physically safe non-empty one-line String:** this branch applies
+  only when no preceding branch matched. The writer MUST then apply the
+  exhaustive rule for the actual syntactic position. For a pair, apply
+  § 5.9.5: use plain `key: <body>` only when its dispatch conditions
+  hold, and otherwise use raw-marker `key:: <body>`. For an array item,
+  apply § 5.9.6: use bare `<body>` only when the same plain-form
+  dispatch conditions hold and none of the item-position hazards apply,
+  and otherwise use raw-marker `:: <body>`. These delegated rules
+  include numeric and `null` / `true` / `false` collisions, `{` /
+  `[` prefixes, the `(` / `((` / `()` / `(())` dispatch forms,
+  item bodies exactly `}` or `]`, item bodies starting with `##` or
+  `::`, and the first-Array-root-item pair-shape and U+FEFF hazards.
+  They are exhaustive within this branch; this section MUST NOT select
+  plain or bare form where § 5.9.5 or § 5.9.6 requires a raw marker.
+
+For example, String bodies `" x"` and `"x "` select the multi-line
+branch and round-trip through verbatim form, whereas `"{abc"` reaches
+the physically safe one-line branch and uses `key:: {abc` in a pair or
+`:: {abc` in an array-item position because its `{` prefix collides
+with compound dispatch.
 
 The canonical writer prefers verbatim multi-line form `((` … `))`
 for strings requiring multi-line representation. If any segment of
@@ -2669,6 +2693,9 @@ A parser-conforming implementation:
   produces a Value equivalent to the corresponding `name.json`
   oracle. That equivalence is defined at the minimum-required
   numeric domain of § 5 (i64 Integer, binary64 Float).
+  In every JSON Value oracle, an ordinary number token containing no
+  `.`, `e`, or `E` denotes Integer; a token containing any of
+  them denotes Float, including `-0.0`.
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
@@ -2743,10 +2770,9 @@ A writer-conforming implementation:
   defined by § 5.9.0. The reason code MUST have a recursive witness in
   the Value tree, rather than being inferred from the filename.
 - For each fixture under
-  `versions/0.7/tests/parseable-unrepresentable/`, accepts the
-  sibling `name.ktav` as a parser-conforming implementation and
-  produces `name.json["value"]`, then rejects that Value as a
-  writer-conforming implementation with the named reason code. These
+  `versions/0.7/tests/parseable-unrepresentable/`, when given
+  `name.json["value"]`, rejects that Value with the reason code
+  named in `name.json["unrepresentable_reason"]`. These
   fixtures are pairs, not valid triples, and MUST NOT have a canonical
   output file.
 

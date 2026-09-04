@@ -8,6 +8,9 @@ A parser-conforming implementation:
   produces a Value equivalent to the corresponding \`name.json\`
   oracle. That equivalence is defined at the minimum-required
   numeric domain of § 5 (i64 Integer, binary64 Float).
+  In every JSON Value oracle, an ordinary number token containing no
+  \`.\`, \`e\`, or \`E\` denotes Integer; a token containing any of
+  them denotes Float, including \`-0.0\`.
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
@@ -53,6 +56,9 @@ Parser-conforming реализация:
   Value, эквивалентное соответствующему \`name.json\` оракулу. Эта
   эквивалентность определяется на минимально требуемом числовом
   домене § 5 (Integer i64, Float binary64).
+  В каждом JSON-оракуле Value обычный числовой токен без \`.\`, \`e\`
+  и \`E\` обозначает Integer; токен с любым из них обозначает Float,
+  включая \`-0.0\`.
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   перечисляет отдельные поля Object (листья), известные как
   boundary-probing — зондирующие границу числового домена (§ 5.2), —
@@ -99,6 +105,8 @@ Parser-conforming 实现:
 - 接受 \`versions/0.7/tests/valid/\` 下每个 fixture 并产生与对应
   \`name.json\` 等价的 Value。该等价性定义在 § 5 的最小必需数值域上
   (i64 Integer、binary64 Float)。
+  在每个 JSON Value oracle 中,不含 \`.\`、\`e\` 或 \`E\` 的普通数字
+  token 表示 Integer;含其中任一项的 token 表示 Float,包括 \`-0.0\`。
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如

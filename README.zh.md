@@ -349,9 +349,10 @@ timeout: null
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` 三元组：
   `.ktav` 是输入;`.json` 是期望解析出的 `Value`,按 1:1 映射
   (`Null`→`null`、`Bool`→`bool`、`String`→`string`、
-  `Array`→`array`、`Object`→`object`——数字按词法形式定型,整数
-  body 映射为 JSON 整数,小数 body 映射为 JSON 浮点数,其余标量
-  保持为字符串,`::` 强制字面字符串);`.canonical.ktav` 是该同一
+  `Array`→`array`、`Object`→`object`)。不含 `.`、`e` 或 `E` 的 JSON
+  数字 token 表示 Integer;含其中任一项的 token 表示 Float,包括
+  `-0.0`。其余标量保持为字符串,`::` 强制字面字符串;
+  `.canonical.ktav` 是该同一
   `Value` 期望的字节级精确 writer 输出。对象字段顺序是有意义的。
 - **`invalid/`**——conforming 解析器 MUST 拒绝的文档。每个用例是
   `<name>.ktav` + `<name>.json` 一对;`.json` 在 `expected_error`
@@ -361,19 +362,21 @@ timeout: null
   构造的情形,每个用例只有一个 `<name>.json`,且恰好包含 `value`、
   `unrepresentable_reason` 与非空 `note`;Value 映射及 `$float`
   sentinel 的精确形状见 § 5.9.0。原因代码 MUST 在树中有递归见证,
+  且只能是 `ScalarRoot`、`EmptyKeyName` 或 `NonFiniteFloat`,
   MUST NOT 从文件名推导。
 - **`parseable-unrepresentable/`***(0.7 起)*——解析器产生、但
   conforming writer MUST 拒绝的 Value。每个用例是
   `<name>.ktav` + `<name>.json` 一对;解析输入 MUST 产生 JSON `value`,
-  写出 MUST 以指定原因代码失败。这些是 pair 而非 triple,没有
-  canonical-output 文件,并使用与 `unrepresentable/` 相同的精确
-  JSON schema。
+  写出 MUST 以指定原因代码失败。只允许 String 原因 `CRByte`、
+  `BothFormsRequired`、`TrailingWhitespaceCollision` 和
+  `LeadingWhitespaceCollision`;这些是 pair 而非 triple,没有其他文件,
+  也没有 canonical-output 文件。
 
-Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 独立锁定
-`valid/`、`invalid/`、`unrepresentable/` 与
-`parseable-unrepresentable/` 的完整 fixture inventory;CI 将其传给
-`validate_corpus.py --corpus-inventory-lock`,使 fixture 的新增或删除
-无法静默改变语料库。
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 将 `valid/`、
+`invalid/`、`unrepresentable/`、`parseable-unrepresentable/` 中的每个
+corpus-relative 文件路径及 `boundary-fixtures.json` 映射到其 SHA-256。
+CI 将其传给 `validate_corpus.py --corpus-inventory-lock`,后者拒绝新增、
+删除、内容漂移与未知顶层条目;lock 补充而不取代 semantic/schema 检查。
 
 通过该版本测试套件中每个存在类别的全部测试,是通过发布的必要门槛,
 但本身并不足以证明合规:`boundary-fixtures.json`(0.7 起)告诉共享

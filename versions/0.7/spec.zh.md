@@ -291,8 +291,11 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 `?` 表示可选,`|` 表示候选。在终结符内部,`\"` 表示字面双引号
 字符,`\\` 表示字面反斜杠 —— 这种记法仅用于终结符自身必须包含
 引号或反斜杠字节的场合(例如 quoted-segment 的分隔符,§ 4)。
-`(ws)` 表示零个或多个空白码点
-(§ 3.3 —— 固定的 25 码点集合,不仅是 ASCII)。
+在下述所有行产生式和 inline 产生式中,`ws` 均受行边界限制:它表示
+§ 3.3 空白码点中除 LF 和 CR 以外的成员;`(ws)` 表示零个或多个这类
+码点,`1*ws` 表示一个或多个。LF 和 CR 保留给 `<line-end>` 中的 eol,
+两种 ws 形式均不消耗它们。此源文本匹配规则不改变值修剪,也不改变由
+decoded escape 产生的码点的处理。
 
 ```
 <document>      ::= <line>*
@@ -489,7 +492,7 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw 字符串项
+<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw 字符串项
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -519,10 +522,10 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 
 关于该记法的说明:
 
-- `(ws)` 表示零个或多个空白码点(§ 3.3 —— 固定的 25 码点集合,
-  不仅是 ASCII)。
-- `1*ws` 表示**一个或多个**空白码点(§ 3.3)。
-- `<sep-end>` 表示「至少一个空白码点,或行末」。它用在多行
+- `(ws)` 表示零个或多个上文定义的行边界内 `ws` 码点;LF 和 CR
+  不包括在内。
+- `1*ws` 表示**一个或多个**同样的行边界内码点。
+- `<sep-end>` 表示「至少一个行边界内空白码点,或行末」。它用在多行
   pair 分隔符(`:`、`::`)之后。写 `key:value`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 `:` / `::` 之后有空白。
@@ -531,8 +534,9 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
   因此最后一行可以没有终止字节。EOF 是终结性的零字节标记:只能终止
   最后一个行产生式,且 EOF 处的 `<line-end>` 最多消耗一次;因此在
   `(ws)=0` 且到达 EOF 时,`<line>*` 不会重复零宽的 `blank` 产生式。
-- `any-chars-until-line-end` 与 inline 标量的 `<line-end>` 终止符在
-  `<line-end>` 之前停止且不消耗它;由外层行产生式消耗该终止符。
+- `any-chars-until-line-end` 表示零个或多个源字节,在 `<line-end>`
+  之前停止且不消耗它;由外层行产生式消耗该终止符。零长度情形允许
+  空 `<comment-body>` 和空 raw-marker `<item-literal>`。
 - `<inline-value>` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 `{`,值是嵌套 inline 对象(匹配前两条
   `{`-规则之一)且 MUST 在同一行以 `}` 关闭;若该字节为 `[`,
@@ -1296,30 +1300,43 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
 `versions/0.7/tests/unrepresentable/` 与
-`versions/0.7/tests/parseable-unrepresentable/` 下的每个文件
+`versions/0.7/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
 MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 
 - `value`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
-  数组映射为 Array,null、bool、字符串及有限 JSON 数字映射为对应
-  的标量类型。
+  数组映射为 Array,null、bool 与字符串映射为对应标量类型。普通
+  JSON 数字的词法 token 不含 `.`、`e` 或 `E` 时映射为 Integer,
+  否则映射为 Float,包括 `-0.0`;该数字 MUST 是有限值。
 - `unrepresentable_reason`:下表七个原因代码之一且只能一个。
 - `note`:非空的说明 String。
 
+仅允许以下类别特定的文件集合与原因代码:
+
+- `unrepresentable/` 每个 fixture 含一个 `<name>.json`,不得有
+  其他文件。原因 MUST 是 `ScalarRoot`、`EmptyKeyName` 或
+  `NonFiniteFloat`;这些 Value 只能以编程方式构造。
+- `parseable-unrepresentable/` 每个 fixture 含一个 `<name>.ktav`
+  和一个 `<name>.json`,不得有其他文件。原因 MUST 是 parser 可产生的
+  String 情形 `CRByte`、`BothFormsRequired`、
+  `TrailingWhitespaceCollision` 或 `LeadingWhitespaceCollision`。
+  MUST NOT 存在 canonical-output 文件。
+
 `value` 映射 MUST 递归检查。Object 的空键是 `EmptyKeyName` 情形的
-见证。非有限 Float 的唯一表示是恰好含一个字段的
+见证。String 或 Object 键 MUST NOT 含 lone surrogate。
+`unrepresentable/` 中非有限 Float 的唯一表示是恰好含一个字段的
 sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
 或 `{"$float": "-Infinity"}`;任何其他 Object 形状中的
-`$float` 字段都无效。
-普通 Value MUST NOT 将 `$float` Object 用于其他目的。
+`$float` 字段都无效。此 sentinel 仅允许用于 `unrepresentable/`;
+parser 产生的 Value MUST NOT 含 `$float` Object 字段,且其
+`value` 根 MUST 是 Object 或 Array。
 只有当该原因情形出现在 Value 树中的某处时,
 原因代码才对该 fixture 有效;`ScalarRoot` 例外,它要求根本身是
 标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
-从 fixture 文件名推导含义。
+从 fixture 文件名推导含义。对三个 collision 原因代码,segment 以 LF
+分隔;不含 LF 的 String 有一个 segment。
 
-`parseable-unrepresentable/` 类别还为每个 `<name>.json` 提供
-同名的 `<name>.ktav`。解析器 MUST 接受该输入并产生 JSON 的
-`value`;随后 writer MUST 以 JSON 指定的原因代码拒绝该 Value。
-这些 fixture 特意没有 canonical-output 文件。
+`parseable-unrepresentable/` 的 parser 与 writer 义务分别由
+§ 8.1 与 § 8.2 规定。
 
 writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
 error enum、tagged union 等)——规范性的只是代码名称及其标识的
@@ -1345,9 +1362,7 @@ Object 对的键上,还是在后代中(例如一个 String 同时满足两条
 具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
 结构化错误契约(rust#12)。
 
-三个 `NonFiniteFloat` fixture 分别为 NaN、正 Infinity 与负 Infinity
-使用 sentinel。JSON 没有这些值的可移植字面量,因此 sentinel 是唯一
-的逃生通道,并在两个 writer-unrepresentable 类别中保留。
+三个 `NonFiniteFloat` fixture 分别覆盖 NaN、正 Infinity 与负 Infinity。
 
 #### 5.9.1 空白、缩进、行尾
 
@@ -1499,30 +1514,8 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
 
 设 *body* 为 String Value 的字节序列。
 
-- **空 String (`""`)**:对输出 `key:`(冒号后无体);数组项输出
-  `::`(无体)。
-- **按位置选择:** writer MUST 先应用实际语法位置的完整规则,
-  然后再选择单行形式。对 pair 应用 § 5.9.5。其普通形式
-  `key: <body>` 只有在满足 § 5.9.5 全部条件时才可用:体为单行、
-  无边缘空白,不匹配 integer/float 语法或 `null` / `true` /
-  `false` 关键字,不以 `{` 或 `[` 开头,且不恰好是
-  `(`、`((`、`()` 或 `(())` 这些分发形式。否则 § 5.9.5 要求
-  单行 String 使用原始标记 `key:: <body>`。对数组项应用 § 5.9.6。
-  其裸形式 `<body>` 只有在满足相同的普通形式条件且不触发
-  § 5.9.6 的项位置冲突时才可用:体不恰好是 `}` 或 `]`,不以
-  `##` 或 `::` 开头,并且对于根 Array 的第一项,既不是 pair-shape
-  候选也不以 U+FEFF 开头。否则 § 5.9.6 要求单行 String 使用原始标记
-  `:: <body>`。这些委托给 pair/项的规则涵盖 number/keyword 冲突、
-  `{` / `[` 前缀、所有列出的结构 token,以及根第一项的
-  pair-shape/BOM 情况;它们是完整规则,优先于本节的一般说明。特别是,
-  当 § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择裸形式。
-- **含 `LF`、前后空白或控制字节(`0x00`–`0x1F` 除 `0x09` `TAB`
-  与 `0x0A` `LF`,且非 `0x0D` `CR`—— 由下一条单独处理)**:输出
-  为 verbatim 多行 `((` … `))`。开启
-  `((` 在值行上输出(对前缀 `key: `,项单独),位于当前缩进。
-  体按 `LF` 切分;每段以一行的形式在**缩进 0**(无前导空白 ——
-  verbatim 精确保留字节,任何缩进会被注入值)输出。关闭 `))` 在
-  自身行上、当前缩进输出。
+Writer MUST 按顺序检查以下分支;第一个匹配的分支决定结果或形式选择路径:
+
 - **含 `CR` 字节(`0x0D`)**:Value 在规范形式中**不可表示**。
   String 中的 `CR` 字节只能通过 inline 复合值内的 `\r` 转义,
   或指称码点 000D 的通用 `\uXXXX` escape(§ 3.7、§ 3.7.1)生成,
@@ -1530,6 +1523,35 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
   writer-conforming 实现 MUST 以错误拒绝此类 Value,而不是将其
   序列化;它不在 § 8.3 round-trip 性质的范围内。可移植文档
   SHOULD NOT 在 String 值中依赖 `CR` 字节。
+- **需要多行表示:** 当 *body* 含 `LF`、带前导或尾部空白
+  (§ 3.3),或含 `0x00`–`0x1F` 范围内除 `0x09` `TAB`、`0x0A`
+  `LF` 和 `0x0D` `CR` 之外的 ASCII 控制字节(`CR` 由前一分支
+  拒绝)时,选择多行
+  表示并应用下文的碰撞与可表示性检查。在这些检查约束下,使用
+  verbatim 形式 `((` … `))`:在当前缩进的值行输出开启符(对带
+  `key: ` 前缀,项则单独输出),按 `LF` 切分 *body*,将每个所得段
+  作为一行在**缩进 0**输出,并在当前缩进的单独一行输出关闭符
+  `))`。Writer 不为 verbatim 体段添加缩进,因为 verbatim 形式精确
+  保留字节。下文的检查优先于此默认形式,在适用时要求 stripped
+  形式或拒绝该 Value。
+- **空 String (`""`)**:对输出 `key:`(冒号后无体);数组项输出
+  `::`(无体)。
+- **物理安全的非空单行 String:** 仅当此前分支均不匹配时才进入
+  此分支。Writer MUST 随后应用实际语法位置的完整规则。对 pair
+  应用 § 5.9.5:仅当其分发条件成立时使用普通形式
+  `key: <body>`,否则使用原始标记 `key:: <body>`。对数组项应用
+  § 5.9.6:仅当相同的普通形式条件成立且不存在项位置冲突时使用裸
+  形式 `<body>`,否则使用原始标记 `:: <body>`。这些委托规则包括
+  number 与 `null` / `true` / `false` 冲突、`{` / `[` 前缀、
+  `(` / `((` / `()` / `(())` 分发形式、恰好为 `}` 或 `]` 的
+  项体、以 `##` 或 `::` 开头的项体,以及根 Array 第一项的
+  pair-shape 和 U+FEFF 风险。在此分支内这些规则是完整的;当
+  § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择普通或裸形式。
+
+例如,String 体 `" x"` 和 `"x "` 选择多行分支并通过 verbatim
+形式 round-trip,而 `"{abc"` 到达物理安全的单行分支;由于其 `{`
+前缀与复合值分发冲突,它在 pair 中使用 `key:: {abc`,在数组项位置
+使用 `:: {abc`。
 
 规范 writer 对需要多行表示的字符串优先 verbatim 多行 `((` …
 `))`。若体的某个段(按 `LF` 切分后),在修剪前后空白(§ 3.3)后
@@ -2148,6 +2170,8 @@ Parser-conforming 实现:
 - 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与对应
   `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需数值域上
   (i64 Integer、binary64 Float)。
+  在每个 JSON Value oracle 中,不含 `.`、`e` 或 `E` 的普通数字
+  token 表示 Integer;含其中任一项的 token 表示 Float,包括 `-0.0`。
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如
@@ -2207,9 +2231,10 @@ Writer-conforming 实现:
   Value 映射与 `$float` sentinel 的精确形状见 § 5.9.0。原因代码
   MUST 在 Value 树中有递归见证,而不得从文件名推导。
 - 对 `versions/0.7/tests/parseable-unrepresentable/` 下每个
-  fixture,parser-conforming 实现接受 sibling `name.ktav` 并产生
-  `name.json["value"]`,随后 writer-conforming 实现以指定原因代码
-  拒绝该 Value。这些 fixture 是 pair 而非 valid triple,MUST NOT
+  fixture,在给定 `name.json["value"]` 时,以
+  `name.json["unrepresentable_reason"]` 指明的原因代码拒绝该
+  Value。这些 fixture 是
+  pair 而非 valid triple,MUST NOT
   带有 canonical-output 文件。
 
 规范形式定义见 § 5.9。

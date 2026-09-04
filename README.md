@@ -373,10 +373,10 @@ false-green, which is worse than having no fixtures for it at all.
   `<name>.ktav` + `<name>.json` + `<name>.canonical.ktav` triple:
   `.ktav` is the input; `.json` is the expected parsed `Value`,
   mapped 1:1 (`Null`→`null`, `Bool`→`bool`, `String`→`string`,
-  `Array`→`array`, `Object`→`object` — numbers typed by lexical form,
-  a bare integer body maps to a JSON integer, a bare decimal body to
-  a JSON float, every other scalar stays a string, `::` forces a
-  literal string); `.canonical.ktav` is the expected byte-exact
+  `Array`→`array`, `Object`→`object`). A JSON number token with no
+  `.`, `e`, or `E` denotes Integer; one containing any of them denotes
+  Float, including `-0.0`. Every other scalar stays a string and `::`
+  forces a literal string. `.canonical.ktav` is the expected byte-exact
   writer output for that same `Value`. Object field order is
   significant.
 - **`invalid/`** — documents a conforming parser MUST reject. Each
@@ -387,20 +387,24 @@ false-green, which is worse than having no fixtures for it at all.
   programmatic-only cases have one `<name>.json` each, with exactly
   `value`, `unrepresentable_reason`, and non-empty `note`; the Value
   mapping and exact `$float` sentinel shape are defined by § 5.9.0.
+  Only `ScalarRoot`, `EmptyKeyName`, and `NonFiniteFloat` are allowed.
   The reason code MUST have a recursive witness and MUST NOT be inferred
   from the filename.
 - **`parseable-unrepresentable/`** *(0.7+)* — parser-produced Values
   which a conforming writer MUST refuse. Each case is a
   `<name>.ktav` + `<name>.json` pair; parsing the input MUST produce the
   JSON `value`, and writing it MUST fail with the named reason code.
-  These are intentionally pairs, with no canonical-output file, and use
-  the same exact JSON schema as `unrepresentable/`.
+  Only the String reasons `CRByte`, `BothFormsRequired`,
+  `TrailingWhitespaceCollision`, and `LeadingWhitespaceCollision` are
+  allowed. These are intentionally pairs, with no other files and no
+  canonical-output file.
 
-The versioned `scripts/locks/corpus-inventory.0.7.lock.json` independently
-locks the complete fixture inventory for `valid/`, `invalid/`,
-`unrepresentable/`, and `parseable-unrepresentable/`; CI passes it to
-`validate_corpus.py --corpus-inventory-lock` so additions and deletions
-cannot silently change the corpus.
+The versioned `scripts/locks/corpus-inventory.0.7.lock.json` maps every
+corpus-relative file path in `valid/`, `invalid/`, `unrepresentable/`, and
+`parseable-unrepresentable/`, plus `boundary-fixtures.json`, to its SHA-256
+digest. CI passes it to `validate_corpus.py --corpus-inventory-lock`, which
+rejects additions, deletions, content drift, and unknown top-level entries;
+the lock supplements rather than replaces semantic and schema validation.
 
 Passing every test in every category present in that version's suite
 is a necessary release gate, but not by itself sufficient proof of

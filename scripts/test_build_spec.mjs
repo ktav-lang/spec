@@ -16,7 +16,12 @@ import {
   firstByteDiff,
   lineNumberAtByte,
   lineAtByte,
+  formatMismatchDiagnostic,
+  buildBuffers,
+  writeBuildOutputs,
   defaultSectionInventoryLockPath,
+  LANGS,
+  README_FILES,
   README_SOURCE_FILE,
 } from './build_spec.mjs';
 
@@ -201,6 +206,19 @@ test('first byte diff and line number are correct at offset zero and after newli
   assert.equal(lineNumberAtByte(Buffer.from('same'), 4), 1);
   assert.equal(lineAtByte(Buffer.from('first\nsecond\n'), 0), JSON.stringify('first'));
   assert.equal(lineAtByte(Buffer.from('first\nsecond\n'), 6), JSON.stringify('second'));
+});
+
+test('spec mismatch diagnostic excerpts the differing line after a newline', () => {
+  const existing = Buffer.from('first\nactual line\n');
+  const generated = Buffer.from('first\nexpected line\n');
+  const diff = firstByteDiff(existing, generated);
+  assert.equal(diff, 6);
+  assert.equal(
+    formatMismatchDiagnostic('spec.md', 'en', existing, generated, diff, 'sec-1'),
+    'build_spec --check: MISMATCH in spec.md (en) at byte offset 6, line 2, unit "sec-1":\n' +
+    '  generated: "expected line"\n' +
+    '  existing:  "actual line"\n'
+  );
 });
 
 test('orphan unit directory not listed in manifest', async () => {
@@ -426,11 +444,37 @@ test('non-last unit zh final chunk ends "\\n\\n\\n\\n" (four LFs) is rejected', 
   );
 });
 
-test('missing README.ru.md at content/ top level is rejected', async () => {
-  await assert.rejects(
-    validate(baseFixtures(), null, (c) => fs.rmSync(path.join(c, 'README.ru.md'))),
-    (e) => /required file "README\.ru\.md" is missing under content\//.test(e.message)
-  );
+test('write build restores missing generated content READMEs from README.source.js', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-readme-write-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    const manifest = fixtures.map((u) => u.name);
+    const expected = { en: '# EN README\n', ru: '# RU README\n', zh: '# ZH README\n' };
+    makeContent(versionDir, fixtures, manifest);
+    write(path.join(contentDir, README_SOURCE_FILE),
+      bodyJs(expected.en, expected.ru, expected.zh));
+    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
+      JSON.stringify({
+        format: 'ktav-section-inventory',
+        units: manifest,
+        version: '0.7.0',
+      }, null, 2) + '\n');
+    for (const lang of LANGS) fs.rmSync(path.join(contentDir, README_FILES[lang]));
+
+    const build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
+    writeBuildOutputs(versionDir, contentDir, build);
+
+    for (const lang of LANGS) {
+      assert.equal(
+        fs.readFileSync(path.join(contentDir, README_FILES[lang]), 'utf8'),
+        expected[lang]
+      );
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 });
 
 // ---- body-N.js raw-source shape scanner (round 19, finding 1) ----

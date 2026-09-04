@@ -40,7 +40,7 @@ export default {
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw string item
+<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw string item
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -71,11 +71,11 @@ export default {
 
 Notes on the notation:
 
-- \`(ws)\` stands for zero or more whitespace code points (§ 3.3 — the
-  fixed 25-code-point set, not ASCII-only).
-- \`1*ws\` stands for **one or more** whitespace code points (§ 3.3).
-- \`<sep-end>\` stands for "at least one whitespace code point, or the end of
-  the line". It is used after the multi-line pair separators (\`:\`,
+- \`(ws)\` stands for zero or more line-bounded \`ws\` code points defined
+  above; LF and CR are excluded.
+- \`1*ws\` stands for **one or more** of those same line-bounded code points.
+- \`<sep-end>\` stands for "at least one line-bounded whitespace code point,
+  or the end of the line". It is used after the multi-line pair separators (\`:\`,
   \`::\`). Writing \`key:value\` (no whitespace, no EOL after the
   separator) is a syntax error in the multi-line pair form — see
   § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
@@ -87,9 +87,10 @@ Notes on the notation:
   the final line production and the \`<line-end>\` at EOF may be consumed at
   most once; this prevents \`<line>*\` from repeating a zero-width \`blank\`
   production when \`(ws)=0\` at EOF.
-- \`any-chars-until-line-end\` and an inline scalar's \`<line-end>\`
-  terminator stop before (and do not consume) \`<line-end>\`; the enclosing
-  line production consumes it.
+- \`any-chars-until-line-end\` denotes zero or more source bytes and stops
+  before (without consuming) \`<line-end>\`; the enclosing line production
+  consumes it. The zero-length case permits an empty \`<comment-body>\` and
+  an empty raw-marker \`<item-literal>\`.
 - The \`<inline-value>\` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is \`{\`, the value is a nested inline object (matching one of
@@ -141,7 +142,7 @@ Notes on the notation:
                     ; обрезается; интерпретируется по § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw-строковый элемент
+<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw-строковый элемент
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -172,10 +173,11 @@ Notes on the notation:
 
 Примечания к нотации:
 
-- \`(ws)\` — ноль или более пробельных кодовых точек (§ 3.3 —
-  фиксированный набор из 25, не только ASCII).
-- \`1*ws\` — **одна или более** пробельных кодовых точек (§ 3.3).
-- \`<sep-end>\` — «как минимум одна пробельная кодовая точка или конец строки».
+- \`(ws)\` — ноль или более определённых выше ограниченных строкой кодовых
+  точек \`ws\`; LF и CR исключены.
+- \`1*ws\` — **одна или более** тех же ограниченных строкой кодовых точек.
+- \`<sep-end>\` — «как минимум одна ограниченная строкой пробельная кодовая
+  точка или конец строки».
   Используется после разделителей пар многострочной формы (\`:\`,
   \`::\`). Запись \`key:value\` (без пробела, без EOL после разделителя) —
   синтаксическая ошибка в многострочной форме пары — см. § 6.10.
@@ -188,9 +190,10 @@ Notes on the notation:
   может завершить только последнюю продукцию строки, а \`<line-end>\` в EOF
   поглощается не более одного раза; поэтому \`<line>*\` не может повторять
   нулевую по ширине продукцию \`blank\` при \`(ws)=0\` и EOF.
-- \`any-chars-until-line-end\` и терминатор \`<line-end>\` у inline-скаляра
-  останавливаются перед \`<line-end>\` и не поглощают его; его поглощает
-  окружающая продукция строки.
+- \`any-chars-until-line-end\` обозначает ноль или более байтов исходного
+  текста и останавливается перед \`<line-end>\`, не поглощая его; его поглощает
+  окружающая продукция строки. Нулевая длина допускает пустой
+  \`<comment-body>\` и пустой raw-маркерный \`<item-literal>\`.
 - Альтернативы \`<inline-value>\` проверяются **слева-направо** по
   первому непробельному байту в позиции inline-значения. Если этот
   байт — \`{\`, значение — вложенный inline-объект (одна из первых
@@ -240,7 +243,7 @@ Notes on the notation:
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw 字符串项
+<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw 字符串项
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -270,10 +273,10 @@ Notes on the notation:
 
 关于该记法的说明:
 
-- \`(ws)\` 表示零个或多个空白码点(§ 3.3 —— 固定的 25 码点集合,
-  不仅是 ASCII)。
-- \`1*ws\` 表示**一个或多个**空白码点(§ 3.3)。
-- \`<sep-end>\` 表示「至少一个空白码点,或行末」。它用在多行
+- \`(ws)\` 表示零个或多个上文定义的行边界内 \`ws\` 码点;LF 和 CR
+  不包括在内。
+- \`1*ws\` 表示**一个或多个**同样的行边界内码点。
+- \`<sep-end>\` 表示「至少一个行边界内空白码点,或行末」。它用在多行
   pair 分隔符(\`:\`、\`::\`)之后。写 \`key:value\`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 \`:\` / \`::\` 之后有空白。
@@ -282,8 +285,9 @@ Notes on the notation:
   因此最后一行可以没有终止字节。EOF 是终结性的零字节标记:只能终止
   最后一个行产生式,且 EOF 处的 \`<line-end>\` 最多消耗一次;因此在
   \`(ws)=0\` 且到达 EOF 时,\`<line>*\` 不会重复零宽的 \`blank\` 产生式。
-- \`any-chars-until-line-end\` 与 inline 标量的 \`<line-end>\` 终止符在
-  \`<line-end>\` 之前停止且不消耗它;由外层行产生式消耗该终止符。
+- \`any-chars-until-line-end\` 表示零个或多个源字节,在 \`<line-end>\`
+  之前停止且不消耗它;由外层行产生式消耗该终止符。零长度情形允许
+  空 \`<comment-body>\` 和空 raw-marker \`<item-literal>\`。
 - \`<inline-value>\` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 \`{\`,值是嵌套 inline 对象(匹配前两条
   \`{\`-规则之一)且 MUST 在同一行以 \`}\` 关闭;若该字节为 \`[\`,

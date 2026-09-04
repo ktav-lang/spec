@@ -26,6 +26,9 @@ Purpose:
          --require-boundary is passed). With --boundary-manifest-lock, the
          entry set must also match a separate lock file exactly, catching a
          silently deleted entry that leaves the rest individually well-formed.
+      6. With --corpus-inventory-lock, tests/ has the exact 0.7 top-level
+         layout and every corpus file path and raw-byte SHA-256 digest matches
+         the versioned lock. Semantic and schema checks still run independently.
 
 Usage:
     python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable]
@@ -39,19 +42,27 @@ Exit codes:
 """
 
 import argparse
+import hashlib
 import json
+import math
 import os
+import re
 import sys
 
-UNREPRESENTABLE_REASONS = {
+PROGRAMMATIC_UNREPRESENTABLE_REASONS = frozenset({
     "ScalarRoot",
     "EmptyKeyName",
     "NonFiniteFloat",
+})
+PARSER_UNREPRESENTABLE_REASONS = frozenset({
     "CRByte",
     "BothFormsRequired",
     "TrailingWhitespaceCollision",
     "LeadingWhitespaceCollision",
-}
+})
+UNREPRESENTABLE_REASONS = (
+    PROGRAMMATIC_UNREPRESENTABLE_REASONS | PARSER_UNREPRESENTABLE_REASONS
+)
 
 # Closed set of expected_error category names, per spec version.
 # Derived from versions/0.6/spec.md and versions/0.7/spec.md Sec 6 headings.
@@ -99,13 +110,12 @@ KTAV_WHITESPACE = frozenset(
         0x202F, 0x205F, 0x3000,
     )
 )
-CORPUS_INVENTORY_FIELDS = frozenset({
-    "version",
-    "valid",
-    "invalid",
-    "unrepresentable",
-    "parseable_unrepresentable",
+CORPUS_INVENTORY_FIELDS = frozenset({"version", "files"})
+LOCKED_CORPUS_DIRS = frozenset({
+    "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
 })
+LOCKED_CORPUS_FILES = frozenset({"boundary-fixtures.json"})
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 def rel(path, tests_dir):
@@ -149,9 +159,17 @@ def _reject_duplicate_keys(pairs):
     return obj
 
 
+def _parse_json_float(token):
+    value = float(token)
+    if not math.isfinite(value):
+        raise ValueError("non-finite JSON number %r is not allowed" % token)
+    return value
+
+
 def loads_strict(text):
     """json.loads that rejects NaN/Infinity/-Infinity and duplicate object keys."""
     return json.loads(text, parse_constant=_reject_json_constant,
+                      parse_float=_parse_json_float,
                       object_pairs_hook=_reject_duplicate_keys)
 
 
@@ -167,6 +185,8 @@ def check_utf8_json(tests_dir, results):
     for root, _dirs, files in os.walk(tests_dir):
         for fname in files:
             path = os.path.join(root, fname)
+            if os.path.islink(path) or not os.path.isfile(path):
+                continue
             n_files += 1
             rpath = rel(path, tests_dir)
             try:
@@ -221,7 +241,31 @@ def classify_valid(files):
     return primary, jsons, canonicals
 
 
-def check_valid(tests_dir, results):
+def _walk_regular_category_files(directory, tests_dir, results, category):
+    if os.path.islink(directory):
+        results.fail(category, "%s: category root must not be a symlink"
+                     % rel(directory, tests_dir))
+        return
+    for root, dirs, files in os.walk(directory, topdown=True, followlinks=False):
+        dirs.sort()
+        for dirname in list(dirs):
+            path = os.path.join(root, dirname)
+            if os.path.islink(path):
+                results.fail(category, "%s: symlink directory is not allowed"
+                             % rel(path, tests_dir))
+                dirs.remove(dirname)
+        regular = []
+        for filename in sorted(files):
+            path = os.path.join(root, filename)
+            if os.path.islink(path) or not os.path.isfile(path):
+                results.fail(category, "%s: symlink or special file is not allowed"
+                             % rel(path, tests_dir))
+            else:
+                regular.append(filename)
+        yield root, regular
+
+
+def check_valid(tests_dir, results, parsed):
     """Check 2: complete .ktav/.json/.canonical.ktav triples under valid/."""
     category = "valid/ triples"
     valid_dir = os.path.join(tests_dir, "valid")
@@ -229,7 +273,8 @@ def check_valid(tests_dir, results):
         results.fail(category, "valid/ directory not present")
         return
     n_fixtures = 0
-    for root, _dirs, files in os.walk(valid_dir):
+    for root, files in _walk_regular_category_files(
+            valid_dir, tests_dir, results, category):
         primary, jsons, canonicals = classify_valid(files)
         unexpected = sorted(
             f for f in files
@@ -251,6 +296,16 @@ def check_valid(tests_dir, results):
                     category, "%s: missing sibling canonical oracle %s"
                     % (rel(os.path.join(root, name + ".ktav"), tests_dir),
                        rel(os.path.join(root, name + ".canonical.ktav"), tests_dir)))
+            rpath = rel(os.path.join(root, name + ".json"), tests_dir)
+            if rpath in parsed and parsed[rpath] is not None:
+                errors, _witnesses, root_kind = _inspect_unrepresentable_value(
+                    parsed[rpath], sentinel_policy="forbid"
+                )
+                for message in errors:
+                    results.fail(category, "%s: %s" % (rpath, message))
+                if root_kind not in ("Object", "Array"):
+                    results.fail(category, "%s: parser-produced Value oracle "
+                                 "root must be Object or Array" % rpath)
         for name in sorted(jsons - primary):
             results.fail(
                 category, "%s: orphaned JSON oracle; no sibling primary input %s"
@@ -283,7 +338,8 @@ def check_invalid(tests_dir, results, parsed, error_categories):
         results.fail(category, "invalid/ directory not present")
         return
     n_fixtures = 0
-    for root, _dirs, files in os.walk(invalid_dir):
+    for root, files in _walk_regular_category_files(
+            invalid_dir, tests_dir, results, category):
         primary = set()
         jsons = set()
         for fname in files:
@@ -395,9 +451,10 @@ def _strip_ktav_whitespace(text):
     return text[start:end]
 
 
-def _semantic_kind(value):
+def _semantic_kind(value, decode_float_sentinel=True):
     if isinstance(value, dict):
-        if (set(value) == {FLOAT_SENTINEL_KEY}
+        if (decode_float_sentinel
+                and set(value) == {FLOAT_SENTINEL_KEY}
                 and value[FLOAT_SENTINEL_KEY] in FLOAT_SENTINEL_VALUES):
             return "Float"
         return "Object"
@@ -418,8 +475,6 @@ def _semantic_kind(value):
 
 def _multiline_collision_witness(text):
     """Return the § 5.9.7 collision witnesses for a String body."""
-    if "\n" not in text:
-        return False, False, False
     lines = text.split("\n")
     trimmed = [_strip_ktav_whitespace(line) for line in lines]
     has_double_closer = any(line == "))" for line in trimmed)
@@ -447,14 +502,42 @@ def _multiline_collision_witness(text):
     )
 
 
-def _inspect_unrepresentable_value(value):
-    """Validate the Value mapping and collect reason witnesses recursively."""
+def _lone_surrogate(value):
+    for char in value:
+        codepoint = ord(char)
+        if 0xD800 <= codepoint <= 0xDFFF:
+            return codepoint
+    return None
+
+
+def _oracle_path(path, key):
+    escaped = json.dumps(key, ensure_ascii=True)[1:-1]
+    return "%s/%s" % (path, escaped.replace("~", "~0").replace("/", "~1"))
+
+
+def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
+    """Validate a recursive Value oracle and collect writer-failure witnesses.
+
+    sentinel_policy is "allow" for programmatic-only fixtures and "forbid"
+    for parser-produced fixtures.
+    """
     errors = []
     witnesses = {reason: False for reason in UNREPRESENTABLE_REASONS}
 
     def walk(node, path):
         if isinstance(node, dict):
+            for key in node:
+                surrogate = _lone_surrogate(key)
+                if surrogate is not None:
+                    errors.append("%s: Object key contains lone surrogate U+%04X"
+                                  % (path, surrogate))
             if FLOAT_SENTINEL_KEY in node:
+                if sentinel_policy == "forbid":
+                    errors.append("%s: '$float' sentinel is not allowed in a "
+                                  "parser-produced Value oracle" % path)
+                    for key, child in node.items():
+                        walk(child, _oracle_path(path, key))
+                    return
                 if (set(node) != {FLOAT_SENTINEL_KEY}
                         or node[FLOAT_SENTINEL_KEY] not in FLOAT_SENTINEL_VALUES):
                     errors.append(
@@ -462,27 +545,36 @@ def _inspect_unrepresentable_value(value):
                         "with value 'NaN', 'Infinity', or '-Infinity'" % path)
                 else:
                     witnesses["NonFiniteFloat"] = True
-                return
+                    return
             for key, child in node.items():
                 if key == "":
                     witnesses["EmptyKeyName"] = True
-                walk(child, "%s/%s" % (path, key.replace("~", "~0").replace("/", "~1")))
+                walk(child, _oracle_path(path, key))
         elif isinstance(node, list):
             for index, child in enumerate(node):
                 walk(child, "%s/%d" % (path, index))
         elif isinstance(node, str):
+            surrogate = _lone_surrogate(node)
+            if surrogate is not None:
+                errors.append("%s: String contains lone surrogate U+%04X"
+                              % (path, surrogate))
             if "\r" in node:
                 witnesses["CRByte"] = True
             both, trailing, leading = _multiline_collision_witness(node)
             witnesses["BothFormsRequired"] |= both
             witnesses["TrailingWhitespaceCollision"] |= trailing
             witnesses["LeadingWhitespaceCollision"] |= leading
+        elif isinstance(node, float) and not math.isfinite(node):
+            errors.append("%s: ordinary JSON number must be finite" % path)
 
     walk(value, "/value")
-    return errors, witnesses, _semantic_kind(value)
+    return errors, witnesses, _semantic_kind(
+        value, decode_float_sentinel=sentinel_policy == "allow"
+    )
 
 
-def _check_unrepresentable_object(obj, rpath, results, category):
+def _check_unrepresentable_object(obj, rpath, results, category,
+                                  allowed_reasons, parser_produced):
     if not isinstance(obj, dict):
         results.fail(category, "%s: expected a JSON object" % rpath)
         return
@@ -502,21 +594,25 @@ def _check_unrepresentable_object(obj, rpath, results, category):
     if not isinstance(reason, str) or reason == "":
         results.fail(category, "%s: 'unrepresentable_reason' must be a "
                      "non-empty string" % rpath)
-    elif reason not in UNREPRESENTABLE_REASONS:
-        results.fail(category, "%s: unknown unrepresentable_reason %r "
-                     "(must be one of: %s)"
-                     % (rpath, reason, ", ".join(sorted(UNREPRESENTABLE_REASONS))))
+    elif reason not in allowed_reasons:
+        results.fail(category, "%s: unrepresentable_reason %r is not allowed "
+                     "in %s (must be one of: %s)"
+                     % (rpath, reason, category,
+                        ", ".join(sorted(allowed_reasons))))
     if not isinstance(note, str) or note == "":
         results.fail(category, "%s: 'note' must be a non-empty string" % rpath)
     if "value" not in obj:
         return
 
     value_errors, witnesses, root_kind = _inspect_unrepresentable_value(
-        obj["value"]
+        obj["value"], sentinel_policy="forbid" if parser_produced else "allow"
     )
     for message in value_errors:
         results.fail(category, "%s: %s" % (rpath, message))
-    if not isinstance(reason, str) or reason not in UNREPRESENTABLE_REASONS:
+    if parser_produced and root_kind not in ("Object", "Array"):
+        results.fail(category, "%s: parser-produced Value oracle root must be "
+                     "Object or Array" % rpath)
+    if not isinstance(reason, str) or reason not in allowed_reasons:
         return
     if reason == "ScalarRoot":
         applicable = root_kind not in ("Object", "Array")
@@ -538,7 +634,8 @@ def check_unrepresentable(tests_dir, results, parsed, require=False):
         results.set_count(category, skipped=True)
         return False
     n_fixtures = 0
-    for root, _dirs, files in os.walk(unrep_dir):
+    for root, files in _walk_regular_category_files(
+            unrep_dir, tests_dir, results, category):
         for fname in sorted(files):
             path = os.path.join(root, fname)
             rpath = rel(path, tests_dir)
@@ -548,7 +645,11 @@ def check_unrepresentable(tests_dir, results, parsed, require=False):
                 continue
             n_fixtures += 1
             if rpath in parsed and parsed[rpath] is not None:
-                _check_unrepresentable_object(parsed[rpath], rpath, results, category)
+                _check_unrepresentable_object(
+                    parsed[rpath], rpath, results, category,
+                    PROGRAMMATIC_UNREPRESENTABLE_REASONS,
+                    parser_produced=False,
+                )
     results.set_count(category, n_fixtures=n_fixtures)
     return True
 
@@ -565,7 +666,8 @@ def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
         results.set_count(category, skipped=True)
         return False
     n_fixtures = 0
-    for root, _dirs, files in os.walk(fixture_dir):
+    for root, files in _walk_regular_category_files(
+            fixture_dir, tests_dir, results, category):
         primary = set()
         jsons = set()
         for fname in files:
@@ -593,7 +695,11 @@ def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
             n_fixtures += 1
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
             if rpath in parsed and parsed[rpath] is not None:
-                _check_unrepresentable_object(parsed[rpath], rpath, results, category)
+                _check_unrepresentable_object(
+                    parsed[rpath], rpath, results, category,
+                    PARSER_UNREPRESENTABLE_REASONS,
+                    parser_produced=True,
+                )
     results.set_count(category, n_fixtures=n_fixtures)
     return True
 
@@ -822,61 +928,117 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     return True
 
 
-def _fixture_inventory(tests_dir):
-    """Return fixture paths relative to each corpus category directory."""
-    def collect(category, suffix, exclude_suffix=None):
-        directory = os.path.join(tests_dir, category)
-        found = []
-        if not os.path.isdir(directory):
-            return found
-        for root, _dirs, files in os.walk(directory):
-            for fname in files:
-                if not fname.endswith(suffix):
+def _check_locked_top_level(tests_dir, results):
+    category = "corpus inventory lock"
+    expected = LOCKED_CORPUS_DIRS | LOCKED_CORPUS_FILES
+    try:
+        entries = {entry.name: entry for entry in os.scandir(tests_dir)}
+    except OSError as e:
+        results.fail(category, "%s: cannot inspect top level: %s" % (tests_dir, e))
+        return
+
+    for name in sorted(expected - set(entries)):
+        kind = "directory" if name in LOCKED_CORPUS_DIRS else "file"
+        results.fail(category, "missing top-level %s %r" % (kind, name))
+    for name in sorted(set(entries) - expected):
+        results.fail(category, "unexpected top-level entry %r" % name)
+    for name in sorted(expected & set(entries)):
+        entry = entries[name]
+        if name in LOCKED_CORPUS_DIRS:
+            valid = entry.is_dir(follow_symlinks=False)
+            kind = "directory"
+        else:
+            valid = entry.is_file(follow_symlinks=False)
+            kind = "regular file"
+        if entry.is_symlink() or not valid:
+            results.fail(category, "top-level entry %r must be a %s, not a "
+                         "symlink or special entry" % (name, kind))
+
+
+def _sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as stream:
+        while True:
+            chunk = stream.read(65536)
+            if not chunk:
+                return digest.hexdigest()
+            digest.update(chunk)
+
+
+def _corpus_file_hashes(tests_dir, results):
+    category = "corpus inventory lock"
+    hashes = {}
+    for dirname in sorted(LOCKED_CORPUS_DIRS):
+        directory = os.path.join(tests_dir, dirname)
+        if not os.path.isdir(directory) or os.path.islink(directory):
+            continue
+        for root, dirs, files in os.walk(directory, topdown=True,
+                                         followlinks=False):
+            dirs.sort()
+            files.sort()
+            for child in list(dirs):
+                path = os.path.join(root, child)
+                if os.path.islink(path):
+                    results.fail(category, "%s: symlink directory is not a "
+                                 "corpus file" % rel(path, tests_dir))
+                    dirs.remove(child)
+            for filename in files:
+                path = os.path.join(root, filename)
+                rpath = rel(path, tests_dir)
+                if os.path.islink(path) or not os.path.isfile(path):
+                    results.fail(category, "%s: symlink or special entry is not "
+                                 "a corpus file" % rpath)
                     continue
-                if exclude_suffix and fname.endswith(exclude_suffix):
-                    continue
-                path = os.path.join(root, fname)
-                found.append(os.path.relpath(path, directory)[:-len(suffix)]
-                             .replace(os.sep, "/"))
-        return sorted(found)
+                try:
+                    hashes[rpath] = _sha256_file(path)
+                except OSError as e:
+                    results.fail(category, "%s: unreadable while hashing: %s"
+                                 % (rpath, e))
+    boundary_path = os.path.join(tests_dir, "boundary-fixtures.json")
+    if os.path.isfile(boundary_path) and not os.path.islink(boundary_path):
+        try:
+            hashes["boundary-fixtures.json"] = _sha256_file(boundary_path)
+        except OSError as e:
+            results.fail(category, "boundary-fixtures.json: unreadable while "
+                         "hashing: %s" % e)
+    return hashes
 
-    return {
-        "valid": collect("valid", ".ktav", ".canonical.ktav"),
-        "invalid": collect("invalid", ".ktav"),
-        "unrepresentable": collect("unrepresentable", ".json"),
-        "parseable_unrepresentable": collect("parseable-unrepresentable", ".ktav",
-                                              ".canonical.ktav"),
-    }
+
+def _valid_locked_path(path):
+    if path == "boundary-fixtures.json":
+        return True
+    if not isinstance(path, str) or "\\" in path:
+        return False
+    if _lone_surrogate(path) is not None or any(ord(char) < 0x20 for char in path):
+        return False
+    parts = path.split("/")
+    return (len(parts) >= 2 and parts[0] in LOCKED_CORPUS_DIRS
+            and all(part not in ("", ".", "..") for part in parts))
 
 
-def _validate_inventory_list(value, field, results, rpath):
-    if not isinstance(value, list):
-        results.fail("corpus inventory lock", "%s: %r must be an array"
-                     % (rpath, field))
-        return []
-    seen = set()
-    valid = []
-    for item in value:
-        if not isinstance(item, str) or item == "":
-            results.fail("corpus inventory lock", "%s: %r entries must be "
-                         "non-empty strings" % (rpath, field))
+def _validate_hash_mapping(value, results, rpath):
+    category = "corpus inventory lock"
+    if not isinstance(value, dict):
+        results.fail(category, "%s: 'files' must be an object mapping canonical "
+                     "relative paths to SHA-256 digests" % rpath)
+        return {}
+    valid = {}
+    for path in sorted(value):
+        digest = value[path]
+        if not _valid_locked_path(path):
+            results.fail(category, "%s: invalid canonical corpus path %r"
+                         % (rpath, path))
             continue
-        parts = item.split("/")
-        if ("\\" in item or any(part in ("", ".", "..") for part in parts)):
-            results.fail("corpus inventory lock", "%s: %r contains invalid "
-                         "fixture path %r" % (rpath, field, item))
+        if not isinstance(digest, str) or SHA256_RE.fullmatch(digest) is None:
+            results.fail(category, "%s: digest for %r must be 64 lowercase "
+                         "hexadecimal SHA-256 characters" % (rpath, path))
             continue
-        if item in seen:
-            results.fail("corpus inventory lock", "%s: %r contains duplicate "
-                         "fixture %r" % (rpath, field, item))
-            continue
-        seen.add(item)
-        valid.append(item)
-    return sorted(valid)
+        valid[path] = digest
+    return valid
 
 
 def check_corpus_inventory_lock(tests_dir, results, lock_path):
-    """Require the complete versioned fixture inventory to match a lock."""
+    """Match every locked corpus file's canonical path and SHA-256 digest."""
     category = "corpus inventory lock"
     try:
         with open(lock_path, "r", encoding="utf-8") as f:
@@ -905,23 +1067,18 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
                      % (lock_path, ", ".join(repr(field) for field in extra)))
     if lock_data.get("version") != "0.7.0":
         results.fail(category, "%s: 'version' must be '0.7.0'" % lock_path)
-    expected = {}
-    for field in sorted(CORPUS_INVENTORY_FIELDS - {"version"}):
-        expected[field] = _validate_inventory_list(lock_data.get(field), field,
-                                                    results, lock_path)
-    actual = _fixture_inventory(tests_dir)
-    for field in sorted(expected):
-        if expected[field] != actual[field]:
-            missing_items = sorted(set(expected[field]) - set(actual[field]))
-            extra_items = sorted(set(actual[field]) - set(expected[field]))
-            details = []
-            if missing_items:
-                details.append("missing from corpus: %s" % ", ".join(missing_items))
-            if extra_items:
-                details.append("not present in lock: %s" % ", ".join(extra_items))
-            results.fail(category, "%s: %s inventory differs (%s)"
-                         % (field, lock_path, "; ".join(details)))
-    results.set_count(category, **{field: len(actual[field]) for field in actual})
+    expected = _validate_hash_mapping(lock_data.get("files"), results, lock_path)
+    _check_locked_top_level(tests_dir, results)
+    actual = _corpus_file_hashes(tests_dir, results)
+    for path in sorted(set(expected) - set(actual)):
+        results.fail(category, "%s: missing from corpus" % path)
+    for path in sorted(set(actual) - set(expected)):
+        results.fail(category, "%s: not present in lock" % path)
+    for path in sorted(set(expected) & set(actual)):
+        if expected[path] != actual[path]:
+            results.fail(category, "%s: content hash mismatch (expected %s, "
+                         "actual %s)" % (path, expected[path], actual[path]))
+    results.set_count(category, n_files=len(actual))
 
 
 def main(argv):
@@ -943,8 +1100,8 @@ def main(argv):
                         "must match exactly; catches a silently deleted entry")
     parser.add_argument("--corpus-inventory-lock", metavar="PATH", default=None,
                         help="path to a versioned lock file whose complete "
-                        "valid/invalid/unrepresentable/parseable-unrepresentable "
-                        "fixture inventory must match exactly")
+                        "corpus relative-path to SHA-256 mapping must match "
+                        "exactly")
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
@@ -955,7 +1112,7 @@ def main(argv):
 
     results = Results()
     parsed = check_utf8_json(tests_dir, results)
-    check_valid(tests_dir, results)
+    check_valid(tests_dir, results, parsed)
     check_invalid(tests_dir, results, parsed, select_error_categories(tests_dir))
     check_invalid_utf8_oracle(tests_dir, results, parsed)
     has_unrep = check_unrepresentable(tests_dir, results, parsed,
@@ -1004,6 +1161,8 @@ def main(argv):
             if c.get("skipped"):
                 return "file not present"
             return "%d entries OK" % c.get("n_entries", 0)
+        if category == "corpus inventory lock":
+            return "%d files match SHA-256 lock" % c.get("n_files", 0)
         return ""
 
     order = ["UTF-8/JSON validity", "valid/ triples", "invalid/ pairs",

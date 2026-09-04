@@ -8,7 +8,7 @@
 // byte-identical to the canonical serialization (`export default ` +
 // JSON.stringify(value, null, 2) + one newline).
 // Node ESM, built-ins only. Usage:
-//   node scripts/build_spec.mjs            write the three spec files
+//   node scripts/build_spec.mjs            write the three spec files and READMEs
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
 //   node scripts/build_spec.mjs -h|--help  usage
 //
@@ -17,7 +17,8 @@
 //   buildBuffers(contentDir)        -> async { bufs, totalLen, manifest, readmeBufs }
 //   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str),
 //   firstByteDiff(existing, expected), lineNumberAtByte(buf, offset),
-//   lineAtByte(buf, offset), defaultSectionInventoryLockPath(contentDir)
+//   lineAtByte(buf, offset), formatMismatchDiagnostic(...),
+//   writeBuildOutputs(...), defaultSectionInventoryLockPath(contentDir)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -424,14 +425,10 @@ export async function validateContentDir(contentDir, options = {}) {
     }
   }
 
-  // 2b. The three per-language READMEs are required, not merely permitted:
-  // the content model is trilingual and its documentation ships in all
-  // three languages (README.md / README.ru.md / README.zh.md).
-  for (const name of Object.values(README_FILES)) {
-    if (!actualFiles.has(name)) {
-      fail(`required file "${name}" is missing under content/ (all three per-language READMEs are mandatory)`);
-    }
-  }
+  // 2b. README.source.js is required input. Its three generated README
+  // outputs remain allowlisted above, but validation must permit them to be
+  // absent so normal write mode can restore them. --check requires and
+  // byte-compares all three outputs below.
   if (!actualFiles.has(README_SOURCE_FILE)) {
     fail(`required file "${README_SOURCE_FILE}" is missing under content/ (the three READMEs must come from one source object)`);
   }
@@ -619,6 +616,13 @@ export async function buildBuffers(contentDir, options = {}) {
   return { bufs, totalLen, manifest, pieces, readmeBufs };
 }
 
+export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }) {
+  for (const lang of LANGS) {
+    fs.writeFileSync(path.join(specDir, OUT_FILES[lang]), bufs[lang]);
+    fs.writeFileSync(path.join(contentDir, README_FILES[lang]), readmeBufs[lang]);
+  }
+}
+
 export function firstByteDiff(existing, expected) {
   const min = Math.min(existing.length, expected.length);
   let diff = 0;
@@ -645,6 +649,22 @@ export function lineAtByte(buf, offset) {
   return JSON.stringify(line);
 }
 
+export function formatMismatchDiagnostic(fileName, lang, existing, generated, diff, unit) {
+  const lineBuf = diff < generated.length ? generated : existing;
+  const lineNo = lineNumberAtByte(lineBuf, diff);
+  const tail = diff >= generated.length
+    ? ' (generated output is shorter; no byte here)'
+    : diff >= existing.length
+      ? ' (existing file is shorter; no byte here)'
+      : '';
+  return (
+    `build_spec --check: MISMATCH in ${fileName} (${lang}) at byte offset ${diff}` +
+    `${tail}, line ${lineNo}, unit "${unit}":\n` +
+    `  generated: ${diff < generated.length ? lineAtByte(generated, diff) : '(no line)'}\n` +
+    `  existing:  ${diff < existing.length ? lineAtByte(existing, diff) : '(no line)'}\n`
+  );
+}
+
 function unitForLine(pieces, lang, offset) {
   for (const p of pieces[lang]) {
     if (offset >= p.start && offset < p.end) return p.unit;
@@ -655,7 +675,7 @@ function unitForLine(pieces, lang, offset) {
 function usage() {
   process.stdout.write(
     'Usage: node scripts/build_spec.mjs [--check | -h | --help]\n' +
-    '  (default)   write versions/0.7/spec.md, spec.ru.md, spec.zh.md\n' +
+    '  (default)   write the three spec files and three content READMEs\n' +
     '  --check     verify outputs are byte-identical; write nothing; silent on success\n'
   );
 }
@@ -686,11 +706,7 @@ async function cli() {
   const { bufs, totalLen, manifest, pieces, readmeBufs } = build;
 
   if (!checkMode) {
-    for (const lang of LANGS) {
-      const out = path.join(specDir, OUT_FILES[lang]);
-      fs.writeFileSync(out, bufs[lang]);
-      fs.writeFileSync(path.join(contentDir, README_FILES[lang]), readmeBufs[lang]);
-    }
+    writeBuildOutputs(specDir, contentDir, build);
     process.stdout.write(
       `build_spec: assembled ${manifest.length} units -> ` +
       LANGS.map((l) => path.relative(root, path.join(specDir, OUT_FILES[l]))).join(', ') + '\n'
@@ -714,21 +730,9 @@ async function cli() {
     const diff = firstByteDiff(existing, bufs[lang]);
 
     if (diff !== -1) {
-      const lineBuf = diff < bufs[lang].length ? bufs[lang] : existing;
-      const lineNo = lineNumberAtByte(lineBuf, diff);
       const unit = unitForLine(pieces, lang, diff);
-      const lineOf = lineAtByte;
-      const tail = diff >= bufs[lang].length
-        ? ' (generated output is shorter; no byte here)'
-        : diff >= existing.length
-          ? ' (existing file is shorter; no byte here)'
-          : '';
-      process.stderr.write(
-        `build_spec --check: MISMATCH in ${OUT_FILES[lang]} (${lang}) at byte offset ${diff}` +
-        `${tail}, line ${lineNo}, unit "${unit}":\n` +
-        `  generated: ${diff < bufs[lang].length ? lineOf(bufs[lang]) : '(no line)'}\n` +
-        `  existing:  ${diff < existing.length ? lineOf(existing) : '(no line)'}\n`
-      );
+      process.stderr.write(formatMismatchDiagnostic(
+        OUT_FILES[lang], lang, existing, bufs[lang], diff, unit));
       process.exit(1);
     }
   }
@@ -747,19 +751,8 @@ async function cli() {
     }
     const diff = firstByteDiff(existing, readmeBufs[lang]);
     if (diff !== -1) {
-      const lineBuf = diff < readmeBufs[lang].length ? readmeBufs[lang] : existing;
-      const lineNo = lineNumberAtByte(lineBuf, diff);
-      const tail = diff >= readmeBufs[lang].length
-        ? ' (generated output is shorter; no byte here)'
-        : diff >= existing.length
-          ? ' (existing file is shorter; no byte here)'
-          : '';
-      process.stderr.write(
-        `build_spec --check: MISMATCH in ${README_FILES[lang]} (${lang}) at byte offset ${diff}` +
-        `${tail}, line ${lineNo}, unit "${README_SOURCE_FILE}":\n` +
-        `  generated: ${diff < readmeBufs[lang].length ? lineAtByte(readmeBufs[lang], diff) : '(no line)'}\n` +
-        `  existing:  ${diff < existing.length ? lineAtByte(existing, diff) : '(no line)'}\n`
-      );
+      process.stderr.write(formatMismatchDiagnostic(
+        README_FILES[lang], lang, existing, readmeBufs[lang], diff, README_SOURCE_FILE));
       process.exit(1);
     }
   }

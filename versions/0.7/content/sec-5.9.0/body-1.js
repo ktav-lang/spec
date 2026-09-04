@@ -62,35 +62,49 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. Every file in \`versions/0.7/tests/unrepresentable/\` and
-\`versions/0.7/tests/parseable-unrepresentable/\` MUST be a JSON object
+it. Every \`.json\` file in \`versions/0.7/tests/unrepresentable/\`
+and \`versions/0.7/tests/parseable-unrepresentable/\` MUST be a JSON object
 with exactly these three fields and no others:
 
 - \`value\`: a recursively valid JSON mapping of the Value. JSON objects
-  map to Objects and arrays to Arrays; JSON null, booleans, strings,
-  and finite JSON numbers map to the corresponding scalar kinds.
+  map to Objects and arrays to Arrays; JSON null, booleans, and strings
+  map to the corresponding scalar kinds. An ordinary JSON number maps
+  to Integer when its lexical token contains none of \`.\`, \`e\`, or
+  \`E\`, and to Float otherwise, including \`-0.0\`; it MUST be finite.
 - \`unrepresentable_reason\`: exactly one of the seven reason codes in
   the table below.
 - \`note\`: a non-empty explanatory String.
 
+Only the following category-specific file sets and reason codes are allowed:
+
+- \`unrepresentable/\` contains one \`<name>.json\` per fixture and no
+  other files. Its reason MUST be \`ScalarRoot\`, \`EmptyKeyName\`, or
+  \`NonFiniteFloat\`; these Values are programmatic-only.
+- \`parseable-unrepresentable/\` contains one \`<name>.ktav\` plus one
+  \`<name>.json\` per fixture and no other files. Its reason MUST be one
+  of the parser-producible String cases \`CRByte\`, \`BothFormsRequired\`,
+  \`TrailingWhitespaceCollision\`, or \`LeadingWhitespaceCollision\`.
+  A canonical-output file MUST NOT be present.
+
 The \`value\` mapping MUST be checked recursively. An empty Object key
-is the witness for the \`EmptyKeyName\` case. The sole representation of a
-non-finite Float is a sentinel object with exactly one field,
+is the witness for the \`EmptyKeyName\` case. A String or Object key
+MUST NOT contain a lone surrogate. The sole representation of a
+non-finite Float in \`unrepresentable/\` is a sentinel object with
+exactly one field,
 \`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\`, or
 \`{"$float": "-Infinity"}\`; a \`$float\` field in any other
-object shape is invalid.
-An ordinary Value MUST NOT use a \`$float\` object for another purpose.
+shape is invalid. This sentinel is permitted only in \`unrepresentable/\`;
+a parser-produced Value MUST NOT contain a \`$float\` Object field, and
+its \`value\` root MUST be an Object or Array.
 A reason code is valid for a fixture only when
 its case occurs somewhere in the Value tree, except \`ScalarRoot\`,
 which requires that the root itself is a scalar. The root MUST be an
 Object or Array for every other reason code. These checks MUST NOT infer
-meaning from a fixture filename.
+meaning from a fixture filename. For the three collision reason codes,
+segments are separated by LF; a String containing no LF has one segment.
 
-The \`parseable-unrepresentable/\` category additionally has a sibling
-\`<name>.ktav\` for each \`<name>.json\`. The parser MUST accept that
-input and produce the JSON's \`value\`; the writer MUST then reject that
-Value with the JSON's reason code. These fixtures intentionally have no
-canonical-output file.
+The parser and writer obligations for \`parseable-unrepresentable/\` are
+specified separately by § 8.1 and § 8.2.
 
 A writer-conforming implementation's own error type MAY take any shape
 (exception class, error enum, tagged union, ...) — only the code names
@@ -121,10 +135,8 @@ does not mandate a specific traversal order or a deterministic
 "first" violation — that question belongs to the still-open
 structured-error contract (rust#12).
 
-The three \`NonFiniteFloat\` fixtures use the sentinel separately for
-NaN, positive Infinity, and negative Infinity. JSON has no portable
-literal for those values, so the sentinel is the only escape hatch and
-is reserved throughout both writer-unrepresentable categories.
+The three \`NonFiniteFloat\` fixtures separately cover NaN, positive
+Infinity, and negative Infinity.
 
 `,
   ru: `
@@ -191,35 +203,50 @@ is reserved throughout both writer-unrepresentable categories.
 
 У каждого из перечисленных выше случаев непредставимости есть
 устойчивый **код причины** (reason code), нормативный независимо от
-того, как конкретная реализация выражает его в своём API. Каждый файл
+того, как конкретная реализация выражает его в своём API. Каждый \`.json\`-файл
 в \`versions/0.7/tests/unrepresentable/\` и
 \`versions/0.7/tests/parseable-unrepresentable/\` MUST быть JSON-объектом
 ровно с тремя полями и без каких-либо других:
 
 - \`value\`: рекурсивное JSON-отображение Value. JSON-объекты отображаются
-  в Object, массивы — в Array, а null, bool, строки и конечные JSON-числа
-  — в соответствующие скалярные виды.
+  в Object, массивы — в Array, а null, bool и строки — в соответствующие
+  скалярные виды. Обычное JSON-число отображается в Integer, если его
+  лексический токен не содержит \`.\`, \`e\` или \`E\`, и во Float
+  в противном случае, включая \`-0.0\`; оно MUST быть конечным.
 - \`unrepresentable_reason\`: ровно один из семи кодов причины ниже.
 - \`note\`: непустая поясняющая String.
 
+Допустимы только следующие наборы файлов и коды причин для категорий:
+
+- \`unrepresentable/\` содержит один \`<name>.json\` на фикстуру и никаких
+  других файлов. Причина MUST быть \`ScalarRoot\`, \`EmptyKeyName\` или
+  \`NonFiniteFloat\`; эти Values создаются только программно.
+- \`parseable-unrepresentable/\` содержит один \`<name>.ktav\` и один
+  \`<name>.json\` на фикстуру и никаких других файлов. Причина MUST быть
+  одним из порождаемых парсером String-случаев: \`CRByte\`,
+  \`BothFormsRequired\`, \`TrailingWhitespaceCollision\` или
+  \`LeadingWhitespaceCollision\`. Canonical-output файл MUST NOT
+  присутствовать.
+
 Отображение \`value\` MUST проверяться рекурсивно. Пустое имя Object
-является свидетельством случая \`EmptyKeyName\`. Единственное представление
-неконечного Float — sentinel-объект ровно с одним полем:
+является свидетельством случая \`EmptyKeyName\`. String или ключ Object
+MUST NOT содержать одиночный surrogate. Единственное представление
+неконечного Float в \`unrepresentable/\` — sentinel-объект ровно с одним
+полем:
 \`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\` или
 \`{"$float": "-Infinity"}\`; поле \`$float\` в любой другой форме
-объекта недопустимо.
-Обычный Value MUST NOT использовать объект \`$float\` для другой цели.
+недопустимо. Этот sentinel разрешён только в \`unrepresentable/\`;
+порождённый парсером Value MUST NOT содержать поле Object \`$float\`, а его
+корень \`value\` MUST быть Object или Array.
 Код причины допустим только если его случай
 встречается где-либо в дереве Value, кроме \`ScalarRoot\`, для которого
 скаляром должен быть сам корень. Для каждого другого кода корень MUST
 быть Object или Array. Эти проверки MUST NOT выводить смысл из имени
-фикстуры.
+фикстуры. Для трёх кодов причин коллизии сегменты разделяются LF;
+String без LF содержит один сегмент.
 
-Категория \`parseable-unrepresentable/\` дополнительно содержит соседний
-\`<name>.ktav\` для каждого \`<name>.json\`. Парсер MUST принять этот
-ввод и получить \`value\` из JSON, после чего writer MUST отвергнуть
-Value с указанным в JSON кодом. У этих фикстур намеренно нет файла
-канонического вывода.
+Обязанности parser и writer для \`parseable-unrepresentable/\` раздельно
+заданы в § 8.1 и § 8.2.
 
 Собственный тип ошибки writer-conforming реализации MAY иметь любую
 форму (класс исключения, error enum, tagged union...) — нормативны
@@ -250,10 +277,8 @@ Object или среди потомков (например, String, удовл�
 «первое» нарушение — этот вопрос относится к всё ещё открытому
 контракту структурированных ошибок (rust#12).
 
-Три фикстуры \`NonFiniteFloat\` используют sentinel отдельно для NaN,
-положительной и отрицательной Infinity. В JSON нет переносимого
-литерала для этих значений, поэтому sentinel — единственный обходной
-путь и зарезервирован во всех двух writer-unrepresentable категориях.
+Три фикстуры \`NonFiniteFloat\` отдельно покрывают NaN, положительную
+и отрицательную Infinity.
 
 `,
   zh: `
@@ -304,30 +329,43 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
 \`versions/0.7/tests/unrepresentable/\` 与
-\`versions/0.7/tests/parseable-unrepresentable/\` 下的每个文件
+\`versions/0.7/tests/parseable-unrepresentable/\` 下的每个 \`.json\` 文件
 MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 
 - \`value\`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
-  数组映射为 Array,null、bool、字符串及有限 JSON 数字映射为对应
-  的标量类型。
+  数组映射为 Array,null、bool 与字符串映射为对应标量类型。普通
+  JSON 数字的词法 token 不含 \`.\`、\`e\` 或 \`E\` 时映射为 Integer,
+  否则映射为 Float,包括 \`-0.0\`;该数字 MUST 是有限值。
 - \`unrepresentable_reason\`:下表七个原因代码之一且只能一个。
 - \`note\`:非空的说明 String。
 
+仅允许以下类别特定的文件集合与原因代码:
+
+- \`unrepresentable/\` 每个 fixture 含一个 \`<name>.json\`,不得有
+  其他文件。原因 MUST 是 \`ScalarRoot\`、\`EmptyKeyName\` 或
+  \`NonFiniteFloat\`;这些 Value 只能以编程方式构造。
+- \`parseable-unrepresentable/\` 每个 fixture 含一个 \`<name>.ktav\`
+  和一个 \`<name>.json\`,不得有其他文件。原因 MUST 是 parser 可产生的
+  String 情形 \`CRByte\`、\`BothFormsRequired\`、
+  \`TrailingWhitespaceCollision\` 或 \`LeadingWhitespaceCollision\`。
+  MUST NOT 存在 canonical-output 文件。
+
 \`value\` 映射 MUST 递归检查。Object 的空键是 \`EmptyKeyName\` 情形的
-见证。非有限 Float 的唯一表示是恰好含一个字段的
+见证。String 或 Object 键 MUST NOT 含 lone surrogate。
+\`unrepresentable/\` 中非有限 Float 的唯一表示是恰好含一个字段的
 sentinel Object:\`{"$float": "NaN"}\`、\`{"$float": "Infinity"}\`
 或 \`{"$float": "-Infinity"}\`;任何其他 Object 形状中的
-\`$float\` 字段都无效。
-普通 Value MUST NOT 将 \`$float\` Object 用于其他目的。
+\`$float\` 字段都无效。此 sentinel 仅允许用于 \`unrepresentable/\`;
+parser 产生的 Value MUST NOT 含 \`$float\` Object 字段,且其
+\`value\` 根 MUST 是 Object 或 Array。
 只有当该原因情形出现在 Value 树中的某处时,
 原因代码才对该 fixture 有效;\`ScalarRoot\` 例外,它要求根本身是
 标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
-从 fixture 文件名推导含义。
+从 fixture 文件名推导含义。对三个 collision 原因代码,segment 以 LF
+分隔;不含 LF 的 String 有一个 segment。
 
-\`parseable-unrepresentable/\` 类别还为每个 \`<name>.json\` 提供
-同名的 \`<name>.ktav\`。解析器 MUST 接受该输入并产生 JSON 的
-\`value\`;随后 writer MUST 以 JSON 指定的原因代码拒绝该 Value。
-这些 fixture 特意没有 canonical-output 文件。
+\`parseable-unrepresentable/\` 的 parser 与 writer 义务分别由
+§ 8.1 与 § 8.2 规定。
 
 writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
 error enum、tagged union 等)——规范性的只是代码名称及其标识的
@@ -353,9 +391,7 @@ Object 对的键上,还是在后代中(例如一个 String 同时满足两条
 具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
 结构化错误契约(rust#12)。
 
-三个 \`NonFiniteFloat\` fixture 分别为 NaN、正 Infinity 与负 Infinity
-使用 sentinel。JSON 没有这些值的可移植字面量,因此 sentinel 是唯一
-的逃生通道,并在两个 writer-unrepresentable 类别中保留。
+三个 \`NonFiniteFloat\` fixture 分别覆盖 NaN、正 Infinity 与负 Infinity。
 
 `,
 };
