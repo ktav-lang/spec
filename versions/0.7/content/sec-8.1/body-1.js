@@ -36,6 +36,12 @@ A parser-conforming implementation:
   exemption for any implementation of any domain.
 - Rejects every fixture under \`versions/0.7/tests/invalid/\` with
   the error category named in \`name.json["expected_error"]\`.
+- Accepts every \`<name>.ktav\` under
+  \`versions/0.7/tests/parseable-unrepresentable/\` and produces the
+  sibling JSON's \`value\`. These inputs cover the parser-produced
+  \`CRByte\`, \`BothFormsRequired\`, \`TrailingWhitespaceCollision\`,
+  and \`LeadingWhitespaceCollision\` cases; the category has no
+  canonical-output files because its writer result MUST be rejection.
 
 `,
   ru: `
@@ -78,6 +84,12 @@ Parser-conforming реализация:
   ни было домена.
 - Отвергает каждую фикстуру из \`versions/0.7/tests/invalid/\` с
   категорией ошибки, указанной в \`name.json["expected_error"]\`.
+- Принимает каждый \`<name>.ktav\` из
+  \`versions/0.7/tests/parseable-unrepresentable/\` и даёт \`value\`
+  соседнего JSON. Эти вводы покрывают порождённые парсером случаи
+  \`CRByte\`, \`BothFormsRequired\`, \`TrailingWhitespaceCollision\` и
+  \`LeadingWhitespaceCollision\`; у категории нет canonical-output,
+  поскольку результат writer'а MUST быть отказом.
 
 `,
   zh: `
@@ -109,6 +121,11 @@ Parser-conforming 实现:
   豁免。
 - 拒绝 \`versions/0.7/tests/invalid/\` 下每个 fixture,错误类别
   与 \`name.json["expected_error"]\` 一致。
+- 接受 \`versions/0.7/tests/parseable-unrepresentable/\` 下每个
+  \`<name>.ktav\`,并产生其 sibling JSON 的 \`value\`。这些输入覆盖
+  parser 产生的 \`CRByte\`、\`BothFormsRequired\`、
+  \`TrailingWhitespaceCollision\` 与 \`LeadingWhitespaceCollision\` 情形;
+  该类别没有 canonical-output 文件,因为 writer 结果 MUST 是拒绝。
 
 `,
 };

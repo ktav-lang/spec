@@ -399,21 +399,24 @@ Runner соответствия MUST обходить каждую фиксту�
   `.json` называет ожидаемую категорию ошибки в поле
   `expected_error`.
 - **`unrepresentable/`** *(с 0.7)* — `Value`, которые
-  conforming-writer MUST отказаться сериализовать, вместо lossy или
-  частичного вывода. Входа `.ktav` нет: большинство таких `Value`
-  можно только сконструировать программно, парсинг их никогда не
-  порождает. Каждый случай — единственный `<name>.json` с тремя
-  полями: `value` (сам `Value`, то же JSON-отображение, что и в
-  `valid/`, кроме единственной фикстуры `NonFiniteFloat`, где
-  неконечный Float записан как
-  `{"$float": "NaN"|"Infinity"|"-Infinity"}`, поскольку в обычном
-  JSON такого литерала нет — `$float` — зарезервированное имя ключа
-  внутри `value`-деревьев `unrepresentable/`, никогда не литеральное
-  поле объекта для иных целей), `unrepresentable_reason`
-  (нормативный код причины из спеки) и `note` (почему). Конкретная
-  форма API, которой writer
-  сообщает об отказе (исключение, error enum...), — implementation-
-  defined; нормативны только имена кодов причины.
+  conforming-writer MUST отказаться сериализовать вместо lossy или
+  частичного вывода. Это случаи, создаваемые программно: для каждого
+  есть единственный `<name>.json` ровно с полями `value`,
+  `unrepresentable_reason` и непустым `note`; отображение Value и
+  точная форма sentinel `$float` определены в § 5.9.0. Код причины MUST
+  иметь рекурсивное свидетельство и MUST NOT выводиться из имени файла.
+- **`parseable-unrepresentable/`** *(с 0.7)* — порождённые парсером
+  Value, которые conforming-writer MUST отвергнуть. Каждый случай —
+  пара `<name>.ktav` + `<name>.json`: парсинг MUST дать JSON `value`, а
+  запись MUST завершиться отказом с указанным кодом причины. Это пары,
+  а не тройки, без canonical-output; JSON использует ту же точную схему,
+  что и `unrepresentable/`.
+
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json` независимо
+фиксирует полный inventory для `valid/`, `invalid/`, `unrepresentable/`
+и `parseable-unrepresentable/`; CI передаёт его в
+`validate_corpus.py --corpus-inventory-lock`, поэтому добавление или
+удаление fixture не может пройти незамеченным.
 
 Прохождение каждого теста из каждой категории, присутствующей в
 наборе этой версии, — необходимое условие выпуска (release gate), но
@@ -474,7 +477,7 @@ Runner соответствия MUST обходить каждую фиксту�
 │   ├── test_build_spec.mjs                (0.7+) модульные тесты для build_spec.mjs (adversarial/негативные сценарии)
 │   ├── archive/                           (0.7+) архивированный одноразовый бутстрап юнитов контента
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
-│   └── locks/                             lock-файлы манифеста boundary-fixtures
+│   └── locks/                             versioned lock-файлы boundary и полного inventory корпуса
 ├── .github/workflows/     CI: проверка байт-идентичности content/ (0.7+), валидация корпуса,
 │                          проверка паритета переводов и все три набора модульных тестов
 └── versions/
@@ -488,6 +491,7 @@ Runner соответствия MUST обходить каждую фиксту�
             ├── valid/
             ├── invalid/
             ├── unrepresentable/   (0.7+)
+            ├── parseable-unrepresentable/ (0.7+; пары без canonical output)
             └── boundary-fixtures.json   (0.7+) leaf-level numeric-
                         domain exemptions, not a fixture category
 ```

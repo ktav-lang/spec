@@ -10,7 +10,15 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { validateContentDir, hasLoneSurrogate } from './build_spec.mjs';
+import {
+  validateContentDir,
+  hasLoneSurrogate,
+  firstByteDiff,
+  lineNumberAtByte,
+  lineAtByte,
+  defaultSectionInventoryLockPath,
+  README_SOURCE_FILE,
+} from './build_spec.mjs';
 
 function write(p, content) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -62,6 +70,8 @@ function makeContent(dir, unitDefs, manifestNames) {
   for (const readme of ['README.md', 'README.ru.md', 'README.zh.md']) {
     write(path.join(dir, 'content', readme), '# content README\n');
   }
+  write(path.join(dir, 'content', README_SOURCE_FILE),
+    bodyJs('# content README\n', '# content README\n', '# content README\n'));
   for (const u of unitDefs) {
     const ud = path.join(dir, 'content', u.name);
     write(path.join(ud, 'meta.js'), metaJs(u.meta));
@@ -88,12 +98,22 @@ function baseFixtures() {
   ];
 }
 
-async function validate(fixtures, manifest, mutate) {
+async function validate(fixtures, manifest, mutate, options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-test-'));
   try {
     makeContent(dir, fixtures, manifest || fixtures.map((u) => u.name));
     if (mutate) mutate(path.join(dir, 'content'));
-    return await validateContentDir(path.join(dir, 'content'));
+    const validateOptions = {};
+    if (options.lock) {
+      const lockPath = path.join(dir, 'section-inventory.lock.json');
+      write(lockPath, JSON.stringify({
+        format: 'ktav-section-inventory',
+        units: options.lock,
+        version: '0.7.0',
+      }, null, 2) + '\n');
+      validateOptions.sectionInventoryLockPath = lockPath;
+    }
+    return await validateContentDir(path.join(dir, 'content'), validateOptions);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
@@ -119,6 +139,68 @@ function symlinksSupported() {
 test('well-formed minimal fixture passes cleanly', async () => {
   const { manifest } = await validate(baseFixtures());
   assert.deepEqual(manifest, ['frontmatter', 'named-abstract', 'sec-1']);
+});
+
+test('production-shaped content uses the default section inventory lock under repo/scripts', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-production-path-'));
+  try {
+    const repoRoot = path.join(temp, 'repo');
+    const versionDir = path.join(repoRoot, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    const manifest = ['frontmatter', 'named-abstract', 'sec-1'];
+    makeContent(versionDir, baseFixtures(), manifest);
+    const lockPath = path.join(repoRoot, 'scripts', 'locks', 'section-inventory.0.7.lock.json');
+    write(lockPath, JSON.stringify({
+      format: 'ktav-section-inventory',
+      units: manifest,
+      version: '0.7.0',
+    }, null, 2) + '\n');
+
+    assert.equal(defaultSectionInventoryLockPath(contentDir), lockPath);
+    const result = await validateContentDir(contentDir, { requireSectionInventoryLock: true });
+    assert.deepEqual(result.manifest, manifest);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('section inventory lock rejects deleting a unit and its manifest entry together', async () => {
+  const original = ['frontmatter', 'named-abstract', 'sec-1'];
+  await assert.rejects(
+    validate(baseFixtures(), ['frontmatter', 'named-abstract'], (c) =>
+      fs.rmSync(path.join(c, 'sec-1'), { recursive: true }), { lock: original }),
+    (e) => /section-inventory\.lock\.json does not match manifest\.js at index 2/.test(e.message)
+  );
+});
+
+test('README source object rejects a non-canonical shape', async () => {
+  const expected = 'unit "content": README.source.js: expected exactly ' +
+    JSON.stringify(',\n};\n') +
+    ' after the zh field followed immediately by end-of-file, found ' +
+    JSON.stringify(',\n  de: `d\n`,\n};\n'.slice(0, 20));
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, README_SOURCE_FILE),
+        'export default {\n' +
+        '  en: `a\n`,\n' +
+        '  ru: `b\n`,\n' +
+        '  zh: `c\n`,\n' +
+        '  de: `d\n`,\n' +
+        '};\n')),
+    (e) => e.message === expected
+  );
+});
+
+test('first byte diff and line number are correct at offset zero and after newlines', () => {
+  assert.equal(firstByteDiff(Buffer.from('x\nsecond\n'), Buffer.from('y\nsecond\n')), 0);
+  assert.equal(firstByteDiff(Buffer.from('first\nX\n'), Buffer.from('first\nY\n')), 6);
+  assert.equal(firstByteDiff(Buffer.from('same\n'), Buffer.from('same\n')), -1);
+  assert.equal(firstByteDiff(Buffer.from('same'), Buffer.from('same\n')), 4);
+  assert.equal(lineNumberAtByte(Buffer.from('x\nsecond\n'), 0), 1);
+  assert.equal(lineNumberAtByte(Buffer.from('first\nY\n'), 6), 2);
+  assert.equal(lineNumberAtByte(Buffer.from('same'), 4), 1);
+  assert.equal(lineAtByte(Buffer.from('first\nsecond\n'), 0), JSON.stringify('first'));
+  assert.equal(lineAtByte(Buffer.from('first\nsecond\n'), 6), JSON.stringify('second'));
 });
 
 test('orphan unit directory not listed in manifest', async () => {

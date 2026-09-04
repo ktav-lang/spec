@@ -685,6 +685,98 @@ class TranslationParityTestCase(unittest.TestCase):
         # Only the new RHS-syntax check must fire, naming the production.
         self.assertIn("grammar production RHS mismatch for <pair-line>", out)
 
+    def test_line_end_grammar_atoms_are_supported(self):
+        # These exact atoms must tokenize as pure BNF so the shipped
+        # section 4 grammar signature remains comparable across languages.
+        grammar_lines = [
+            "<document>      ::= <line>*",
+            "<line-end>      ::= eol | EOF",
+            "<comment-body>  ::= any-chars-until-line-end",
+            "<lookahead>     ::= &line-end",
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased - draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines))
+        ru = self.write("spec.ru.md", doc(grammar_lines))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
+    def test_line_end_atom_lookalikes_remain_malformed(self):
+        # Accepting any of these would weaken the generic malformed-
+        # production detector rather than adding the requested atoms.
+        grammar_lines_en = [
+            "<document>      ::= <line>*",
+            "<line-end>      ::= eol | EOF",
+            "<comment-body>  ::= any-chars-until-line-end",
+            "<lookahead>     ::= &line-end",
+        ]
+        bad_atoms = [
+            ("<line-end>", "<line-end>      ::= eol | EOFx", "EOFx"),
+            ("<comment-body>",
+             "<comment-body>  ::= any-chars-until-line-end-extra",
+             "any-chars-until-line-end-extra"),
+            ("<lookahead>", "<lookahead>     ::= &line-ending",
+             "&line-ending"),
+        ]
+
+        def doc(fence_lines):
+            return (
+                "# Spec\n\n**Version:** 0.7.0\n"
+                "**Date:** (unreleased - draft)\n\n"
+                "## 4. Grammar\n\nGrammar productions.\n\n```\n"
+                + "\n".join(fence_lines) + "\n```\n\n"
+                "## 5. Semantics\n\nSome text with a MUST.\n"
+            )
+
+        en = self.write("spec.md", doc(grammar_lines_en))
+        for lhs, bad_line, bad_atom in bad_atoms:
+            with self.subTest(bad_atom=bad_atom):
+                ru_lines = list(grammar_lines_en)
+                ru_lines[ru_lines.index(
+                    next(line for line in ru_lines
+                         if line.startswith(lhs)))] = bad_line
+                ru = self.write("spec.ru.md", doc(ru_lines))
+                code, out = self.run_main(en, ru)
+                self.assertEqual(code, 1, out)
+                self.assertIn("OVERALL: FAIL", out)
+                self.assertIn(
+                    "failed to parse as pure BNF in translation", out)
+
+    def test_real_spec_line_end_grammar_signature_matches_all_languages(self):
+        # The generated files must expose the same new atom signature; this
+        # focused check does not run the full parity command.
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        signatures = []
+        for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            path = os.path.join(repo_root, "versions", "0.7", name)
+            with open(path, encoding="utf-8") as f:
+                lines = [line.rstrip("\n") for line in f.readlines()]
+            sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+            start, end = sections["4"]
+            productions, malformed = ctp.extract_grammar_productions(
+                lines, start, end, excluded)
+            self.assertEqual(malformed, [], name)
+            signatures.append(productions)
+
+        self.assertEqual(signatures[0], signatures[1])
+        self.assertEqual(signatures[0], signatures[2])
+        self.assertEqual(signatures[0]["<line-end>"], ["eol | EOF"])
+        self.assertEqual(
+            signatures[0]["<comment-body>"],
+            ["any-chars-until-line-end"])
+        self.assertTrue(
+            any("&line-end" in fragment
+                for fragment in signatures[0]["<value-start>"]))
+
     def test_malformed_syntax_production_in_en_is_fatal(self):
         # Round-16 finding 2: a production whose LHS is NOT on the
         # semi-formal prose allowlist (SEMI_FORMAL_PROSE_LHS) is expected
@@ -815,9 +907,14 @@ class TranslationParityTestCase(unittest.TestCase):
         productions, malformed = ctp.extract_grammar_productions(
             lines, start, end, excluded)
         self.assertEqual(malformed, [])
-        self.assertEqual(len(lhs_set), 38)
-        self.assertEqual(len(productions), 28)
-        self.assertEqual(lhs_set - set(productions), ctp.SEMI_FORMAL_PROSE_LHS)
+        self.assertEqual(len(lhs_set), 41)
+        self.assertEqual(len(productions), 33)
+        newly_pure = {"<comment>", "<scalar-body>"}
+        self.assertEqual(
+            lhs_set - set(productions),
+            ctp.SEMI_FORMAL_PROSE_LHS - newly_pure)
+        for lhs in ("<line-end>", "<comment-body>", "<raw-segment>"):
+            self.assertIn(lhs, lhs_set)
 
     def test_grammar_lhs_check_does_not_misfire_without_grammar_fences(self):
         # Guard against the new grammar-LHS-set check misfiring on

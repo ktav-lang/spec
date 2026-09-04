@@ -24,6 +24,13 @@ This directory is the **per-section source of truth** for
 `sec-3.1`, `sec-5.3.3`, `sec-10.7`), and 5 named `named-<slug>/`
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Plus:
 
+- `scripts/locks/section-inventory.0.7.lock.json` is an independent,
+  versioned ordered inventory. The builder requires it in normal CLI runs
+  and rejects manifest order or membership drift against it.
+- `README.source.js` is the single `{ en, ru, zh }` source object for the
+  three README files in this directory. The builder statically validates it
+  and generates `README.md`, `README.ru.md`, and `README.zh.md` from it.
+
 - `manifest.js` — the ordered list of units (see below).
 - `package.json` — `{"type":"module"}`. Historical: it was required back when
   `build_spec.mjs` dynamically imported `meta.js`/`body-*.js` as ES modules.
@@ -202,8 +209,17 @@ An explicit **ordered** array of the 103 folder names in true document
 order. It starts `["frontmatter", "named-abstract", "sec-1", ...]` and ends
 `[..., "named-appendix-d"]`. It is **never sorted alphabetically**:
 `"sec-10.7"` must come after `"sec-2"`, and named sections sit at their real
-document positions. When adding a unit, insert its name at the correct
-position manually.
+document positions. The independent lock at
+`scripts/locks/section-inventory.0.7.lock.json` stores the same ordered list;
+both files MUST be updated together when a section is intentionally added or
+removed. A manifest-only change is rejected by the lock check.
+
+### README source object
+
+`README.source.js` has the same narrow static template-object shape as a body
+part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings
+are the sole source for the three README files. The generated files are still
+committed for browsing, but hand-editing any one of them makes `--check` fail.
 
 ## How the generator builds a file
 
@@ -219,16 +235,21 @@ position manually.
   then the concatenated body strings;
 - concatenate.
 
+The same run writes the three content READMEs from `README.source.js`; in
+`--check` mode it compares those files byte-for-byte as well as the three
+generated specification files.
+
 Commands:
 
 ```sh
-node scripts/build_spec.mjs          # writes the 3 spec .md files
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
 node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
 
-`--check` regenerates the three files in memory and byte-compares them
-against the committed files. On success: exit 0 and **completely silent**.
+`--check` validates the inventory lock, regenerates all six files in memory,
+and byte-compares them against the committed files. On success: exit 0 and
+**completely silent**.
 On divergence: exit 1 with a diagnostic naming the unit, language, and line
 of the first differing byte. It writes nothing.
 
@@ -251,8 +272,8 @@ Steps:
 
 1. Create the folders, `meta.js` (with `"bodyParts": 1`), and `body-1.js`
    per unit (mind the trailing-blank-line rule above).
-2. Insert both folder names into `manifest.js` at the correct document
-   positions (after the unit preceding section 9.9).
+2. Insert both folder names into `manifest.js` and the lock's `units` array at
+   the correct document positions (after the unit preceding section 9.9).
 3. Run `node scripts/build_spec.mjs`, check the `git diff`, run the parity
    checker, then commit units + regenerated `.md` files together.
 

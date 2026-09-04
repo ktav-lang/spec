@@ -63,6 +63,17 @@
 README (`README.md`, `README.ru.md`, `README.zh.md`); внутри директорий
 юнитов Markdown запрещён полностью.
 
+## Единый источник README и inventory lock
+
+`scripts/locks/section-inventory.0.7.lock.json` — независимый
+версионированный упорядоченный inventory. Builder требует его в обычном
+CLI-запуске и отвергает расхождение состава или порядка с `manifest.js`.
+
+`README.source.js` — единый source object `{ en, ru, zh }` для трёх README в
+этой директории. Builder статически проверяет его и генерирует из него
+`README.md`, `README.ru.md` и `README.zh.md`; ручное изменение любого README
+делает `--check` ошибочным.
+
 ### `meta.js`
 
 Каждый `meta.js` использует `export default { ... }` (в стиле JSON). Три
@@ -234,7 +245,7 @@ N-1 точек разреза выбираются как пустые стро�
 Команды:
 
 ```sh
-node scripts/build_spec.mjs          # writes the 3 spec .md files
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
 node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```

@@ -12,18 +12,20 @@ set, not ASCII-only).
 
 \`\`\`
 <document>      ::= <line>*
+<line-end>      ::= eol | EOF
 <line>          ::= <comment> | <blank> | <header-line> | <pair-line>
                   | <array-item-line> | <multiline-content-line>
 
-<comment>       ::= (ws) "##" (any-chars until line-end)
-<blank>         ::= (ws)
+<comment>       ::= (ws) "##" <comment-body> <line-end>
+<comment-body>  ::= any-chars-until-line-end
+<blank>         ::= (ws) <line-end>
 
-<header-line>   ::= (ws) "{" (ws) eol                ; object open
-                  | (ws) "}" (ws) eol                ; object close
-                  | (ws) "[" (ws) eol                ; array open
-                  | (ws) "]" (ws) eol                ; array close
-                  | (ws) ")" (ws) eol                ; multiline close (stripped)
-                  | (ws) "))" (ws) eol               ; multiline close (verbatim)
+<header-line>   ::= (ws) "{" (ws) <line-end>         ; object open
+                  | (ws) "}" (ws) <line-end>         ; object close
+                  | (ws) "[" (ws) <line-end>         ; array open
+                  | (ws) "]" (ws) <line-end>         ; array close
+                  | (ws) ")" (ws) <line-end>         ; multiline close (stripped)
+                  | (ws) "))" (ws) <line-end>        ; multiline close (verbatim)
                     Context-dependence of the last two alternatives:
                     they apply only while a multi-line string block
                     is open (§ 5.6) and the trimmed line equals that
@@ -36,10 +38,14 @@ set, not ASCII-only).
                     array-item / pair-value text otherwise — § 5.2,
                     § 5.4), exactly as § 6.1 states.
 
-<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; default, scalar dispatched per § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> eol    ; literal String
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; default, scalar dispatched per § 5.2
+                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; literal String
 
-<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         The maximal leading and trailing (ws) are trimmed
+                         before dispatching to <quoted-segment> or <bare-segment>;
+                         whitespace inside the dispatched segment is preserved.
 <unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\\\"
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
@@ -106,18 +112,20 @@ set, not ASCII-only).
 
 \`\`\`
 <document>      ::= <line>*
+<line-end>      ::= eol | EOF
 <line>          ::= <comment> | <blank> | <header-line> | <pair-line>
                   | <array-item-line> | <multiline-content-line>
 
-<comment>       ::= (ws) "##" (любые байты до конца строки)
-<blank>         ::= (ws)
+<comment>       ::= (ws) "##" <comment-body> <line-end>
+<comment-body>  ::= any-chars-until-line-end
+<blank>         ::= (ws) <line-end>
 
-<header-line>   ::= (ws) "{" (ws) eol                ; открытие объекта
-                  | (ws) "}" (ws) eol                ; закрытие объекта
-                  | (ws) "[" (ws) eol                ; открытие массива
-                  | (ws) "]" (ws) eol                ; закрытие массива
-                  | (ws) ")" (ws) eol                ; закрытие многострочной (stripped)
-                  | (ws) "))" (ws) eol               ; закрытие многострочной (verbatim)
+<header-line>   ::= (ws) "{" (ws) <line-end>         ; открытие объекта
+                  | (ws) "}" (ws) <line-end>         ; закрытие объекта
+                  | (ws) "[" (ws) <line-end>         ; открытие массива
+                  | (ws) "]" (ws) <line-end>         ; закрытие массива
+                  | (ws) ")" (ws) <line-end>         ; закрытие многострочной (stripped)
+                  | (ws) "))" (ws) <line-end>        ; закрытие многострочной (verbatim)
                     Контекстная зависимость двух последних альтернатив:
                     они действуют, только пока открыт многострочный
                     строковый блок (§ 5.6) и обрезанная строка совпадает
@@ -131,10 +139,14 @@ set, not ASCII-only).
                     элемента массива / значения пары, § 5.2, § 5.4),
                     как и указано в § 6.1.
 
-<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; обычная, скаляр через § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> eol    ; литеральная String
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; обычная, скаляр через § 5.2
+                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; литеральная String
 
-<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         Максимальные начальные и конечные (ws) удаляются
+                         до выбора <quoted-segment> или <bare-segment>;
+                         пробелы внутри выбранного сегмента сохраняются.
 <unescaped-dot>      ::= "." без предшествующего нечётного числа "\\\\"
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
@@ -198,18 +210,20 @@ set, not ASCII-only).
 
 \`\`\`
 <document>      ::= <line>*
+<line-end>      ::= eol | EOF
 <line>          ::= <comment> | <blank> | <header-line> | <pair-line>
                   | <array-item-line> | <multiline-content-line>
 
-<comment>       ::= (ws) "##" (任意字节到行尾)
-<blank>         ::= (ws)
+<comment>       ::= (ws) "##" <comment-body> <line-end>
+<comment-body>  ::= any-chars-until-line-end
+<blank>         ::= (ws) <line-end>
 
-<header-line>   ::= (ws) "{" (ws) eol                ; 对象开启
-                  | (ws) "}" (ws) eol                ; 对象关闭
-                  | (ws) "[" (ws) eol                ; 数组开启
-                  | (ws) "]" (ws) eol                ; 数组关闭
-                  | (ws) ")" (ws) eol                ; 多行关闭 (stripped)
-                  | (ws) "))" (ws) eol               ; 多行关闭 (verbatim)
+<header-line>   ::= (ws) "{" (ws) <line-end>         ; 对象开启
+                  | (ws) "}" (ws) <line-end>         ; 对象关闭
+                  | (ws) "[" (ws) <line-end>         ; 数组开启
+                  | (ws) "]" (ws) <line-end>         ; 数组关闭
+                  | (ws) ")" (ws) <line-end>         ; 多行关闭 (stripped)
+                  | (ws) "))" (ws) <line-end>        ; 多行关闭 (verbatim)
                     最后两个候选的上下文相关性:
                     它们仅在多行字符串块处于打开状态(§ 5.6)
                     且修剪后的行与该块自身的终止符一致时
@@ -223,10 +237,14 @@ set, not ASCII-only).
                     对值文本 —— § 5.2、§ 5.4),
                     与 § 6.1 的表述一致。
 
-<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; 默认形式,标量按 § 5.2 分发
-                  | <key> "::" <sep-end> <value-part-opt> eol    ; 字面 String
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; 默认形式,标量按 § 5.2 分发
+                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; 字面 String
 
-<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         在分发到 <quoted-segment> 或 <bare-segment> 之前,
+                         删除最长的首尾 (ws);
+                         分发后的段内部空白保留。
 <unescaped-dot>      ::= 非由奇数个 "\\\\" 前导的 "."
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*

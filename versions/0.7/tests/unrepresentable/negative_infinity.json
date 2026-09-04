@@ -1,0 +1,1 @@
+{"value": {"f": {"$float": "-Infinity"}}, "unrepresentable_reason": "NonFiniteFloat", "note": "The nested Float is negative Infinity; the $float object is the reserved non-finite Float sentinel defined by Sec 5.9.0."}

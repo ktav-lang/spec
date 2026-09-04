@@ -1,0 +1,1 @@
+{"value": {"f": {"$float": "NaN"}}, "unrepresentable_reason": "NonFiniteFloat", "note": "The nested Float is NaN; the $float object is the reserved non-finite Float sentinel defined by Sec 5.9.0."}

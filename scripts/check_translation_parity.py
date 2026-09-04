@@ -243,8 +243,9 @@ GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
 # preamble), a <nonterminal>, a [char-class] (e.g. <hex-digit>'s
 # "[0-9a-fA-F]"), the "(ws)" whitespace placeholder, an ABNF-style numeric
 # repeat prefix like "1*ws" (<sep-end>'s one-off borrowing from RFC 5234,
-# distinct from this grammar's own postfix "*"), the "&eol" / "eol"
-# end-of-line markers, the "::=" production operator, and the
+# distinct from this grammar's own postfix "*"), the "&eol" / "&line-end"
+# lookaheads, the "eol" / "EOF" end-of-line markers, the exact
+# "any-chars-until-line-end" body atom, the "::=" production operator, and the
 # single-character operators "|" "*" "+" "?" "(" ")". Order matters: the
 # 2-char/parenthesized/multi-char alternatives must be tried before the bare
 # single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")",
@@ -255,8 +256,11 @@ GRAMMAR_TOKEN_RE = re.compile(
     r'|\[[^\[\]]*\]'
     r'|\(ws\)'
     r'|\d+\*ws\b'
+    r'|&line-end(?![\w-])'
     r'|&eol\b'
     r'|::='
+    r'|(?<![\w-])any-chars-until-line-end(?![\w-])'
+    r'|(?<![\w-])EOF(?![\w-])'
     r'|\beol\b'
     r'|[|*+?()]'
 )
@@ -312,8 +316,9 @@ PUNCTUATION_ONLY_QUOTED_RE = re.compile(r'[!-/:-@\[-`{-~]+')
 # prose is legitimately translated. Deliberately NOT included: the English
 # word "tab", which IS translated (RU "табуляции"/"таб", ZH "制表符");
 # requiring it verbatim would false-fail the shipped translations. Scoped to
-# extract_embedded_tokens only (semi-formal RHS extraction); the general-
-# purpose GRAMMAR_TOKEN_RE used for the 28 fully-BNF productions is untouched.
+# extract_embedded_tokens only (semi-formal RHS extraction); the grammar
+# atoms accepted by GRAMMAR_TOKEN_RE are listed separately above and are not
+# inferred from this broad control-byte pattern.
 LANGUAGE_INDEPENDENT_ATOM_RE = re.compile(r'\b0x[0-9A-Fa-f]+\b|\b(?:LF|CR|VT|FF|DEL)\b')
 
 # Compound control-byte associations embedded in the semi-formal

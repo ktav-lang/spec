@@ -14,8 +14,10 @@
 //
 // Importable API (no build on import):
 //   validateContentDir(contentDir)  -> async closed-world validation; throws Error
-//   buildBuffers(contentDir)        -> async { bufs, totalLen, manifest }
-//   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str)
+//   buildBuffers(contentDir)        -> async { bufs, totalLen, manifest, readmeBufs }
+//   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str),
+//   firstByteDiff(existing, expected), lineNumberAtByte(buf, offset),
+//   lineAtByte(buf, offset), defaultSectionInventoryLockPath(contentDir)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -23,6 +25,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const LANGS = ['en', 'ru', 'zh'];
 export const OUT_FILES = { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' };
+export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.zh.md' };
+export const README_SOURCE_FILE = 'README.source.js';
+export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
+
+export function defaultSectionInventoryLockPath(contentDir) {
+  return path.resolve(
+    contentDir, '..', '..', '..', 'scripts', 'locks', SECTION_INVENTORY_LOCK_FILE);
+}
 
 const utf8Strict = new TextDecoder('utf-8', { fatal: true });
 
@@ -141,9 +151,9 @@ export function validateMeta(unit, meta) {
   }
 }
 
-function validateBodyPart(unit, k, d) {
+function validateBodyPart(unit, k, d, label = `body-${k}.js`) {
   if (typeof d !== 'object' || d === null || Array.isArray(d)) {
-    failUnit(unit, `body-${k}.js default export is not an object`);
+    failUnit(unit, `${label} default export is not an object`);
   }
   const keys = Object.keys(d);
   const extra = keys.filter((k2) => !LANGS.includes(k2));
@@ -152,13 +162,13 @@ function validateBodyPart(unit, k, d) {
     const bits = [];
     if (extra.length) bits.push(`unexpected key(s) ${extra.map((k2) => JSON.stringify(k2)).join(', ')}`);
     if (missing.length) bits.push(`missing key(s) ${missing.map((k2) => JSON.stringify(k2)).join(', ')}`);
-    failUnit(unit, `body-${k}.js must have exactly the keys {en, ru, zh}` +
+    failUnit(unit, `${label} must have exactly the keys {en, ru, zh}` +
       (bits.length ? `; got ${bits.join('; ')}` : ''));
   }
   for (const l of LANGS) {
-    if (typeof d[l] !== 'string') failUnit(unit, `body-${k}.js field ${l} is not a string`);
+    if (typeof d[l] !== 'string') failUnit(unit, `${label} field ${l} is not a string`);
     if (hasLoneSurrogate(d[l])) {
-      failUnit(unit, `body-${k}.js field ${l} contains an unpaired UTF-16 surrogate, which cannot be represented in UTF-8 output`);
+      failUnit(unit, `${label} field ${l} contains an unpaired UTF-16 surrogate, which cannot be represented in UTF-8 output`);
     }
   }
 }
@@ -171,10 +181,10 @@ function validateBodyPart(unit, k, d) {
 // that priority order at write time). Returns the DECODED { en, ru, zh }
 // strings; they are used directly as the body part's content. This function
 // never executes the file's code.
-function validateBodySourceShape(unit, k, src) {
+function validateBodySourceShape(unit, k, src, label = `body-${k}.js`) {
   const HEADER = 'export default {\n  en: `';
   if (!src.startsWith(HEADER)) {
-    failUnit(unit, `body-${k}.js: must start with exactly ${JSON.stringify(HEADER)}`);
+    failUnit(unit, `${label}: must start with exactly ${JSON.stringify(HEADER)}`);
   }
   let i = HEADER.length;
 
@@ -198,18 +208,18 @@ function validateBodySourceShape(unit, k, src) {
         // literal characters "${"; a bare "\$" whose next character is not
         // "{" is NOT part of the documented grammar and is rejected below.
         if (next === '$' && src[i + 2] === '{') { decoded += '${'; i += 3; continue; }
-        failUnit(unit, `body-${k}.js: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\\${ are valid)`);
+        failUnit(unit, `${label}: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\\${ are valid)`);
       }
       if (c === '`') {
         return { end: i, decoded };
       }
       if (c === '$' && src[i + 1] === '{') {
-        failUnit(unit, `body-${k}.js: unescaped "\${" (template interpolation) in ${fieldName} at offset ${i} -- interpolation is never allowed, escape it as "\\\${"`);
+        failUnit(unit, `${label}: unescaped "\${" (template interpolation) in ${fieldName} at offset ${i} -- interpolation is never allowed, escape it as "\\\${"`);
       }
       decoded += c;
       i += 1;
     }
-    failUnit(unit, `body-${k}.js: unterminated template literal in ${fieldName} (no closing backtick found)`);
+    failUnit(unit, `${label}: unterminated template literal in ${fieldName} (no closing backtick found)`);
   }
 
   const en = scanTemplateBody('en');
@@ -217,7 +227,7 @@ function validateBodySourceShape(unit, k, src) {
 
   const SEP1 = ',\n  ru: `';
   if (src.slice(i, i + SEP1.length) !== SEP1) {
-    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(SEP1)} after the en field, at offset ${i}`);
+    failUnit(unit, `${label}: expected exactly ${JSON.stringify(SEP1)} after the en field, at offset ${i}`);
   }
   i += SEP1.length;
 
@@ -226,7 +236,7 @@ function validateBodySourceShape(unit, k, src) {
 
   const SEP2 = ',\n  zh: `';
   if (src.slice(i, i + SEP2.length) !== SEP2) {
-    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(SEP2)} after the ru field, at offset ${i}`);
+    failUnit(unit, `${label}: expected exactly ${JSON.stringify(SEP2)} after the ru field, at offset ${i}`);
   }
   i += SEP2.length;
 
@@ -235,14 +245,15 @@ function validateBodySourceShape(unit, k, src) {
 
   const TAIL = ',\n};\n';
   if (src.slice(i) !== TAIL) {
-    failUnit(unit, `body-${k}.js: expected exactly ${JSON.stringify(TAIL)} after the zh field followed immediately by end-of-file, found ${JSON.stringify(src.slice(i, i + 20))}`);
+    failUnit(unit, `${label}: expected exactly ${JSON.stringify(TAIL)} after the zh field followed immediately by end-of-file, found ${JSON.stringify(src.slice(i, i + 20))}`);
   }
 
   return { en: en.decoded, ru: ru.decoded, zh: zh.decoded };
 }
 
 const TOP_LEVEL_ALLOWED_FILES = new Set([
-  'README.md', 'README.ru.md', 'README.zh.md', 'manifest.js', 'package.json',
+  'README.md', 'README.ru.md', 'README.zh.md', README_SOURCE_FILE,
+  'manifest.js', 'package.json',
 ]);
 
 function readJsonDefault(filePath) {
@@ -284,6 +295,72 @@ function readJsonDefault(filePath) {
   return value;
 }
 
+function readCanonicalJson(filePath) {
+  let buf;
+  try {
+    buf = fs.readFileSync(filePath);
+  } catch (e) {
+    fail(`cannot read ${filePath}: ${e.message}`);
+  }
+  const raw = decodeUtf8Strict(buf, filePath);
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch (e) {
+    fail(`${filePath} is not valid JSON: JSON.parse failed: ${e.message}`);
+  }
+  const canonical = JSON.stringify(value, null, 2) + '\n';
+  if (raw !== canonical) {
+    fail(`${filePath} must be canonical JSON (2-space indentation, LF line endings, exactly one trailing newline, no trailing whitespace)`);
+  }
+  return value;
+}
+
+function validateSectionInventoryLock(manifest, lockPath) {
+  const lock = readCanonicalJson(lockPath);
+  if (typeof lock !== 'object' || lock === null || Array.isArray(lock)) {
+    fail(`${lockPath} must export an object`);
+  }
+  const keys = Object.keys(lock).sort();
+  const wanted = ['format', 'units', 'version'].sort();
+  if (keys.length !== wanted.length || keys.some((key, i) => key !== wanted[i])) {
+    fail(`${lockPath} must have exactly the keys {"format", "units", "version"}`);
+  }
+  if (lock.format !== 'ktav-section-inventory') {
+    fail(`${lockPath} has unsupported format ${JSON.stringify(lock.format)}`);
+  }
+  if (lock.version !== '0.7.0') {
+    fail(`${lockPath} must be version "0.7.0"; got ${JSON.stringify(lock.version)}`);
+  }
+  if (!Array.isArray(lock.units) || lock.units.length === 0 ||
+      !lock.units.every((name) => typeof name === 'string' && name.length > 0) ||
+      new Set(lock.units).size !== lock.units.length) {
+    fail(`${lockPath}.units must be a non-empty array of unique non-empty strings`);
+  }
+  if (lock.units.length !== manifest.length || lock.units.some((name, i) => name !== manifest[i])) {
+    const min = Math.min(lock.units.length, manifest.length);
+    let first = 0;
+    while (first < min && lock.units[first] === manifest[first]) first++;
+    const lockName = lock.units[first];
+    const manifestName = manifest[first];
+    fail(`${lockPath} does not match manifest.js at index ${first}: lock has ${JSON.stringify(lockName)}, manifest has ${JSON.stringify(manifestName)}`);
+  }
+}
+
+function readReadmeSource(contentDir) {
+  const sourcePath = path.join(contentDir, README_SOURCE_FILE);
+  let buf;
+  try {
+    buf = fs.readFileSync(sourcePath);
+  } catch (e) {
+    fail(`cannot read ${sourcePath}: ${e.message}`);
+  }
+  const src = decodeUtf8Strict(buf, sourcePath);
+  const source = validateBodySourceShape('content', README_SOURCE_FILE, src, README_SOURCE_FILE);
+  validateBodyPart('content', README_SOURCE_FILE, source, README_SOURCE_FILE);
+  return source;
+}
+
 // Closed-world validation of a content dir. Throws Error on first violation.
 // Returns { manifest, units } where units is a Map unit -> { meta, parts }.
 // Content sources are data, never code. manifest.js and meta.js are written
@@ -293,7 +370,7 @@ function readJsonDefault(filePath) {
 // exactly one trailing newline). They are decoded as strict UTF-8 and
 // parsed with JSON.parse, which cannot execute code -- nothing under
 // content/ is ever dynamic-import()ed or otherwise evaluated.
-export async function validateContentDir(contentDir) {
+export async function validateContentDir(contentDir, options = {}) {
   const manifestPath = path.join(contentDir, 'manifest.js');
   if (!fs.existsSync(manifestPath)) fail(`manifest not found: ${manifestPath}`);
 
@@ -313,6 +390,12 @@ export async function validateContentDir(contentDir) {
       !manifest.every((n) => typeof n === 'string' && n.length > 0) ||
       new Set(manifest).size !== manifest.length) {
     fail('manifest.js must export a non-empty array of unique non-empty strings');
+  }
+
+  if (options.requireSectionInventoryLock || options.sectionInventoryLockPath) {
+    const lockPath = options.sectionInventoryLockPath ||
+      defaultSectionInventoryLockPath(contentDir);
+    validateSectionInventoryLock(manifest, lockPath);
   }
 
   const manifestSet = new Set(manifest);
@@ -344,11 +427,15 @@ export async function validateContentDir(contentDir) {
   // 2b. The three per-language READMEs are required, not merely permitted:
   // the content model is trilingual and its documentation ships in all
   // three languages (README.md / README.ru.md / README.zh.md).
-  for (const name of ['README.md', 'README.ru.md', 'README.zh.md']) {
+  for (const name of Object.values(README_FILES)) {
     if (!actualFiles.has(name)) {
       fail(`required file "${name}" is missing under content/ (all three per-language READMEs are mandatory)`);
     }
   }
+  if (!actualFiles.has(README_SOURCE_FILE)) {
+    fail(`required file "${README_SOURCE_FILE}" is missing under content/ (the three READMEs must come from one source object)`);
+  }
+  const readmes = readReadmeSource(contentDir);
 
   // 3. Frontmatter invariant.
   if (manifest[0] !== 'frontmatter') {
@@ -483,12 +570,12 @@ export async function validateContentDir(contentDir) {
     units.set(unit, { meta, parts });
   }
 
-  return { manifest, units };
+  return { manifest, units, readmes };
 }
 
 // Assemble outputs without writing. Returns { bufs, totalLen, manifest, pieces }.
-export async function buildBuffers(contentDir) {
-  const { manifest, units } = await validateContentDir(contentDir);
+export async function buildBuffers(contentDir, options = {}) {
+  const { manifest, units, readmes } = await validateContentDir(contentDir, options);
 
   const outputs = { en: [], ru: [], zh: [] };
   const pieces = { en: [], ru: [], zh: [] };
@@ -527,7 +614,35 @@ export async function buildBuffers(contentDir) {
     totalLen[lang] = outputs[lang].reduce((n, b) => n + b.length, 0);
     bufs[lang] = Buffer.concat(outputs[lang], totalLen[lang]);
   }
-  return { bufs, totalLen, manifest, pieces };
+  const readmeBufs = {};
+  for (const lang of LANGS) readmeBufs[lang] = Buffer.from(readmes[lang], 'utf8');
+  return { bufs, totalLen, manifest, pieces, readmeBufs };
+}
+
+export function firstByteDiff(existing, expected) {
+  const min = Math.min(existing.length, expected.length);
+  let diff = 0;
+  while (diff < min && existing[diff] === expected[diff]) diff++;
+  return diff < min || existing.length !== expected.length ? diff : -1;
+}
+
+export function lineNumberAtByte(buf, offset) {
+  const end = Math.min(Math.max(offset, 0), buf.length);
+  let line = 1;
+  for (let i = 0; i < end; i++) {
+    if (buf[i] === 0x0a) line++;
+  }
+  return line;
+}
+
+export function lineAtByte(buf, offset) {
+  const at = Math.min(Math.max(offset, 0), buf.length);
+  const start = at === 0 ? 0 : buf.lastIndexOf(0x0a, at - 1) + 1;
+  let end = buf.indexOf(0x0a, at);
+  if (end === -1) end = buf.length;
+  let line = buf.slice(start, end).toString('utf8');
+  if (line.length > 160) line = line.slice(0, 160) + '…';
+  return JSON.stringify(line);
 }
 
 function unitForLine(pieces, lang, offset) {
@@ -563,17 +678,18 @@ async function cli() {
 
   let build;
   try {
-    build = await buildBuffers(contentDir);
+    build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
   } catch (e) {
     process.stderr.write(`build_spec: ${e.message}\n`);
     process.exit(1);
   }
-  const { bufs, totalLen, manifest, pieces } = build;
+  const { bufs, totalLen, manifest, pieces, readmeBufs } = build;
 
   if (!checkMode) {
     for (const lang of LANGS) {
       const out = path.join(specDir, OUT_FILES[lang]);
       fs.writeFileSync(out, bufs[lang]);
+      fs.writeFileSync(path.join(contentDir, README_FILES[lang]), readmeBufs[lang]);
     }
     process.stdout.write(
       `build_spec: assembled ${manifest.length} units -> ` +
@@ -595,25 +711,13 @@ async function cli() {
       );
       process.exit(1);
     }
-    const min = Math.min(existing.length, bufs[lang].length);
-    let diff = -1;
-    for (let i = 0; i < min; i++) {
-      if (existing[i] !== bufs[lang][i]) { diff = i; break; }
-    }
-    if (diff === -1 && existing.length !== bufs[lang].length) diff = min;
+    const diff = firstByteDiff(existing, bufs[lang]);
 
     if (diff !== -1) {
-      const lineNo = 1 + bufs[lang].slice(0, diff).reduce((n, b) => (b === 0x0a ? n + 1 : n), 0);
+      const lineBuf = diff < bufs[lang].length ? bufs[lang] : existing;
+      const lineNo = lineNumberAtByte(lineBuf, diff);
       const unit = unitForLine(pieces, lang, diff);
-      const lineOf = (buf) => {
-        let s = buf.slice(0, diff);
-        let start = s.lastIndexOf(0x0a) + 1;
-        let e = buf.indexOf(0x0a, diff);
-        if (e === -1) e = buf.length;
-        let line = buf.slice(start, e).toString('utf8');
-        if (line.length > 160) line = line.slice(0, 160) + '…';
-        return JSON.stringify(line);
-      };
+      const lineOf = lineAtByte;
       const tail = diff >= bufs[lang].length
         ? ' (generated output is shorter; no byte here)'
         : diff >= existing.length
@@ -624,6 +728,37 @@ async function cli() {
         `${tail}, line ${lineNo}, unit "${unit}":\n` +
         `  generated: ${diff < bufs[lang].length ? lineOf(bufs[lang]) : '(no line)'}\n` +
         `  existing:  ${diff < existing.length ? lineOf(existing) : '(no line)'}\n`
+      );
+      process.exit(1);
+    }
+  }
+
+  for (const lang of LANGS) {
+    const outPath = path.join(contentDir, README_FILES[lang]);
+    let existing;
+    try {
+      existing = fs.readFileSync(outPath);
+    } catch {
+      process.stderr.write(
+        `build_spec --check: MISMATCH in ${README_FILES[lang]} (${lang}): ` +
+        `output file missing at ${outPath}; expected ${readmeBufs[lang].length} bytes\n`
+      );
+      process.exit(1);
+    }
+    const diff = firstByteDiff(existing, readmeBufs[lang]);
+    if (diff !== -1) {
+      const lineBuf = diff < readmeBufs[lang].length ? readmeBufs[lang] : existing;
+      const lineNo = lineNumberAtByte(lineBuf, diff);
+      const tail = diff >= readmeBufs[lang].length
+        ? ' (generated output is shorter; no byte here)'
+        : diff >= existing.length
+          ? ' (existing file is shorter; no byte here)'
+          : '';
+      process.stderr.write(
+        `build_spec --check: MISMATCH in ${README_FILES[lang]} (${lang}) at byte offset ${diff}` +
+        `${tail}, line ${lineNo}, unit "${README_SOURCE_FILE}":\n` +
+        `  generated: ${diff < readmeBufs[lang].length ? lineAtByte(readmeBufs[lang], diff) : '(no line)'}\n` +
+        `  existing:  ${diff < existing.length ? lineAtByte(existing, diff) : '(no line)'}\n`
       );
       process.exit(1);
     }

@@ -22,30 +22,30 @@ export default {
                                        middle segment is quoted instead
                                        of bare-with-escape, same result
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 whitespace code point, or the line end
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline object (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline array (§ 5.8)
-                  | "{" (ws) &eol                    ; open object (multi-line body)
-                  | "[" (ws) &eol                    ; open array (multi-line body)
-                  | "(" (ws) &eol                    ; open multiline string (stripped)
-                  | "((" (ws) &eol                   ; open multiline string (verbatim)
+                  | "{" (ws) &line-end                ; open object (multi-line body)
+                  | "[" (ws) &line-end                ; open array (multi-line body)
+                  | "(" (ws) &line-end                ; open multiline string (stripped)
+                  | "((" (ws) &line-end               ; open multiline string (verbatim)
                   | "()" (ws)                        ; empty inline (yields "")
                   | "(())" (ws)                      ; empty inline (yields "")
                   | <scalar-body>                    ; scalar value, dispatched per § 5.2
 
-<scalar-body>   ::= (ws) any-chars-until-eol
+<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw string item
-<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
-                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
-                  | (ws) "{}" (ws) eol
-                  | (ws) "[]" (ws) eol
-<item-value>    ::= <value-start> eol
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw string item
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
+                  | (ws) "{}" (ws) <line-end>
+                  | (ws) "[]" (ws) <line-end>
+<item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
@@ -59,12 +59,13 @@ export default {
                      | "[" (ws) "]"
                      | <inline-scalar>
 <inline-scalar>    ::= sequence of bytes terminated by an unescaped
-                       "," / "}" / "]" or by end-of-line (which is
+                       "," / "}" / "]" or by <line-end> (which is
                        an error per § 6.11); escape sequences per
                        § 3.7 are processed; surrounding whitespace
                        is trimmed before dispatch to § 5.2
 
-<multiline-content-line> ::= any line within an open <multiline>;
+<multiline-content-line> ::= any line within an open <multiline>
+                             followed by <line-end>;
                              the terminator (")" or "))") ends the block
 \`\`\`
 
@@ -79,8 +80,16 @@ Notes on the notation:
   separator) is a syntax error in the multi-line pair form — see
   § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
   after \`:\` / \`::\`.
-- \`&eol\` is a zero-width positive lookahead — it matches the end of
-  line without consuming it, so the EOL is still the line terminator.
+- \`&line-end\` is a zero-width positive lookahead for \`<line-end>\`; it
+  matches either eol or EOF without consuming it. Every line production
+  consumes exactly one \`<line-end>\`, so a final line need not have a
+  terminator byte. EOF is a terminal zero-byte marker: it may terminate only
+  the final line production and the \`<line-end>\` at EOF may be consumed at
+  most once; this prevents \`<line>*\` from repeating a zero-width \`blank\`
+  production when \`(ws)=0\` at EOF.
+- \`any-chars-until-line-end\` and an inline scalar's \`<line-end>\`
+  terminator stop before (and do not consume) \`<line-end>\`; the enclosing
+  line production consumes it.
 - The \`<inline-value>\` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is \`{\`, the value is a nested inline object (matching one of
@@ -114,30 +123,30 @@ Notes on the notation:
                                        сегмент квотирован, а не голый с
                                        экранированием, но результат тот же
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 пробельная кодовая точка, либо конец строки
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
 <value-part-opt> ::= <value-start> | ""             ; value-часть опциональна; "" ⇒ пустая String
 <value-start>   ::= "{" (ws) "}" (ws)                ; пустой inline-объект
                   | "[" (ws) "]" (ws)                ; пустой inline-массив
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline-объект (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline-массив (§ 5.8)
-                  | "{" (ws) &eol                    ; открытие объекта (многострочное тело)
-                  | "[" (ws) &eol                    ; открытие массива (многострочное тело)
-                  | "(" (ws) &eol                    ; открытие многострочной (stripped)
-                  | "((" (ws) &eol                   ; открытие многострочной (verbatim)
+                  | "{" (ws) &line-end                ; открытие объекта (многострочное тело)
+                  | "[" (ws) &line-end                ; открытие массива (многострочное тело)
+                  | "(" (ws) &line-end                ; открытие многострочной (stripped)
+                  | "((" (ws) &line-end               ; открытие многострочной (verbatim)
                   | "()" (ws)                        ; пустая inline (даёт "")
                   | "(())" (ws)                      ; пустая inline (даёт "")
                   | <scalar-body>                    ; скалярное значение, через § 5.2
 
-<scalar-body>   ::= (ws) any-chars-until-eol
+<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; обрезается; интерпретируется по § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw-строковый элемент
-<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
-                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
-                  | (ws) "{}" (ws) eol
-                  | (ws) "[]" (ws) eol
-<item-value>    ::= <value-start> eol
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw-строковый элемент
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
+                  | (ws) "{}" (ws) <line-end>
+                  | (ws) "[]" (ws) <line-end>
+<item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
@@ -151,12 +160,13 @@ Notes on the notation:
                      | "[" (ws) "]"
                      | <inline-scalar>
 <inline-scalar>    ::= последовательность байтов до неэкранированного
-                       "," / "}" / "]" или до конца строки (что —
+                       "," / "}" / "]" или до <line-end> (что —
                        ошибка по § 6.11); escape-последовательности
                        по § 3.7 обрабатываются; окружающие пробелы
                        обрезаются перед классификацией по § 5.2
 
-<multiline-content-line> ::= любая строка внутри открытого <multiline>;
+<multiline-content-line> ::= любая строка внутри открытого <multiline>,
+                             за которой следует <line-end>;
                              терминатор (")" или "))") закрывает блок
 \`\`\`
 
@@ -171,7 +181,16 @@ Notes on the notation:
   синтаксическая ошибка в многострочной форме пары — см. § 6.10.
   Inline-пары в составных (§ 5.8) НЕ требуют пробела после \`:\` /
   \`::\`.
-- \`&eol\` — нулевой ширины положительный lookahead.
+- \`&line-end\` — нулевой ширины положительный lookahead для \`<line-end>\`; он
+  совпадает с eol или EOF, не поглощая их. Каждая продукция строки
+  поглощает ровно один \`<line-end>\`, поэтому последняя строка может
+  не иметь байта-терминатора. EOF — конечный нулевой байтовый маркер: он
+  может завершить только последнюю продукцию строки, а \`<line-end>\` в EOF
+  поглощается не более одного раза; поэтому \`<line>*\` не может повторять
+  нулевую по ширине продукцию \`blank\` при \`(ws)=0\` и EOF.
+- \`any-chars-until-line-end\` и терминатор \`<line-end>\` у inline-скаляра
+  останавливаются перед \`<line-end>\` и не поглощают его; его поглощает
+  окружающая продукция строки.
 - Альтернативы \`<inline-value>\` проверяются **слева-направо** по
   первому непробельному байту в позиции inline-значения. Если этот
   байт — \`{\`, значение — вложенный inline-объект (одна из первых
@@ -203,30 +222,30 @@ Notes on the notation:
                                        中间段是 quoted 而非
                                        bare-with-escape,但结果相同
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 个空白码点,或行末
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
 <value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
 <value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
                   | "[" (ws) "]" (ws)                ; 空 inline 数组
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
-                  | "{" (ws) &eol                    ; 对象开启(多行 body)
-                  | "[" (ws) &eol                    ; 数组开启(多行 body)
-                  | "(" (ws) &eol                    ; 多行字符串开启 (stripped)
-                  | "((" (ws) &eol                   ; 多行字符串开启 (verbatim)
+                   | "{" (ws) &line-end                ; 对象开启(多行 body)
+                   | "[" (ws) &line-end                ; 数组开启(多行 body)
+                   | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
+                   | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
                   | "()" (ws)                        ; 空 inline(得到 "")
                   | "(())" (ws)                      ; 空 inline(得到 "")
                   | <scalar-body>                    ; 标量值,按 § 5.2 分发
 
-<scalar-body>   ::= (ws) any-chars-until-eol
+<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw 字符串项
-<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
-                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
-                  | (ws) "{}" (ws) eol
-                  | (ws) "[]" (ws) eol
-<item-value>    ::= <value-start> eol
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw 字符串项
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
+                  | (ws) "{}" (ws) <line-end>
+                  | (ws) "[]" (ws) <line-end>
+<item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
@@ -239,12 +258,13 @@ Notes on the notation:
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
-<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或行末终止的
+<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或 <line-end> 终止的
                        字节序列(行末情况按 § 6.11 为错误);
                        § 3.7 的 escape 序列被处理;周围空白在分发到
                        § 5.2 前被修剪
 
-<multiline-content-line> ::= 打开的 <multiline> 内的任意行;
+<multiline-content-line> ::= 打开的 <multiline> 内的任意行,
+                             后随 <line-end>;
                              终止符 (")" 或 "))") 关闭该块
 \`\`\`
 
@@ -257,8 +277,13 @@ Notes on the notation:
   pair 分隔符(\`:\`、\`::\`)之后。写 \`key:value\`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 \`:\` / \`::\` 之后有空白。
-- \`&eol\` 是零宽正向先行断言 —— 它匹配行末而不消耗它,因此行末
-  仍然是行终止符。
+- \`&line-end\` 是针对 \`<line-end>\` 的零宽正向先行断言 —— 它匹配
+  eol 或 EOF 而不消耗它。每个行产生式恰好消耗一个 \`<line-end>\`,
+  因此最后一行可以没有终止字节。EOF 是终结性的零字节标记:只能终止
+  最后一个行产生式,且 EOF 处的 \`<line-end>\` 最多消耗一次;因此在
+  \`(ws)=0\` 且到达 EOF 时,\`<line>*\` 不会重复零宽的 \`blank\` 产生式。
+- \`any-chars-until-line-end\` 与 inline 标量的 \`<line-end>\` 终止符在
+  \`<line-end>\` 之前停止且不消耗它;由外层行产生式消耗该终止符。
 - \`<inline-value>\` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 \`{\`,值是嵌套 inline 对象(匹配前两条
   \`{\`-规则之一)且 MUST 在同一行以 \`}\` 关闭;若该字节为 \`[\`,

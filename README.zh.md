@@ -357,18 +357,23 @@ timeout: null
   `<name>.ktav` + `<name>.json` 一对;`.json` 在 `expected_error`
   字段中指明期望的错误类别。
 - **`unrepresentable/`***(0.7 起)*——conforming writer MUST 拒绝
-  序列化、而非输出 lossy 或部分内容的 `Value`。没有 `.ktav` 输入:
-  这些 `Value` 大多只能以编程方式构造,解析永远不会产生它们。每个
-  用例是单一的 `<name>.json`,含三个字段:`value`(该 `Value`,
-  与 `valid/` 相同的 JSON 映射,唯一例外是 `NonFiniteFloat`
-  fixture:由于 plain JSON 没有这样的字面量,非有限 Float 写作
-  `{"$float": "NaN"|"Infinity"|"-Infinity"}`——`$float` 是
-  `unrepresentable/` 的 `value` 树内保留的键名,绝不会作为任何其他
-  用途的字面 Object 字段)、
-  `unrepresentable_reason`(规范
-  定义的原因代码)以及 `note`(原因说明)。writer 用以报告拒绝的
-  具体 API 形式(异常、error enum 等)是 implementation-defined;
-  规范性的只是原因代码的名称。
+  序列化、而非输出 lossy 或部分内容的 `Value`。这些是只能编程
+  构造的情形,每个用例只有一个 `<name>.json`,且恰好包含 `value`、
+  `unrepresentable_reason` 与非空 `note`;Value 映射及 `$float`
+  sentinel 的精确形状见 § 5.9.0。原因代码 MUST 在树中有递归见证,
+  MUST NOT 从文件名推导。
+- **`parseable-unrepresentable/`***(0.7 起)*——解析器产生、但
+  conforming writer MUST 拒绝的 Value。每个用例是
+  `<name>.ktav` + `<name>.json` 一对;解析输入 MUST 产生 JSON `value`,
+  写出 MUST 以指定原因代码失败。这些是 pair 而非 triple,没有
+  canonical-output 文件,并使用与 `unrepresentable/` 相同的精确
+  JSON schema。
+
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 独立锁定
+`valid/`、`invalid/`、`unrepresentable/` 与
+`parseable-unrepresentable/` 的完整 fixture inventory;CI 将其传给
+`validate_corpus.py --corpus-inventory-lock`,使 fixture 的新增或删除
+无法静默改变语料库。
 
 通过该版本测试套件中每个存在类别的全部测试,是通过发布的必要门槛,
 但本身并不足以证明合规:`boundary-fixtures.json`(0.7 起)告诉共享
@@ -420,7 +425,7 @@ submodule 引入(或直接拷贝)。
 │   ├── test_build_spec.mjs                (0.7+) build_spec.mjs 的对抗性单元测试(负面路径)
 │   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
-│   └── locks/                             boundary-fixtures 清单锁文件
+│   └── locks/                             boundary 与完整语料 inventory 的 versioned 锁文件
 ├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
 │                          翻译对等性检查,以及全部三套单元测试
 └── versions/
@@ -434,6 +439,7 @@ submodule 引入(或直接拷贝)。
             ├── valid/
             ├── invalid/
             ├── unrepresentable/   (0.7+)
+            ├── parseable-unrepresentable/ (0.7+; pair,无 canonical output)
             └── boundary-fixtures.json   (0.7+) leaf-level numeric-
                         domain exemptions, not a fixture category
 ```

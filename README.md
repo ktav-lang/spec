@@ -383,18 +383,24 @@ false-green, which is worse than having no fixtures for it at all.
   case is a `<name>.ktav` + `<name>.json` pair; the `.json` names the
   expected error category in its `expected_error` field.
 - **`unrepresentable/`** *(0.7+)* — `Value`s a conforming writer MUST
-  refuse to serialise rather than emit lossy or partial output. There
-  is no `.ktav` input: most of these `Value`s can only be constructed
-  programmatically, never produced by parsing. Each case is a single
-  `<name>.json` with three fields — `value` (the `Value`, same JSON
-  mapping as `valid/`, except the one `NonFiniteFloat` fixture, which
-  spells a non-finite Float as `{"$float": "NaN"|"Infinity"|"-Infinity"}`
-  since plain JSON has no such literal — `$float` is a reserved key
-  name inside `unrepresentable/`'s `value` trees, never a literal
-  Object field for any other purpose), `unrepresentable_reason` (a
-  spec-defined reason code), and `note` (why). The exact API shape a
-  writer uses to report the rejection (exception, error enum, ...) is
-  implementation-defined; only the reason code names are normative.
+  refuse to serialise rather than emit lossy or partial output. These
+  programmatic-only cases have one `<name>.json` each, with exactly
+  `value`, `unrepresentable_reason`, and non-empty `note`; the Value
+  mapping and exact `$float` sentinel shape are defined by § 5.9.0.
+  The reason code MUST have a recursive witness and MUST NOT be inferred
+  from the filename.
+- **`parseable-unrepresentable/`** *(0.7+)* — parser-produced Values
+  which a conforming writer MUST refuse. Each case is a
+  `<name>.ktav` + `<name>.json` pair; parsing the input MUST produce the
+  JSON `value`, and writing it MUST fail with the named reason code.
+  These are intentionally pairs, with no canonical-output file, and use
+  the same exact JSON schema as `unrepresentable/`.
+
+The versioned `scripts/locks/corpus-inventory.0.7.lock.json` independently
+locks the complete fixture inventory for `valid/`, `invalid/`,
+`unrepresentable/`, and `parseable-unrepresentable/`; CI passes it to
+`validate_corpus.py --corpus-inventory-lock` so additions and deletions
+cannot silently change the corpus.
 
 Passing every test in every category present in that version's suite
 is a necessary release gate, but not by itself sufficient proof of
@@ -452,7 +458,7 @@ pin to a version directory by path.
 │   ├── test_build_spec.mjs                (0.7+) adversarial unit tests for build_spec.mjs
 │   ├── archive/                           (0.7+) archived one-time content-unit bootstrap
 │   │   └── extract_content_units.py         see content/README.md; refuses to overwrite content/
-│   └── locks/                             boundary-fixtures manifest lock files
+│   └── locks/                             versioned boundary and corpus-inventory lock files
 ├── .github/workflows/     CI: content/ byte-identity check (0.7+), corpus validation,
 │                          translation-parity check, and all three unit test suites
 └── versions/
@@ -466,6 +472,7 @@ pin to a version directory by path.
             ├── valid/
             ├── invalid/
             ├── unrepresentable/   (0.7+)
+            ├── parseable-unrepresentable/ (0.7+; pairs, no canonical output)
             └── boundary-fixtures.json   (0.7+) leaf-level numeric-
                         domain exemptions, not a fixture category
 ```

@@ -296,18 +296,20 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
 
 ```
 <document>      ::= <line>*
+<line-end>      ::= eol | EOF
 <line>          ::= <comment> | <blank> | <header-line> | <pair-line>
                   | <array-item-line> | <multiline-content-line>
 
-<comment>       ::= (ws) "##" (任意字节到行尾)
-<blank>         ::= (ws)
+<comment>       ::= (ws) "##" <comment-body> <line-end>
+<comment-body>  ::= any-chars-until-line-end
+<blank>         ::= (ws) <line-end>
 
-<header-line>   ::= (ws) "{" (ws) eol                ; 对象开启
-                  | (ws) "}" (ws) eol                ; 对象关闭
-                  | (ws) "[" (ws) eol                ; 数组开启
-                  | (ws) "]" (ws) eol                ; 数组关闭
-                  | (ws) ")" (ws) eol                ; 多行关闭 (stripped)
-                  | (ws) "))" (ws) eol               ; 多行关闭 (verbatim)
+<header-line>   ::= (ws) "{" (ws) <line-end>         ; 对象开启
+                  | (ws) "}" (ws) <line-end>         ; 对象关闭
+                  | (ws) "[" (ws) <line-end>         ; 数组开启
+                  | (ws) "]" (ws) <line-end>         ; 数组关闭
+                  | (ws) ")" (ws) <line-end>         ; 多行关闭 (stripped)
+                  | (ws) "))" (ws) <line-end>        ; 多行关闭 (verbatim)
                     最后两个候选的上下文相关性:
                     它们仅在多行字符串块处于打开状态(§ 5.6)
                     且修剪后的行与该块自身的终止符一致时
@@ -321,10 +323,14 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                     对值文本 —— § 5.2、§ 5.4),
                     与 § 6.1 的表述一致。
 
-<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; 默认形式,标量按 § 5.2 分发
-                  | <key> "::" <sep-end> <value-part-opt> eol    ; 字面 String
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; 默认形式,标量按 § 5.2 分发
+                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; 字面 String
 
-<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         在分发到 <quoted-segment> 或 <bare-segment> 之前,
+                         删除最长的首尾 (ws);
+                         分发后的段内部空白保留。
 <unescaped-dot>      ::= 非由奇数个 "\\" 前导的 "."
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
@@ -465,30 +471,30 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                                        中间段是 quoted 而非
                                        bare-with-escape,但结果相同
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 个空白码点,或行末
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
 <value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
 <value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
                   | "[" (ws) "]" (ws)                ; 空 inline 数组
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
-                  | "{" (ws) &eol                    ; 对象开启(多行 body)
-                  | "[" (ws) &eol                    ; 数组开启(多行 body)
-                  | "(" (ws) &eol                    ; 多行字符串开启 (stripped)
-                  | "((" (ws) &eol                   ; 多行字符串开启 (verbatim)
+                   | "{" (ws) &line-end                ; 对象开启(多行 body)
+                   | "[" (ws) &line-end                ; 数组开启(多行 body)
+                   | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
+                   | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
                   | "()" (ws)                        ; 空 inline(得到 "")
                   | "(())" (ws)                      ; 空 inline(得到 "")
                   | <scalar-body>                    ; 标量值,按 § 5.2 分发
 
-<scalar-body>   ::= (ws) any-chars-until-eol
+<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw 字符串项
-<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
-                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
-                  | (ws) "{}" (ws) eol
-                  | (ws) "[]" (ws) eol
-<item-value>    ::= <value-start> eol
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw 字符串项
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
+                  | (ws) "{}" (ws) <line-end>
+                  | (ws) "[]" (ws) <line-end>
+<item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
@@ -501,12 +507,13 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
-<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或行末终止的
+<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或 <line-end> 终止的
                        字节序列(行末情况按 § 6.11 为错误);
                        § 3.7 的 escape 序列被处理;周围空白在分发到
                        § 5.2 前被修剪
 
-<multiline-content-line> ::= 打开的 <multiline> 内的任意行;
+<multiline-content-line> ::= 打开的 <multiline> 内的任意行,
+                             后随 <line-end>;
                              终止符 (")" 或 "))") 关闭该块
 ```
 
@@ -519,8 +526,13 @@ writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果
   pair 分隔符(`:`、`::`)之后。写 `key:value`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 `:` / `::` 之后有空白。
-- `&eol` 是零宽正向先行断言 —— 它匹配行末而不消耗它,因此行末
-  仍然是行终止符。
+- `&line-end` 是针对 `<line-end>` 的零宽正向先行断言 —— 它匹配
+  eol 或 EOF 而不消耗它。每个行产生式恰好消耗一个 `<line-end>`,
+  因此最后一行可以没有终止字节。EOF 是终结性的零字节标记:只能终止
+  最后一个行产生式,且 EOF 处的 `<line-end>` 最多消耗一次;因此在
+  `(ws)=0` 且到达 EOF 时,`<line>*` 不会重复零宽的 `blank` 产生式。
+- `any-chars-until-line-end` 与 inline 标量的 `<line-end>` 终止符在
+  `<line-end>` 之前停止且不消耗它;由外层行产生式消耗该终止符。
 - `<inline-value>` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 `{`,值是嵌套 inline 对象(匹配前两条
   `{`-规则之一)且 MUST 在同一行以 `}` 关闭;若该字节为 `[`,
@@ -670,6 +682,14 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
 普通 String,分别包含一个 ASCII 字节(`"("`)或两个 ASCII 字节
 (`"(("`),而非多行开启符,因为 inline 复合值无法延续到下一行。
 
+对于规则 6–9,以 `{` 或 `[` 开头的体按 § 5.8 的 quote-aware、escape-aware
+分隔符规则扫描。只有未 escape 且使复合值分隔符深度回到零的闭合符才是
+**匹配**闭合符。如果在扫描该闭合符时遇到无效 escape,结果为
+`BadEscapeSequence`(§ 6.13),其优先级高于缺失闭合符。该优先级在决定
+规则 8 或 9 之前适用。
+未终止的 quoted 键保持引号不透明, 并按 § 6.16 诊断为
+`UnterminatedInlineCompound`,即使该未闭合 quoted 段内部还出现了其他错误 escape。
+
 1. 体恰为 `{` → 打开新的 Object scope(多行)。
 2. 体恰为 `[` → 打开新的 Array scope(多行)。
 3. 体恰为 `(` → 打开多行字符串(stripped,§ 5.6)。
@@ -677,9 +697,13 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
 5. 体为 `()` 或 `(())` → 空 String。
 6. 体匹配**闭合 inline 对象** `{ … }` → 按 § 5.8 产出 inline Object。
 7. 体匹配**闭合 inline 数组** `[ … ]` → 按 § 5.8 产出 inline Array。
-8. 体以 `{` 开头但不符合规则 1 或 6 → 未终止 inline 对象错误
-   (§ 6.11)。
-9. 体以 `[` 开头但不符合规则 2 或 7 → 未终止 inline 数组错误。
+8. 体以 `{` 开头,且同一行出现匹配的 `}`,但该闭合符之后还有
+   非空白内容,或闭合复合值内部存在其他结构缺陷 →
+   `MalformedInlineCompound`(§ 6.12)。
+9. 体以 `{` 开头,且同一行没有匹配的 `}` → 未终止 inline 对象错误
+   (§ 6.11)。`[`/`]` 同理:匹配的 `]` 后还有内容,或闭合复合值内部有
+   其他结构缺陷,是 `MalformedInlineCompound`;同一行没有匹配的 `]`
+   则是 `UnterminatedInlineCompound`。
 10. 体恰为 `null` → Null。
 11. 体恰为 `true` → Bool `true`。
 12. 体恰为 `false` → Bool `false`。
@@ -1271,11 +1295,35 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
-`versions/0.7/tests/unrepresentable/` 下的 fixture(§ 8.2)为给定
-Value 指明期望的原因代码;writer-conforming 实现自身的错误类型
-MAY 采用任意形式(异常类、error enum、tagged union 等)——
-规范性的只是代码名称及其各自标识的情形,而非调用方借以观察到
-它们的 API:
+`versions/0.7/tests/unrepresentable/` 与
+`versions/0.7/tests/parseable-unrepresentable/` 下的每个文件
+MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
+
+- `value`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
+  数组映射为 Array,null、bool、字符串及有限 JSON 数字映射为对应
+  的标量类型。
+- `unrepresentable_reason`:下表七个原因代码之一且只能一个。
+- `note`:非空的说明 String。
+
+`value` 映射 MUST 递归检查。Object 的空键是 `EmptyKeyName` 情形的
+见证。非有限 Float 的唯一表示是恰好含一个字段的
+sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
+或 `{"$float": "-Infinity"}`;任何其他 Object 形状中的
+`$float` 字段都无效。
+普通 Value MUST NOT 将 `$float` Object 用于其他目的。
+只有当该原因情形出现在 Value 树中的某处时,
+原因代码才对该 fixture 有效;`ScalarRoot` 例外,它要求根本身是
+标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
+从 fixture 文件名推导含义。
+
+`parseable-unrepresentable/` 类别还为每个 `<name>.json` 提供
+同名的 `<name>.ktav`。解析器 MUST 接受该输入并产生 JSON 的
+`value`;随后 writer MUST 以 JSON 指定的原因代码拒绝该 Value。
+这些 fixture 特意没有 canonical-output 文件。
+
+writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
+error enum、tagged union 等)——规范性的只是代码名称及其标识的
+情形,而非调用方借以观察到它们的 API:
 
 | 原因代码                        | 情形                                                                                     |
 |-----------------------------------|--------------------------------------------------------------------------------------------|
@@ -1297,22 +1345,9 @@ Object 对的键上,还是在后代中(例如一个 String 同时满足两条
 具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
 结构化错误契约(rust#12)。
 
-其中 `NonFiniteFloat` 在其余原因代码共用的普通 `<name>.json`
-schema 下没有对应 fixture:作为该 schema 书写格式的 JSON 本身
-没有可移植的 NaN 或 Infinity 字面量(接受裸 `NaN` /
-`Infinity` 标记作为扩展的实现,对其 round-trip 行为也不一致)。
-为了仍以可机检的 fixture 固定此情形,
-`versions/0.7/tests/unrepresentable/non_finite_float.json` 在其
-`"value"` 字段内使用一个规范性的逃生通道:一个原本没有 JSON
-编码的 Float,以带标签的对象 `{"$float": "NaN"}`、
-`{"$float": "Infinity"}` 或 `{"$float": "-Infinity"}` 的形式
-替代普通 JSON 数字写出。键名 `$float` 在 `unrepresentable/`
-fixture 的 `"value"` 树内被保留:一个恰好具有此形状(单个键字面名
-为 `$float`)的普通 JSON Object 不可能因任何其他原因出现在那里
-—— 没有其他原因代码,也没有 `valid/` 下的任何 fixture 需要此
-哨兵,因为 § 5 定义的每个其他 Value 都有直接的 JSON 映射。未来的
-`unrepresentable/` fixture MUST NOT 将带 `$float` 键的字面
-Object 用于此哨兵之外的任何用途。
+三个 `NonFiniteFloat` fixture 分别为 NaN、正 Infinity 与负 Infinity
+使用 sentinel。JSON 没有这些值的可移植字面量,因此 sentinel 是唯一
+的逃生通道,并在两个 writer-unrepresentable 类别中保留。
 
 #### 5.9.1 空白、缩进、行尾
 
@@ -1466,12 +1501,21 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
 
 - **空 String (`""`)**:对输出 `key:`(冒号后无体);数组项输出
   `::`(无体)。
-- **单行可打印,无边缘空白,无 number/keyword 冲突**:对输出
-  `key: <body>`;项输出 `<body>`。
-- **单行,但匹配 § 3.6 的 integer 或 float 字面量语法(无论其值
-  是否落在 writer 自身的数值域内 —— § 5),或恰好等于 `null` /
-  `true` / `false`**:
-  使用原始标记输出 `key:: <body>` 或 `:: <body>`。
+- **按位置选择:** writer MUST 先应用实际语法位置的完整规则,
+  然后再选择单行形式。对 pair 应用 § 5.9.5。其普通形式
+  `key: <body>` 只有在满足 § 5.9.5 全部条件时才可用:体为单行、
+  无边缘空白,不匹配 integer/float 语法或 `null` / `true` /
+  `false` 关键字,不以 `{` 或 `[` 开头,且不恰好是
+  `(`、`((`、`()` 或 `(())` 这些分发形式。否则 § 5.9.5 要求
+  单行 String 使用原始标记 `key:: <body>`。对数组项应用 § 5.9.6。
+  其裸形式 `<body>` 只有在满足相同的普通形式条件且不触发
+  § 5.9.6 的项位置冲突时才可用:体不恰好是 `}` 或 `]`,不以
+  `##` 或 `::` 开头,并且对于根 Array 的第一项,既不是 pair-shape
+  候选也不以 U+FEFF 开头。否则 § 5.9.6 要求单行 String 使用原始标记
+  `:: <body>`。这些委托给 pair/项的规则涵盖 number/keyword 冲突、
+  `{` / `[` 前缀、所有列出的结构 token,以及根第一项的
+  pair-shape/BOM 情况;它们是完整规则,优先于本节的一般说明。特别是,
+  当 § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择裸形式。
 - **含 `LF`、前后空白或控制字节(`0x00`–`0x1F` 除 `0x09` `TAB`
   与 `0x0A` `LF`,且非 `0x0D` `CR`—— 由下一条单独处理)**:输出
   为 verbatim 多行 `((` … `))`。开启
@@ -1736,8 +1780,9 @@ Value 自身的内容都不可能到达字节偏移 0,因为其余每个位置�
 
 ## 6. 错误
 
-合规解析器 MUST 检测并报告以下每个错误类别。错误 MUST 至少携带
-1-based 源行号与字节偏移 Span。
+合规解析器 MUST 检测并报告以下每个错误类别。由源文本解析引起的错误 MUST 至少
+携带 1-based 源行号与覆盖错误片段的半开字节偏移 Span `[start, end)`。
+该位置要求不适用于 `Io` 错误(§ 6.8);其位置 MAY 缺失或由实现定义。
 
 ### 6.1 不平衡或不匹配的括号
 
@@ -1809,7 +1854,10 @@ inline 对(§ 5.8)**不**要求且**不**报此错误。
 
 ### 6.11 未终止 inline 复合值
 
-值位置上出现的 `{` 或 `[`,若同一行内其后没有匹配的 `}` / `]` 跟随,是 `UnterminatedInlineCompound` 错误(§ 5.8)。
+值位置上出现的 `{` 或 `[`,若针对引号的结构扫描在同一行内没有找到匹配的 `}` / `]` 且未遇到无效 escape,则是
+`UnterminatedInlineCompound` 错误(§ 5.8)。若存在同一行匹配的关闭符,则该候选值在分类时视为已关闭:关闭符后的内容以及其内部其他结构缺陷都是 `MalformedInlineCompound`(§ 6.12),而不是 `UnterminatedInlineCompound`。如果扫描在找到匹配关闭符之前遇到
+`BadEscapeSequence`,则 `BadEscapeSequence` 优先于缺失关闭符。
+未终止的 quoted 键改按 § 6.16 处理:该诊断优先于未闭合 quoted 段内部的错误 escape。
 
 ### 6.12 inline 复合值结构缺陷
 
@@ -1822,6 +1870,9 @@ inline 对(§ 5.8)**不**要求且**不**报此错误。
   的例外仍适用。
 - 其他不引发 `UnterminatedInlineCompound` 的结构缺陷(如 inline
   对象内缺失对分隔符:`{a 1, b: 2}`)。
+- 值位置复合值在同一行出现匹配的闭合符后仍有非空白内容
+  (例如 `x: {a: 1} junk` 或 `x: [1] junk`)。闭合符表示复合值
+  已闭合;其后的字节因此是结构错误,而不是未终止复合值。
 
 对的空值(`{a:}`、`{a::}`)**不**是缺陷;按 § 5.8.2 为空 String。
 
@@ -1838,6 +1889,14 @@ inline 对(§ 5.8)**不**要求且**不**报此错误。
 `BadEscapeSequence` 错误;孤立代理项也是 —— 即高代理项之后没有
 紧跟合法的低代理项 `\uXXXX` escape,或低代理项之前没有紧跟高
 代理项。
+
+关于与`UnterminatedInlineCompound`的优先级,inline 复合值按从左到右
+扫描,并使用其 quote-aware、escape-aware 的分隔符规则。若在同一行找到
+匹配闭合符之前遇到无效 escape,立即报告`BadEscapeSequence`,其优先级
+高于缺失闭合符。若未遇到无效 escape,同一行不存在匹配闭合符才表示
+`UnterminatedInlineCompound`;扫描期间被 escape 的分隔符保持不透明。
+未终止的 quoted 键是例外:它保持引号不透明,并按 § 6.16 诊断为
+`UnterminatedInlineCompound`,即使该未闭合 quoted 段内部还出现其他错误 escape。
 
 ### 6.14 顶层 inline 后的孤立行
 
@@ -2111,6 +2170,11 @@ Parser-conforming 实现:
   豁免。
 - 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
+- 接受 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+  `<name>.ktav`,并产生其 sibling JSON 的 `value`。这些输入覆盖
+  parser 产生的 `CRByte`、`BothFormsRequired`、
+  `TrailingWhitespaceCollision` 与 `LeadingWhitespaceCollision` 情形;
+  该类别没有 canonical-output 文件,因为 writer 结果 MUST 是拒绝。
 
 ### 8.2 Writer-conforming
 
@@ -2138,7 +2202,15 @@ Writer-conforming 实现:
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
   其自身 API 的任意错误报告形式;规范性的是代码名称,而非呈现
-  机制。
+  机制。每个 JSON Object MUST 恰好包含 `value`,
+  `unrepresentable_reason` 与非空 `note`,不得有额外字段;
+  Value 映射与 `$float` sentinel 的精确形状见 § 5.9.0。原因代码
+  MUST 在 Value 树中有递归见证,而不得从文件名推导。
+- 对 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+  fixture,parser-conforming 实现接受 sibling `name.ktav` 并产生
+  `name.json["value"]`,随后 writer-conforming 实现以指定原因代码
+  拒绝该 Value。这些 fixture 是 pair 而非 valid triple,MUST NOT
+  带有 canonical-output 文件。
 
 规范形式定义见 § 5.9。
 

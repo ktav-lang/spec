@@ -62,12 +62,40 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. \`versions/0.7/tests/unrepresentable/\` fixtures (§ 8.2) name the
-expected reason code for a given Value; a writer-conforming
-implementation's own error type MAY take any shape (exception class,
-error enum, tagged union, ...) — only the code names and the case
-each identifies are normative, not the API through which a caller
-observes them:
+it. Every file in \`versions/0.7/tests/unrepresentable/\` and
+\`versions/0.7/tests/parseable-unrepresentable/\` MUST be a JSON object
+with exactly these three fields and no others:
+
+- \`value\`: a recursively valid JSON mapping of the Value. JSON objects
+  map to Objects and arrays to Arrays; JSON null, booleans, strings,
+  and finite JSON numbers map to the corresponding scalar kinds.
+- \`unrepresentable_reason\`: exactly one of the seven reason codes in
+  the table below.
+- \`note\`: a non-empty explanatory String.
+
+The \`value\` mapping MUST be checked recursively. An empty Object key
+is the witness for the \`EmptyKeyName\` case. The sole representation of a
+non-finite Float is a sentinel object with exactly one field,
+\`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\`, or
+\`{"$float": "-Infinity"}\`; a \`$float\` field in any other
+object shape is invalid.
+An ordinary Value MUST NOT use a \`$float\` object for another purpose.
+A reason code is valid for a fixture only when
+its case occurs somewhere in the Value tree, except \`ScalarRoot\`,
+which requires that the root itself is a scalar. The root MUST be an
+Object or Array for every other reason code. These checks MUST NOT infer
+meaning from a fixture filename.
+
+The \`parseable-unrepresentable/\` category additionally has a sibling
+\`<name>.ktav\` for each \`<name>.json\`. The parser MUST accept that
+input and produce the JSON's \`value\`; the writer MUST then reject that
+Value with the JSON's reason code. These fixtures intentionally have no
+canonical-output file.
+
+A writer-conforming implementation's own error type MAY take any shape
+(exception class, error enum, tagged union, ...) — only the code names
+and the case each identifies are normative, not the API through which a
+caller observes them:
 
 | Reason code                   | Case                                                                                          |
 |--------------------------------|-------------------------------------------------------------------------------------------------|
@@ -93,25 +121,10 @@ does not mandate a specific traversal order or a deterministic
 "first" violation — that question belongs to the still-open
 structured-error contract (rust#12).
 
-Of these, \`NonFiniteFloat\` has no fixture under the ordinary
-\`<name>.json\` schema every other reason code uses: JSON, the format
-that schema is written in, has no portable literal for NaN or
-Infinity (implementations that accept the bare tokens \`NaN\` /
-\`Infinity\` as an extension disagree on round-tripping them). To still
-pin this case with a machine-checkable fixture,
-\`versions/0.7/tests/unrepresentable/non_finite_float.json\` uses one
-normative escape hatch inside its \`"value"\` field: a Float that would
-otherwise have no JSON encoding is written as the tagged object
-\`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\`, or
-\`{"$float": "-Infinity"}\` in place of an ordinary JSON number. The key
-name \`$float\` is reserved within \`unrepresentable/\` fixture \`"value"\`
-trees: an ordinary JSON Object that happens to have exactly this shape
-(a single key literally named \`$float\`) can never occur there for any
-other reason — no other reason code, and no fixture under \`valid/\`,
-ever needs this sentinel, since every other Value § 5 defines has a
-direct JSON mapping. A future \`unrepresentable/\` fixture MUST NOT use
-a literal Object with a \`$float\` key for any purpose other than this
-sentinel.
+The three \`NonFiniteFloat\` fixtures use the sentinel separately for
+NaN, positive Infinity, and negative Infinity. JSON has no portable
+literal for those values, so the sentinel is the only escape hatch and
+is reserved throughout both writer-unrepresentable categories.
 
 `,
   ru: `
@@ -178,13 +191,40 @@ sentinel.
 
 У каждого из перечисленных выше случаев непредставимости есть
 устойчивый **код причины** (reason code), нормативный независимо от
-того, как конкретная реализация выражает его в своём API. Фикстуры
-\`versions/0.7/tests/unrepresentable/\` (§ 8.2) называют ожидаемый код
-причины для данного Value; собственный тип ошибки
-writer-conforming реализации MAY иметь любую форму (класс
-исключения, error enum, tagged union...) — нормативны только имена
-кодов и то, какой случай каждый из них обозначает, а не API, через
-который вызывающий код их наблюдает:
+того, как конкретная реализация выражает его в своём API. Каждый файл
+в \`versions/0.7/tests/unrepresentable/\` и
+\`versions/0.7/tests/parseable-unrepresentable/\` MUST быть JSON-объектом
+ровно с тремя полями и без каких-либо других:
+
+- \`value\`: рекурсивное JSON-отображение Value. JSON-объекты отображаются
+  в Object, массивы — в Array, а null, bool, строки и конечные JSON-числа
+  — в соответствующие скалярные виды.
+- \`unrepresentable_reason\`: ровно один из семи кодов причины ниже.
+- \`note\`: непустая поясняющая String.
+
+Отображение \`value\` MUST проверяться рекурсивно. Пустое имя Object
+является свидетельством случая \`EmptyKeyName\`. Единственное представление
+неконечного Float — sentinel-объект ровно с одним полем:
+\`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\` или
+\`{"$float": "-Infinity"}\`; поле \`$float\` в любой другой форме
+объекта недопустимо.
+Обычный Value MUST NOT использовать объект \`$float\` для другой цели.
+Код причины допустим только если его случай
+встречается где-либо в дереве Value, кроме \`ScalarRoot\`, для которого
+скаляром должен быть сам корень. Для каждого другого кода корень MUST
+быть Object или Array. Эти проверки MUST NOT выводить смысл из имени
+фикстуры.
+
+Категория \`parseable-unrepresentable/\` дополнительно содержит соседний
+\`<name>.ktav\` для каждого \`<name>.json\`. Парсер MUST принять этот
+ввод и получить \`value\` из JSON, после чего writer MUST отвергнуть
+Value с указанным в JSON кодом. У этих фикстур намеренно нет файла
+канонического вывода.
+
+Собственный тип ошибки writer-conforming реализации MAY иметь любую
+форму (класс исключения, error enum, tagged union...) — нормативны
+только имена кодов и обозначенные ими случаи, а не API, через который
+вызывающий код их наблюдает:
 
 | Код причины                    | Случай                                                                                          |
 |---------------------------------|---------------------------------------------------------------------------------------------------|
@@ -210,27 +250,10 @@ Object или среди потомков (например, String, удовл�
 «первое» нарушение — этот вопрос относится к всё ещё открытому
 контракту структурированных ошибок (rust#12).
 
-Из них у \`NonFiniteFloat\` фикстуры нет при обычной схеме
-\`<name>.json\`, которую использует любой другой код причины: у JSON
-— формата, в котором написана эта схема, — нет портируемого
-литерала для NaN или Infinity (реализации, принимающие голые токены
-\`NaN\` / \`Infinity\` как расширение, расходятся в их round-trip'е).
-Чтобы всё же закрепить этот случай машинопроверяемой фикстурой,
-\`versions/0.7/tests/unrepresentable/non_finite_float.json\`
-использует один нормативный обходной путь внутри своего поля
-\`"value"\`: Float, который иначе не имел бы кодирования в JSON,
-записывается как tagged-объект \`{"$float": "NaN"}\`,
-\`{"$float": "Infinity"}\` или \`{"$float": "-Infinity"}\` вместо
-обычного JSON-числа. Имя ключа \`$float\` зарезервировано внутри
-деревьев \`"value"\` фикстур \`unrepresentable/\`: обычный JSON-объект,
-случайно имеющий ровно такую форму (единственный ключ, буквально
-названный \`$float\`), не может встретиться там по какой-либо иной
-причине — никакой другой код причины и никакая фикстура под
-\`valid/\` в этом сентинеле никогда не нуждаются, поскольку каждый
-прочий Value, определяемый § 5, имеет прямое отображение в JSON.
-Будущая фикстура \`unrepresentable/\` MUST NOT использовать
-литеральный объект с ключом \`$float\` ни для какой иной цели, кроме
-этого сентинела.
+Три фикстуры \`NonFiniteFloat\` используют sentinel отдельно для NaN,
+положительной и отрицательной Infinity. В JSON нет переносимого
+литерала для этих значений, поэтому sentinel — единственный обходной
+путь и зарезервирован во всех двух writer-unrepresentable категориях.
 
 `,
   zh: `
@@ -280,11 +303,35 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
-\`versions/0.7/tests/unrepresentable/\` 下的 fixture(§ 8.2)为给定
-Value 指明期望的原因代码;writer-conforming 实现自身的错误类型
-MAY 采用任意形式(异常类、error enum、tagged union 等)——
-规范性的只是代码名称及其各自标识的情形,而非调用方借以观察到
-它们的 API:
+\`versions/0.7/tests/unrepresentable/\` 与
+\`versions/0.7/tests/parseable-unrepresentable/\` 下的每个文件
+MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
+
+- \`value\`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
+  数组映射为 Array,null、bool、字符串及有限 JSON 数字映射为对应
+  的标量类型。
+- \`unrepresentable_reason\`:下表七个原因代码之一且只能一个。
+- \`note\`:非空的说明 String。
+
+\`value\` 映射 MUST 递归检查。Object 的空键是 \`EmptyKeyName\` 情形的
+见证。非有限 Float 的唯一表示是恰好含一个字段的
+sentinel Object:\`{"$float": "NaN"}\`、\`{"$float": "Infinity"}\`
+或 \`{"$float": "-Infinity"}\`;任何其他 Object 形状中的
+\`$float\` 字段都无效。
+普通 Value MUST NOT 将 \`$float\` Object 用于其他目的。
+只有当该原因情形出现在 Value 树中的某处时,
+原因代码才对该 fixture 有效;\`ScalarRoot\` 例外,它要求根本身是
+标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
+从 fixture 文件名推导含义。
+
+\`parseable-unrepresentable/\` 类别还为每个 \`<name>.json\` 提供
+同名的 \`<name>.ktav\`。解析器 MUST 接受该输入并产生 JSON 的
+\`value\`;随后 writer MUST 以 JSON 指定的原因代码拒绝该 Value。
+这些 fixture 特意没有 canonical-output 文件。
+
+writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
+error enum、tagged union 等)——规范性的只是代码名称及其标识的
+情形,而非调用方借以观察到它们的 API:
 
 | 原因代码                        | 情形                                                                                     |
 |-----------------------------------|--------------------------------------------------------------------------------------------|
@@ -306,22 +353,9 @@ Object 对的键上,还是在后代中(例如一个 String 同时满足两条
 具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
 结构化错误契约(rust#12)。
 
-其中 \`NonFiniteFloat\` 在其余原因代码共用的普通 \`<name>.json\`
-schema 下没有对应 fixture:作为该 schema 书写格式的 JSON 本身
-没有可移植的 NaN 或 Infinity 字面量(接受裸 \`NaN\` /
-\`Infinity\` 标记作为扩展的实现,对其 round-trip 行为也不一致)。
-为了仍以可机检的 fixture 固定此情形,
-\`versions/0.7/tests/unrepresentable/non_finite_float.json\` 在其
-\`"value"\` 字段内使用一个规范性的逃生通道:一个原本没有 JSON
-编码的 Float,以带标签的对象 \`{"$float": "NaN"}\`、
-\`{"$float": "Infinity"}\` 或 \`{"$float": "-Infinity"}\` 的形式
-替代普通 JSON 数字写出。键名 \`$float\` 在 \`unrepresentable/\`
-fixture 的 \`"value"\` 树内被保留:一个恰好具有此形状(单个键字面名
-为 \`$float\`)的普通 JSON Object 不可能因任何其他原因出现在那里
-—— 没有其他原因代码,也没有 \`valid/\` 下的任何 fixture 需要此
-哨兵,因为 § 5 定义的每个其他 Value 都有直接的 JSON 映射。未来的
-\`unrepresentable/\` fixture MUST NOT 将带 \`$float\` 键的字面
-Object 用于此哨兵之外的任何用途。
+三个 \`NonFiniteFloat\` fixture 分别为 NaN、正 Infinity 与负 Infinity
+使用 sentinel。JSON 没有这些值的可移植字面量,因此 sentinel 是唯一
+的逃生通道,并在两个 writer-unrepresentable 类别中保留。
 
 `,
 };

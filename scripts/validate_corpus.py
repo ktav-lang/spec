@@ -15,9 +15,11 @@ Purpose:
          bytes agrees, bidirectionally, with whether its sibling .json's
          `expected_error` is "InvalidUtf8" -- regardless of directory naming
          convention (Sec 6.15).
-      4. unrepresentable/ contains only .json objects with `value`, `note`, and
-         `unrepresentable_reason` from the known reason-code set (optional
-         unless --require-unrepresentable is passed).
+      4. unrepresentable/ contains exact-schema .json Value descriptions with
+         reason-specific recursive witnesses; parseable-unrepresentable/
+         contains exact-schema .ktav/.json pairs for writer failures whose
+         Values are parser-produced (optional unless --require-unrepresentable
+         is passed).
       5. boundary-fixtures.json entries reference existing valid/ triples,
          contain syntactically valid and resolvable RFC 6901 JSON Pointers, use
          known boundary classes, and have no duplicates (optional unless
@@ -28,6 +30,7 @@ Purpose:
 Usage:
     python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable]
         [--require-boundary] [--boundary-manifest-lock <path>]
+        [--corpus-inventory-lock <path>]
 
 Exit codes:
     0  all checks passed (or were legitimately skipped)
@@ -81,6 +84,28 @@ BOUNDARY_CLASSES = {
     "float_underflow",
     "float_precision",
 }
+
+UNREPRESENTABLE_FIELDS = frozenset({
+    "value",
+    "unrepresentable_reason",
+    "note",
+})
+FLOAT_SENTINEL_KEY = "$float"
+FLOAT_SENTINEL_VALUES = frozenset({"NaN", "Infinity", "-Infinity"})
+KTAV_WHITESPACE = frozenset(
+    chr(codepoint) for codepoint in (
+        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085,
+        0x00A0, 0x1680, *range(0x2000, 0x200B), 0x2028, 0x2029,
+        0x202F, 0x205F, 0x3000,
+    )
+)
+CORPUS_INVENTORY_FIELDS = frozenset({
+    "version",
+    "valid",
+    "invalid",
+    "unrepresentable",
+    "parseable_unrepresentable",
+})
 
 
 def rel(path, tests_dir):
@@ -360,9 +385,150 @@ def check_invalid_utf8_oracle(tests_dir, results, parsed):
     results.set_count(category, n_checked=n_checked)
 
 
+def _strip_ktav_whitespace(text):
+    start = 0
+    end = len(text)
+    while start < end and text[start] in KTAV_WHITESPACE:
+        start += 1
+    while end > start and text[end - 1] in KTAV_WHITESPACE:
+        end -= 1
+    return text[start:end]
+
+
+def _semantic_kind(value):
+    if isinstance(value, dict):
+        if (set(value) == {FLOAT_SENTINEL_KEY}
+                and value[FLOAT_SENTINEL_KEY] in FLOAT_SENTINEL_VALUES):
+            return "Float"
+        return "Object"
+    if isinstance(value, list):
+        return "Array"
+    if value is None:
+        return "Null"
+    if isinstance(value, bool):
+        return "Bool"
+    if isinstance(value, int):
+        return "Integer"
+    if isinstance(value, float):
+        return "Float"
+    if isinstance(value, str):
+        return "String"
+    return None
+
+
+def _multiline_collision_witness(text):
+    """Return the § 5.9.7 collision witnesses for a String body."""
+    if "\n" not in text:
+        return False, False, False
+    lines = text.split("\n")
+    trimmed = [_strip_ktav_whitespace(line) for line in lines]
+    has_double_closer = any(line == "))" for line in trimmed)
+    has_single_closer = any(line == ")" for line in trimmed)
+    trailing = any(line and line[-1] in KTAV_WHITESPACE for line in lines)
+
+    non_blank = [line for line in lines if _strip_ktav_whitespace(line) != ""]
+    leading = False
+    if non_blank:
+        leading_runs = []
+        for line in non_blank:
+            run = 0
+            while run < len(line) and line[run] in KTAV_WHITESPACE:
+                run += 1
+            leading_runs.append(run)
+        common = min(leading_runs)
+        leading = common > 0 and all(
+            line[:common] == non_blank[0][:common] for line in non_blank
+        )
+
+    return (
+        has_double_closer and has_single_closer,
+        has_double_closer and trailing,
+        has_double_closer and leading,
+    )
+
+
+def _inspect_unrepresentable_value(value):
+    """Validate the Value mapping and collect reason witnesses recursively."""
+    errors = []
+    witnesses = {reason: False for reason in UNREPRESENTABLE_REASONS}
+
+    def walk(node, path):
+        if isinstance(node, dict):
+            if FLOAT_SENTINEL_KEY in node:
+                if (set(node) != {FLOAT_SENTINEL_KEY}
+                        or node[FLOAT_SENTINEL_KEY] not in FLOAT_SENTINEL_VALUES):
+                    errors.append(
+                        "%s: '$float' must be the only field of a sentinel "
+                        "with value 'NaN', 'Infinity', or '-Infinity'" % path)
+                else:
+                    witnesses["NonFiniteFloat"] = True
+                return
+            for key, child in node.items():
+                if key == "":
+                    witnesses["EmptyKeyName"] = True
+                walk(child, "%s/%s" % (path, key.replace("~", "~0").replace("/", "~1")))
+        elif isinstance(node, list):
+            for index, child in enumerate(node):
+                walk(child, "%s/%d" % (path, index))
+        elif isinstance(node, str):
+            if "\r" in node:
+                witnesses["CRByte"] = True
+            both, trailing, leading = _multiline_collision_witness(node)
+            witnesses["BothFormsRequired"] |= both
+            witnesses["TrailingWhitespaceCollision"] |= trailing
+            witnesses["LeadingWhitespaceCollision"] |= leading
+
+    walk(value, "/value")
+    return errors, witnesses, _semantic_kind(value)
+
+
+def _check_unrepresentable_object(obj, rpath, results, category):
+    if not isinstance(obj, dict):
+        results.fail(category, "%s: expected a JSON object" % rpath)
+        return
+
+    fields = set(obj)
+    missing = sorted(UNREPRESENTABLE_FIELDS - fields)
+    extra = sorted(fields - UNREPRESENTABLE_FIELDS)
+    if missing:
+        results.fail(category, "%s: missing required field(s): %s"
+                     % (rpath, ", ".join(repr(field) for field in missing)))
+    if extra:
+        results.fail(category, "%s: unexpected field(s): %s"
+                     % (rpath, ", ".join(repr(field) for field in extra)))
+
+    reason = obj.get("unrepresentable_reason")
+    note = obj.get("note")
+    if not isinstance(reason, str) or reason == "":
+        results.fail(category, "%s: 'unrepresentable_reason' must be a "
+                     "non-empty string" % rpath)
+    elif reason not in UNREPRESENTABLE_REASONS:
+        results.fail(category, "%s: unknown unrepresentable_reason %r "
+                     "(must be one of: %s)"
+                     % (rpath, reason, ", ".join(sorted(UNREPRESENTABLE_REASONS))))
+    if not isinstance(note, str) or note == "":
+        results.fail(category, "%s: 'note' must be a non-empty string" % rpath)
+    if "value" not in obj:
+        return
+
+    value_errors, witnesses, root_kind = _inspect_unrepresentable_value(
+        obj["value"]
+    )
+    for message in value_errors:
+        results.fail(category, "%s: %s" % (rpath, message))
+    if not isinstance(reason, str) or reason not in UNREPRESENTABLE_REASONS:
+        return
+    if reason == "ScalarRoot":
+        applicable = root_kind not in ("Object", "Array")
+    else:
+        applicable = root_kind in ("Object", "Array") and witnesses[reason]
+    if not applicable:
+        results.fail(category, "%s: value does not contain a recursive witness "
+                     "for reason %r" % (rpath, reason))
+
+
 def check_unrepresentable(tests_dir, results, parsed, require=False):
-    """Check 4: unrepresentable/ category: .json objects with reason codes.
-    With require=True a missing directory is a failure instead of a skip."""
+    """Check 4: programmatic-only unrepresentable Value descriptions."""
     category = "unrepresentable/"
     unrep_dir = os.path.join(tests_dir, "unrepresentable")
     if not os.path.isdir(unrep_dir):
@@ -381,23 +547,53 @@ def check_unrepresentable(tests_dir, results, parsed, require=False):
                              "unrepresentable/ (only .json allowed)" % rpath)
                 continue
             n_fixtures += 1
-            if rpath not in parsed or parsed[rpath] is None:
-                continue  # parse failure already reported
-            obj = parsed[rpath]
-            if not isinstance(obj, dict):
-                results.fail(category, "%s: expected a JSON object" % rpath)
-                continue
-            if "value" not in obj:
-                results.fail(category, "%s: missing required field 'value'" % rpath)
-            for field in ("unrepresentable_reason", "note"):
-                if not isinstance(obj.get(field), str):
-                    results.fail(category, "%s: field '%s' must be a string"
-                                 % (rpath, field))
-            reason = obj.get("unrepresentable_reason")
-            if isinstance(reason, str) and reason not in UNREPRESENTABLE_REASONS:
-                results.fail(category, "%s: unknown unrepresentable_reason %r "
-                             "(must be one of: %s)"
-                             % (rpath, reason, ", ".join(sorted(UNREPRESENTABLE_REASONS))))
+            if rpath in parsed and parsed[rpath] is not None:
+                _check_unrepresentable_object(parsed[rpath], rpath, results, category)
+    results.set_count(category, n_fixtures=n_fixtures)
+    return True
+
+
+def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
+    """Check parser-produced Values that a conforming writer must reject."""
+    category = "parseable-unrepresentable/"
+    fixture_dir = os.path.join(tests_dir, "parseable-unrepresentable")
+    if not os.path.isdir(fixture_dir):
+        if require:
+            results.fail(category, "parseable-unrepresentable/ directory not "
+                         "present (required)")
+            return False
+        results.set_count(category, skipped=True)
+        return False
+    n_fixtures = 0
+    for root, _dirs, files in os.walk(fixture_dir):
+        primary = set()
+        jsons = set()
+        for fname in files:
+            if fname.endswith(".canonical.ktav"):
+                results.fail(category, "%s: canonical output is not allowed "
+                             "under parseable-unrepresentable/"
+                             % rel(os.path.join(root, fname), tests_dir))
+            elif fname.endswith(".ktav"):
+                primary.add(fname[:-len(".ktav")])
+            elif fname.endswith(".json"):
+                jsons.add(fname[:-len(".json")])
+            else:
+                results.fail(category, "%s: unexpected file type under "
+                             "parseable-unrepresentable/ (only .ktav and .json "
+                             "allowed)" % rel(os.path.join(root, fname), tests_dir))
+        for name in sorted(primary - jsons):
+            results.fail(category, "%s: missing sibling %s"
+                         % (rel(os.path.join(root, name + ".ktav"), tests_dir),
+                            rel(os.path.join(root, name + ".json"), tests_dir)))
+        for name in sorted(jsons - primary):
+            results.fail(category, "%s: missing sibling %s"
+                         % (rel(os.path.join(root, name + ".json"), tests_dir),
+                            rel(os.path.join(root, name + ".ktav"), tests_dir)))
+        for name in sorted(jsons):
+            n_fixtures += 1
+            rpath = rel(os.path.join(root, name + ".json"), tests_dir)
+            if rpath in parsed and parsed[rpath] is not None:
+                _check_unrepresentable_object(parsed[rpath], rpath, results, category)
     results.set_count(category, n_fixtures=n_fixtures)
     return True
 
@@ -626,14 +822,117 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     return True
 
 
+def _fixture_inventory(tests_dir):
+    """Return fixture paths relative to each corpus category directory."""
+    def collect(category, suffix, exclude_suffix=None):
+        directory = os.path.join(tests_dir, category)
+        found = []
+        if not os.path.isdir(directory):
+            return found
+        for root, _dirs, files in os.walk(directory):
+            for fname in files:
+                if not fname.endswith(suffix):
+                    continue
+                if exclude_suffix and fname.endswith(exclude_suffix):
+                    continue
+                path = os.path.join(root, fname)
+                found.append(os.path.relpath(path, directory)[:-len(suffix)]
+                             .replace(os.sep, "/"))
+        return sorted(found)
+
+    return {
+        "valid": collect("valid", ".ktav", ".canonical.ktav"),
+        "invalid": collect("invalid", ".ktav"),
+        "unrepresentable": collect("unrepresentable", ".json"),
+        "parseable_unrepresentable": collect("parseable-unrepresentable", ".ktav",
+                                              ".canonical.ktav"),
+    }
+
+
+def _validate_inventory_list(value, field, results, rpath):
+    if not isinstance(value, list):
+        results.fail("corpus inventory lock", "%s: %r must be an array"
+                     % (rpath, field))
+        return []
+    seen = set()
+    valid = []
+    for item in value:
+        if not isinstance(item, str) or item == "":
+            results.fail("corpus inventory lock", "%s: %r entries must be "
+                         "non-empty strings" % (rpath, field))
+            continue
+        parts = item.split("/")
+        if ("\\" in item or any(part in ("", ".", "..") for part in parts)):
+            results.fail("corpus inventory lock", "%s: %r contains invalid "
+                         "fixture path %r" % (rpath, field, item))
+            continue
+        if item in seen:
+            results.fail("corpus inventory lock", "%s: %r contains duplicate "
+                         "fixture %r" % (rpath, field, item))
+            continue
+        seen.add(item)
+        valid.append(item)
+    return sorted(valid)
+
+
+def check_corpus_inventory_lock(tests_dir, results, lock_path):
+    """Require the complete versioned fixture inventory to match a lock."""
+    category = "corpus inventory lock"
+    try:
+        with open(lock_path, "r", encoding="utf-8") as f:
+            lock_text = f.read()
+    except OSError as e:
+        results.fail(category, "--corpus-inventory-lock %s: unreadable: %s"
+                     % (lock_path, e))
+        return
+    try:
+        lock_data = loads_strict(lock_text)
+    except (json.JSONDecodeError, ValueError) as e:
+        results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
+                     % (lock_path, e))
+        return
+    if not isinstance(lock_data, dict):
+        results.fail(category, "--corpus-inventory-lock %s: root must be a JSON "
+                     "object" % lock_path)
+        return
+    missing = sorted(CORPUS_INVENTORY_FIELDS - set(lock_data))
+    extra = sorted(set(lock_data) - CORPUS_INVENTORY_FIELDS)
+    if missing:
+        results.fail(category, "%s: missing required field(s): %s"
+                     % (lock_path, ", ".join(repr(field) for field in missing)))
+    if extra:
+        results.fail(category, "%s: unexpected field(s): %s"
+                     % (lock_path, ", ".join(repr(field) for field in extra)))
+    if lock_data.get("version") != "0.7.0":
+        results.fail(category, "%s: 'version' must be '0.7.0'" % lock_path)
+    expected = {}
+    for field in sorted(CORPUS_INVENTORY_FIELDS - {"version"}):
+        expected[field] = _validate_inventory_list(lock_data.get(field), field,
+                                                    results, lock_path)
+    actual = _fixture_inventory(tests_dir)
+    for field in sorted(expected):
+        if expected[field] != actual[field]:
+            missing_items = sorted(set(expected[field]) - set(actual[field]))
+            extra_items = sorted(set(actual[field]) - set(expected[field]))
+            details = []
+            if missing_items:
+                details.append("missing from corpus: %s" % ", ".join(missing_items))
+            if extra_items:
+                details.append("not present in lock: %s" % ", ".join(extra_items))
+            results.fail(category, "%s: %s inventory differs (%s)"
+                         % (field, lock_path, "; ".join(details)))
+    results.set_count(category, **{field: len(actual[field]) for field in actual})
+
+
 def main(argv):
     parser = argparse.ArgumentParser(
         description="Validate the structure of a Ktav conformance corpus.")
     parser.add_argument("tests_dir", help="path to a tests directory, e.g. "
                         "versions/0.7/tests")
     parser.add_argument("--require-unrepresentable", action="store_true",
-                        help="treat a missing unrepresentable/ directory as a "
-                        "failure instead of a skip")
+                        help="treat missing unrepresentable/ or "
+                        "parseable-unrepresentable/ directories as failures "
+                        "instead of skips")
     parser.add_argument("--require-boundary", action="store_true",
                         help="treat a missing or empty boundary-fixtures.json "
                         "manifest as a failure instead of a skip")
@@ -642,6 +941,10 @@ def main(argv):
                         "{fixture, path, boundary_class} records) that "
                         "boundary-fixtures.json's 'boundary_dependent_leaves' "
                         "must match exactly; catches a silently deleted entry")
+    parser.add_argument("--corpus-inventory-lock", metavar="PATH", default=None,
+                        help="path to a versioned lock file whose complete "
+                        "valid/invalid/unrepresentable/parseable-unrepresentable "
+                        "fixture inventory must match exactly")
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
@@ -657,9 +960,13 @@ def main(argv):
     check_invalid_utf8_oracle(tests_dir, results, parsed)
     has_unrep = check_unrepresentable(tests_dir, results, parsed,
                                       require=args.require_unrepresentable)
+    has_parseable_unrep = check_parseable_unrepresentable(
+        tests_dir, results, parsed, require=args.require_unrepresentable)
     has_boundary = check_boundary_fixtures(tests_dir, results, parsed,
                                            require=args.require_boundary,
                                            lock_path=args.boundary_manifest_lock)
+    if args.corpus_inventory_lock is not None:
+        check_corpus_inventory_lock(tests_dir, results, args.corpus_inventory_lock)
 
     failures = {}
     for category, message in results.problems:
@@ -689,6 +996,10 @@ def main(argv):
             if c.get("skipped"):
                 return "directory not present"
             return "%d fixtures OK" % c.get("n_fixtures", 0)
+        if category == "parseable-unrepresentable/":
+            if c.get("skipped"):
+                return "directory not present"
+            return "%d fixtures OK" % c.get("n_fixtures", 0)
         if category == "boundary-fixtures.json":
             if c.get("skipped"):
                 return "file not present"
@@ -697,9 +1008,12 @@ def main(argv):
 
     order = ["UTF-8/JSON validity", "valid/ triples", "invalid/ pairs",
              "invalid_utf8 oracle consistency", "unrepresentable/",
-             "boundary-fixtures.json"]
+             "parseable-unrepresentable/", "boundary-fixtures.json",
+             "corpus inventory lock"]
     skipped_map = {
         "unrepresentable/": not has_unrep and not args.require_unrepresentable,
+        "parseable-unrepresentable/": (not has_parseable_unrep
+                                        and not args.require_unrepresentable),
         "boundary-fixtures.json": (not has_boundary and not args.require_boundary
                                    and args.boundary_manifest_lock is None),
     }
@@ -707,14 +1021,17 @@ def main(argv):
     for category in order:
         probs = failures.get(category, [])
         if skipped_map.get(category):
-            print("[SKIP] %s: directory not present" % category
-                  if category == "unrepresentable/"
-                  else "[SKIP] %s: file not present" % category)
+            label = ("file not present"
+                     if category == "boundary-fixtures.json"
+                     else "directory not present")
+            print("[SKIP] %s: %s" % (category, label))
         elif probs:
             print("[FAIL] %s: %d problem(s)" % (category, len(probs)))
             for msg in probs:
                 print("  - %s" % msg)
             overall = "FAIL"
+        elif category == "corpus inventory lock" and args.corpus_inventory_lock is None:
+            print("[SKIP] corpus inventory lock: flag not provided")
         else:
             print(line(category, True))
     print("OVERALL: %s" % overall)

@@ -15,6 +15,17 @@ String containing one ASCII byte (\`"("\`) or two ASCII bytes
 (\`"(("\`), respectively, not a multi-line opener, since an inline
 compound cannot continue onto a later line.
 
+For rules 6–9, a body beginning with \`{\` or \`[\` is scanned with the
+quote-aware, escape-aware delimiter rules of § 5.8. A closer is
+**matching** only when it is unescaped and returns the compound's
+delimiter depth to zero. If an invalid escape is encountered while
+scanning for that closer, the result is \`BadEscapeSequence\` (§ 6.13),
+which takes precedence over a missing closer. This precedence applies
+before deciding between rules 8 and 9.
+An unterminated quoted key remains quote-opaque and is diagnosed per
+§ 6.16 as \`UnterminatedInlineCompound\`, even if an otherwise bad
+escape occurs inside that unclosed quoted segment.
+
 1. If the body is exactly \`{\` → open a new Object scope (multi-line).
 2. If the body is exactly \`[\` → open a new Array scope (multi-line).
 3. If the body is exactly \`(\` → open a multi-line string (stripped
@@ -27,10 +38,16 @@ compound cannot continue onto a later line.
    body → produce the inline Object per § 5.8.
 7. If the body matches the **closed-inline-array** shape \`[ … ]\` →
    produce the inline Array per § 5.8.
-8. If the body starts with \`{\` but does not match rules 1 or 6
-   (e.g. \`{ a: 1\`) → unterminated inline object — error (§ 6.11).
-9. If the body starts with \`[\` but does not match rules 2 or 7 →
-   unterminated inline array — error (§ 6.11).
+8. If the body starts with \`{\` and a matching \`}\` occurs on the same
+   line, but the body has non-whitespace content after that closer or
+   has another structural defect inside the closed compound →
+   \`MalformedInlineCompound\` (§ 6.12).
+9. If the body starts with \`{\` and no matching \`}\` occurs on the same
+   line → unterminated inline object — error (§ 6.11). The analogous
+   rule applies to \`[\` and \`]\`: a same-line matching \`]\` followed by
+   content, or enclosing any other structural defect, is
+   \`MalformedInlineCompound\`; no same-line matching \`]\` is
+   \`UnterminatedInlineCompound\`.
 10. If the body is exactly \`null\` → Null.
 11. If the body is exactly \`true\` → Bool \`true\`.
 12. If the body is exactly \`false\` → Bool \`false\`.
@@ -125,6 +142,18 @@ inline-значения во вложенный разбор составног�
 (\`"("\`) или два ASCII-байта (\`"(("\`), а не многострочный опенер,
 поскольку inline-составное не может продолжаться на следующей строке.
 
+Для правил 6–9 тело, начинающееся с \`{\` или \`[\`, сканируется с учётом
+кавычек, escape и глубины разделителей по § 5.8. Закрывающий разделитель
+считается **соответствующим**, только если он не escape-нут и возвращает
+глубину составного к нулю. Если при поиске этого разделителя встречается
+недопустимая escape-последовательность, результатом является
+\`BadEscapeSequence\` (§ 6.13), имеющая приоритет над отсутствующим
+закрывающим разделителем. Этот приоритет применяется до выбора между
+правилами 8 и 9.
+Незакрытый quoted-ключ остаётся непрозрачным для кавычек и
+диагностируется по § 6.16 как \`UnterminatedInlineCompound\`, даже если внутри этого
+незакрытого quoted-сегмента встречается иная ошибочная escape-последовательность.
+
 1. Если тело — в точности \`{\` → открыть новый Object scope
    (многострочный).
 2. Если тело — в точности \`[\` → открыть новый Array scope
@@ -139,10 +168,16 @@ inline-значения во вложенный разбор составног�
    конце тела) → дать inline Object по § 5.8.
 7. Если тело соответствует форме **замкнутого inline-массива**
    \`[ … ]\` → дать inline Array по § 5.8.
-8. Если тело начинается с \`{\`, но не подпадает под правила 1 или 6
-   → незакрытый inline-объект — ошибка (§ 6.11).
-9. Если тело начинается с \`[\`, но не подпадает под правила 2 или 7
-   → незакрытый inline-массив — ошибка (§ 6.11).
+8. Если тело начинается с \`{\`, и соответствующая \`}\` встречается на
+   той же строке, но после неё в теле есть непустое содержимое, либо
+   внутри замкнутого составного есть другой структурный дефект →
+   \`MalformedInlineCompound\` (§ 6.12).
+9. Если тело начинается с \`{\`, но на той же строке нет соответствующей
+   \`}\` → незакрытый inline-объект — ошибка (§ 6.11). Аналогично для
+   \`[\` и \`]\`: \`]\`, за которым следует содержимое, или другой
+   структурный дефект внутри замкнутого составного, означает
+   \`MalformedInlineCompound\`; отсутствие соответствующей \`]\` на той
+   же строке означает \`UnterminatedInlineCompound\`.
 10. Если тело — в точности \`null\` → Null.
 11. Если тело — в точности \`true\` → Bool \`true\`.
 12. Если тело — в точности \`false\` → Bool \`false\`.
@@ -237,6 +272,14 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。\`::\` 之
 普通 String,分别包含一个 ASCII 字节(\`"("\`)或两个 ASCII 字节
 (\`"(("\`),而非多行开启符,因为 inline 复合值无法延续到下一行。
 
+对于规则 6–9,以 \`{\` 或 \`[\` 开头的体按 § 5.8 的 quote-aware、escape-aware
+分隔符规则扫描。只有未 escape 且使复合值分隔符深度回到零的闭合符才是
+**匹配**闭合符。如果在扫描该闭合符时遇到无效 escape,结果为
+\`BadEscapeSequence\`(§ 6.13),其优先级高于缺失闭合符。该优先级在决定
+规则 8 或 9 之前适用。
+未终止的 quoted 键保持引号不透明, 并按 § 6.16 诊断为
+\`UnterminatedInlineCompound\`,即使该未闭合 quoted 段内部还出现了其他错误 escape。
+
 1. 体恰为 \`{\` → 打开新的 Object scope(多行)。
 2. 体恰为 \`[\` → 打开新的 Array scope(多行)。
 3. 体恰为 \`(\` → 打开多行字符串(stripped,§ 5.6)。
@@ -244,9 +287,13 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。\`::\` 之
 5. 体为 \`()\` 或 \`(())\` → 空 String。
 6. 体匹配**闭合 inline 对象** \`{ … }\` → 按 § 5.8 产出 inline Object。
 7. 体匹配**闭合 inline 数组** \`[ … ]\` → 按 § 5.8 产出 inline Array。
-8. 体以 \`{\` 开头但不符合规则 1 或 6 → 未终止 inline 对象错误
-   (§ 6.11)。
-9. 体以 \`[\` 开头但不符合规则 2 或 7 → 未终止 inline 数组错误。
+8. 体以 \`{\` 开头,且同一行出现匹配的 \`}\`,但该闭合符之后还有
+   非空白内容,或闭合复合值内部存在其他结构缺陷 →
+   \`MalformedInlineCompound\`(§ 6.12)。
+9. 体以 \`{\` 开头,且同一行没有匹配的 \`}\` → 未终止 inline 对象错误
+   (§ 6.11)。\`[\`/\`]\` 同理:匹配的 \`]\` 后还有内容,或闭合复合值内部有
+   其他结构缺陷,是 \`MalformedInlineCompound\`;同一行没有匹配的 \`]\`
+   则是 \`UnterminatedInlineCompound\`。
 10. 体恰为 \`null\` → Null。
 11. 体恰为 \`true\` → Bool \`true\`。
 12. 体恰为 \`false\` → Bool \`false\`。

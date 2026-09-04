@@ -30,7 +30,19 @@ A writer-conforming implementation:
   rejects the Value described by \`name.json["value"]\` with the
   reason code named in \`name.json["unrepresentable_reason"]\`
   (§ 5.9.0) — via whatever error-reporting shape its own API uses;
-  the code names are normative, the surfacing mechanism is not.
+  the code names are normative, the surfacing mechanism is not. Each
+  JSON object MUST contain exactly \`value\`,
+  \`unrepresentable_reason\`, and non-empty \`note\`, with no extra
+  fields; the Value mapping and the exact \`$float\` sentinel shape are
+  defined by § 5.9.0. The reason code MUST have a recursive witness in
+  the Value tree, rather than being inferred from the filename.
+- For each fixture under
+  \`versions/0.7/tests/parseable-unrepresentable/\`, accepts the
+  sibling \`name.ktav\` as a parser-conforming implementation and
+  produces \`name.json["value"]\`, then rejects that Value as a
+  writer-conforming implementation with the named reason code. These
+  fixtures are pairs, not valid triples, and MUST NOT have a canonical
+  output file.
 
 The canonical form is defined in § 5.9.
 
@@ -68,7 +80,18 @@ Writer-conforming реализация:
   отклоняет Value, описанное в \`name.json["value"]\`, с кодом
   причины, указанным в \`name.json["unrepresentable_reason"]\`
   (§ 5.9.0) — через любую форму отчёта об ошибке своего API;
-  нормативны имена кодов, а не механизм их предъявления.
+  нормативны имена кодов, а не механизм их предъявления. Каждый
+  JSON-объект MUST содержать ровно \`value\`,
+  \`unrepresentable_reason\` и непустой \`note\`, без лишних полей;
+  отображение Value и точная форма sentinel \`$float\` определены в
+  § 5.9.0. Код причины MUST иметь рекурсивное свидетельство в дереве
+  Value, а не выводиться из имени файла.
+- Для каждой фикстуры из
+  \`versions/0.7/tests/parseable-unrepresentable/\` принимает соседний
+  \`name.ktav\` как parser-conforming реализация и даёт
+  \`name.json["value"]\`, после чего writer-conforming реализация
+  отвергает этот Value с указанным кодом. Это пары, а не valid-тройки;
+  у них MUST NOT быть canonical-output файла.
 
 Каноническая форма определена в § 5.9.
 
@@ -98,7 +121,15 @@ Writer-conforming 实现:
   \`name.json["unrepresentable_reason"]\` 中指明的原因代码
   (§ 5.9.0)拒绝 \`name.json["value"]\` 所描述的 Value —— 可通过
   其自身 API 的任意错误报告形式;规范性的是代码名称,而非呈现
-  机制。
+  机制。每个 JSON Object MUST 恰好包含 \`value\`,
+  \`unrepresentable_reason\` 与非空 \`note\`,不得有额外字段;
+  Value 映射与 \`$float\` sentinel 的精确形状见 § 5.9.0。原因代码
+  MUST 在 Value 树中有递归见证,而不得从文件名推导。
+- 对 \`versions/0.7/tests/parseable-unrepresentable/\` 下每个
+  fixture,parser-conforming 实现接受 sibling \`name.ktav\` 并产生
+  \`name.json["value"]\`,随后 writer-conforming 实现以指定原因代码
+  拒绝该 Value。这些 fixture 是 pair 而非 valid triple,MUST NOT
+  带有 canonical-output 文件。
 
 规范形式定义见 § 5.9。
 

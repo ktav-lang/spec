@@ -4,13 +4,26 @@ Let *body* be the byte sequence of a String Value.
 
 - **Empty String (\`""\`):** emit as \`key:\` (no body after the
   colon) for a pair, or \`::\` (no body) for an array item.
-- **One-line printable, no edge-whitespace, no numeric/keyword
-  collision:** emit as \`key: <body>\` (pair) or \`<body>\` (item).
-- **One-line, but matches the integer or float literal grammar of
-  § 3.6 (regardless of whether the value fits the writer's own
-  numeric domain — § 5) or is exactly \`null\` / \`true\` / \`false\`:**
-  emit as \`key:: <body>\` (pair) or \`:: <body>\` (item), using the
-  raw marker.
+- **Position-specific selection:** the writer MUST apply the exhaustive
+  rule for the actual syntactic position before selecting a one-line
+  form. For a pair, apply § 5.9.5. Its plain \`key: <body>\` form is
+  available only when all of § 5.9.5's conditions hold: the body is a
+  one-line scalar with no edge-whitespace, does not match the integer or
+  float grammar or the \`null\` / \`true\` / \`false\` keywords, does not
+  start with \`{\` or \`[\`, and is not one of the \`(\`, \`((\`, \`()\`, or
+  \`(())\` dispatch forms. Otherwise § 5.9.5 requires the raw marker
+  \`key:: <body>\` for a one-line String. For an array item, apply
+  § 5.9.6. Its bare \`<body>\` form is available only when the same
+  plain-form conditions hold and none of § 5.9.6's item-position hazards
+  apply: the body is not exactly \`}\` or \`]\`, does not start with
+  \`##\` or \`::\`, and, for the first item of an Array root, is neither
+  a pair-shape candidate nor prefixed by U+FEFF. Otherwise § 5.9.6
+  requires the raw marker \`:: <body>\` for a one-line String. These
+  delegated pair/item rules cover numeric and keyword collisions, \`{\` /
+  \`[\` prefixes, all listed structural tokens, and the first-root-item
+  pair-shape/BOM cases; they are exhaustive and take precedence over
+  this section's general guidance. In particular, this section MUST NOT
+  select bare form when § 5.9.5 or § 5.9.6 requires a raw marker.
 - **Contains \`LF\`, leading/trailing whitespace, or any control byte
   (\`0x00\`–\`0x1F\` other than \`0x09\` \`TAB\` and \`0x0A\` \`LF\`, and not
   \`0x0D\` \`CR\`, which the next bullet handles separately):** emit
@@ -92,14 +105,27 @@ requires a segment trimming to \`))\`.
 
 - **Пустая String (\`""\`):** выводить как \`key:\` (без тела после
   двоеточия) для пары или \`::\` (без тела) для элемента массива.
-- **Однострочная печатная, без edge-пробелов, без числового /
-  ключевого коллизии:** выводить как \`key: <body>\` (пара) или
-  \`<body>\` (элемент).
-- **Однострочная, но совпадает с грамматикой integer- или
-  float-литерала § 3.6 (независимо от того, помещается ли значение
-  в собственный числовой домен writer'а — § 5) или равна в точности
-  \`null\` / \`true\` / \`false\`:** выводить как \`key:: <body>\` (пара)
-  или \`:: <body>\` (элемент), используя raw-маркер.
+- **Выбор по позиции:** writer MUST сначала применить исчерпывающее
+  правило для фактической синтаксической позиции, а затем выбирать
+  однострочную форму. Для пары применяется § 5.9.5. Его обычная форма
+  \`key: <body>\` допустима только при выполнении всех условий § 5.9.5:
+  тело однострочное, без крайних пробелов, не совпадает с грамматикой
+  integer/float или ключевыми словами \`null\` / \`true\` / \`false\`, не
+  начинается с \`{\` или \`[\` и не является одной из форм диспетчеризации
+  \`(\`, \`((\`, \`()\` или \`(())\`. В противном случае § 5.9.5 требует
+  raw-маркер \`key:: <body>\` для однострочной String. Для элемента
+  массива применяется § 5.9.6. Его голая форма \`<body>\` допустима
+  только при тех же условиях обычной формы и если не возникает ни одна
+  из позиционных коллизий § 5.9.6: тело не равно в точности \`}\` или
+  \`]\`, не начинается с \`##\` или \`::\`, а для первого элемента
+  корневого Array не является pair-shape-кандидатом и не начинается с
+  U+FEFF. В противном случае § 5.9.6 требует raw-маркер \`:: <body>\`.
+  Эти делегированные правила для пар и элементов охватывают числовые и
+  ключевые коллизии, префиксы \`{\` / \`[\`, все перечисленные структурные
+  токены и случаи pair-shape/BOM первого элемента корня; они исчерпывающие
+  и имеют приоритет над общими указаниями этого раздела. В частности,
+  этот раздел MUST NOT выбирать голую форму, если § 5.9.5 или § 5.9.6
+  требует raw-маркер.
 - **Содержит \`LF\`, ведущий/хвостовой пробел, или управляющий байт
   (\`0x00\`–\`0x1F\` кроме \`0x09\` \`TAB\` и \`0x0A\` \`LF\`, и не \`0x0D\`
   \`CR\`, который обрабатывает следующий пункт отдельно):** выводить
@@ -183,12 +209,21 @@ String, которая также требует сегмента, обреза�
 
 - **空 String (\`""\`)**:对输出 \`key:\`(冒号后无体);数组项输出
   \`::\`(无体)。
-- **单行可打印,无边缘空白,无 number/keyword 冲突**:对输出
-  \`key: <body>\`;项输出 \`<body>\`。
-- **单行,但匹配 § 3.6 的 integer 或 float 字面量语法(无论其值
-  是否落在 writer 自身的数值域内 —— § 5),或恰好等于 \`null\` /
-  \`true\` / \`false\`**:
-  使用原始标记输出 \`key:: <body>\` 或 \`:: <body>\`。
+- **按位置选择:** writer MUST 先应用实际语法位置的完整规则,
+  然后再选择单行形式。对 pair 应用 § 5.9.5。其普通形式
+  \`key: <body>\` 只有在满足 § 5.9.5 全部条件时才可用:体为单行、
+  无边缘空白,不匹配 integer/float 语法或 \`null\` / \`true\` /
+  \`false\` 关键字,不以 \`{\` 或 \`[\` 开头,且不恰好是
+  \`(\`、\`((\`、\`()\` 或 \`(())\` 这些分发形式。否则 § 5.9.5 要求
+  单行 String 使用原始标记 \`key:: <body>\`。对数组项应用 § 5.9.6。
+  其裸形式 \`<body>\` 只有在满足相同的普通形式条件且不触发
+  § 5.9.6 的项位置冲突时才可用:体不恰好是 \`}\` 或 \`]\`,不以
+  \`##\` 或 \`::\` 开头,并且对于根 Array 的第一项,既不是 pair-shape
+  候选也不以 U+FEFF 开头。否则 § 5.9.6 要求单行 String 使用原始标记
+  \`:: <body>\`。这些委托给 pair/项的规则涵盖 number/keyword 冲突、
+  \`{\` / \`[\` 前缀、所有列出的结构 token,以及根第一项的
+  pair-shape/BOM 情况;它们是完整规则,优先于本节的一般说明。特别是,
+  当 § 5.9.5 或 § 5.9.6 要求原始标记时,本节 MUST NOT 选择裸形式。
 - **含 \`LF\`、前后空白或控制字节(\`0x00\`–\`0x1F\` 除 \`0x09\` \`TAB\`
   与 \`0x0A\` \`LF\`,且非 \`0x0D\` \`CR\`—— 由下一条单独处理)**:输出
   为 verbatim 多行 \`((\` … \`))\`。开启

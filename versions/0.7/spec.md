@@ -359,18 +359,20 @@ set, not ASCII-only).
 
 ```
 <document>      ::= <line>*
+<line-end>      ::= eol | EOF
 <line>          ::= <comment> | <blank> | <header-line> | <pair-line>
                   | <array-item-line> | <multiline-content-line>
 
-<comment>       ::= (ws) "##" (any-chars until line-end)
-<blank>         ::= (ws)
+<comment>       ::= (ws) "##" <comment-body> <line-end>
+<comment-body>  ::= any-chars-until-line-end
+<blank>         ::= (ws) <line-end>
 
-<header-line>   ::= (ws) "{" (ws) eol                ; object open
-                  | (ws) "}" (ws) eol                ; object close
-                  | (ws) "[" (ws) eol                ; array open
-                  | (ws) "]" (ws) eol                ; array close
-                  | (ws) ")" (ws) eol                ; multiline close (stripped)
-                  | (ws) "))" (ws) eol               ; multiline close (verbatim)
+<header-line>   ::= (ws) "{" (ws) <line-end>         ; object open
+                  | (ws) "}" (ws) <line-end>         ; object close
+                  | (ws) "[" (ws) <line-end>         ; array open
+                  | (ws) "]" (ws) <line-end>         ; array close
+                  | (ws) ")" (ws) <line-end>         ; multiline close (stripped)
+                  | (ws) "))" (ws) <line-end>        ; multiline close (verbatim)
                     Context-dependence of the last two alternatives:
                     they apply only while a multi-line string block
                     is open (§ 5.6) and the trimmed line equals that
@@ -383,10 +385,14 @@ set, not ASCII-only).
                     array-item / pair-value text otherwise — § 5.2,
                     § 5.4), exactly as § 6.1 states.
 
-<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> eol    ; default, scalar dispatched per § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> eol    ; literal String
+<pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; default, scalar dispatched per § 5.2
+                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; literal String
 
-<key>                ::= <segment> ( <unescaped-dot> <segment> )*
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         The maximal leading and trailing (ws) are trimmed
+                         before dispatching to <quoted-segment> or <bare-segment>;
+                         whitespace inside the dispatched segment is preserved.
 <unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"
 <segment>            ::= <quoted-segment> | <bare-segment>
 <bare-segment>       ::= <bare-first-token> <key-token>*
@@ -527,30 +533,30 @@ set, not ASCII-only).
                                        middle segment is quoted instead
                                        of bare-with-escape, same result
 
-<sep-end>       ::= 1*ws | &eol                    ; ≥1 whitespace code point, or the line end
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline object (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline array (§ 5.8)
-                  | "{" (ws) &eol                    ; open object (multi-line body)
-                  | "[" (ws) &eol                    ; open array (multi-line body)
-                  | "(" (ws) &eol                    ; open multiline string (stripped)
-                  | "((" (ws) &eol                   ; open multiline string (verbatim)
+                  | "{" (ws) &line-end                ; open object (multi-line body)
+                  | "[" (ws) &line-end                ; open array (multi-line body)
+                  | "(" (ws) &line-end                ; open multiline string (stripped)
+                  | "((" (ws) &line-end               ; open multiline string (verbatim)
                   | "()" (ws)                        ; empty inline (yields "")
                   | "(())" (ws)                      ; empty inline (yields "")
                   | <scalar-body>                    ; scalar value, dispatched per § 5.2
 
-<scalar-body>   ::= (ws) any-chars-until-eol
+<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? eol   ; raw string item
-<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) eol
-                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) eol
-                  | (ws) "{}" (ws) eol
-                  | (ws) "[]" (ws) eol
-<item-value>    ::= <value-start> eol
+<item-literal>  ::= (ws) "::" <sep-end> <any-chars>? <line-end> ; raw string item
+<item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
+                  | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
+                  | (ws) "{}" (ws) <line-end>
+                  | (ws) "[]" (ws) <line-end>
+<item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
@@ -564,12 +570,13 @@ set, not ASCII-only).
                      | "[" (ws) "]"
                      | <inline-scalar>
 <inline-scalar>    ::= sequence of bytes terminated by an unescaped
-                       "," / "}" / "]" or by end-of-line (which is
+                       "," / "}" / "]" or by <line-end> (which is
                        an error per § 6.11); escape sequences per
                        § 3.7 are processed; surrounding whitespace
                        is trimmed before dispatch to § 5.2
 
-<multiline-content-line> ::= any line within an open <multiline>;
+<multiline-content-line> ::= any line within an open <multiline>
+                             followed by <line-end>;
                              the terminator (")" or "))") ends the block
 ```
 
@@ -584,8 +591,16 @@ Notes on the notation:
   separator) is a syntax error in the multi-line pair form — see
   § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
   after `:` / `::`.
-- `&eol` is a zero-width positive lookahead — it matches the end of
-  line without consuming it, so the EOL is still the line terminator.
+- `&line-end` is a zero-width positive lookahead for `<line-end>`; it
+  matches either eol or EOF without consuming it. Every line production
+  consumes exactly one `<line-end>`, so a final line need not have a
+  terminator byte. EOF is a terminal zero-byte marker: it may terminate only
+  the final line production and the `<line-end>` at EOF may be consumed at
+  most once; this prevents `<line>*` from repeating a zero-width `blank`
+  production when `(ws)=0` at EOF.
+- `any-chars-until-line-end` and an inline scalar's `<line-end>`
+  terminator stop before (and do not consume) `<line-end>`; the enclosing
+  line production consumes it.
 - The `<inline-value>` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is `{`, the value is a nested inline object (matching one of
@@ -794,6 +809,17 @@ String containing one ASCII byte (`"("`) or two ASCII bytes
 (`"(("`), respectively, not a multi-line opener, since an inline
 compound cannot continue onto a later line.
 
+For rules 6–9, a body beginning with `{` or `[` is scanned with the
+quote-aware, escape-aware delimiter rules of § 5.8. A closer is
+**matching** only when it is unescaped and returns the compound's
+delimiter depth to zero. If an invalid escape is encountered while
+scanning for that closer, the result is `BadEscapeSequence` (§ 6.13),
+which takes precedence over a missing closer. This precedence applies
+before deciding between rules 8 and 9.
+An unterminated quoted key remains quote-opaque and is diagnosed per
+§ 6.16 as `UnterminatedInlineCompound`, even if an otherwise bad
+escape occurs inside that unclosed quoted segment.
+
 1. If the body is exactly `{` → open a new Object scope (multi-line).
 2. If the body is exactly `[` → open a new Array scope (multi-line).
 3. If the body is exactly `(` → open a multi-line string (stripped
@@ -806,10 +832,16 @@ compound cannot continue onto a later line.
    body → produce the inline Object per § 5.8.
 7. If the body matches the **closed-inline-array** shape `[ … ]` →
    produce the inline Array per § 5.8.
-8. If the body starts with `{` but does not match rules 1 or 6
-   (e.g. `{ a: 1`) → unterminated inline object — error (§ 6.11).
-9. If the body starts with `[` but does not match rules 2 or 7 →
-   unterminated inline array — error (§ 6.11).
+8. If the body starts with `{` and a matching `}` occurs on the same
+   line, but the body has non-whitespace content after that closer or
+   has another structural defect inside the closed compound →
+   `MalformedInlineCompound` (§ 6.12).
+9. If the body starts with `{` and no matching `}` occurs on the same
+   line → unterminated inline object — error (§ 6.11). The analogous
+   rule applies to `[` and `]`: a same-line matching `]` followed by
+   content, or enclosing any other structural defect, is
+   `MalformedInlineCompound`; no same-line matching `]` is
+   `UnterminatedInlineCompound`.
 10. If the body is exactly `null` → Null.
 11. If the body is exactly `true` → Bool `true`.
 12. If the body is exactly `false` → Bool `false`.
@@ -1569,12 +1601,40 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. `versions/0.7/tests/unrepresentable/` fixtures (§ 8.2) name the
-expected reason code for a given Value; a writer-conforming
-implementation's own error type MAY take any shape (exception class,
-error enum, tagged union, ...) — only the code names and the case
-each identifies are normative, not the API through which a caller
-observes them:
+it. Every file in `versions/0.7/tests/unrepresentable/` and
+`versions/0.7/tests/parseable-unrepresentable/` MUST be a JSON object
+with exactly these three fields and no others:
+
+- `value`: a recursively valid JSON mapping of the Value. JSON objects
+  map to Objects and arrays to Arrays; JSON null, booleans, strings,
+  and finite JSON numbers map to the corresponding scalar kinds.
+- `unrepresentable_reason`: exactly one of the seven reason codes in
+  the table below.
+- `note`: a non-empty explanatory String.
+
+The `value` mapping MUST be checked recursively. An empty Object key
+is the witness for the `EmptyKeyName` case. The sole representation of a
+non-finite Float is a sentinel object with exactly one field,
+`{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
+`{"$float": "-Infinity"}`; a `$float` field in any other
+object shape is invalid.
+An ordinary Value MUST NOT use a `$float` object for another purpose.
+A reason code is valid for a fixture only when
+its case occurs somewhere in the Value tree, except `ScalarRoot`,
+which requires that the root itself is a scalar. The root MUST be an
+Object or Array for every other reason code. These checks MUST NOT infer
+meaning from a fixture filename.
+
+The `parseable-unrepresentable/` category additionally has a sibling
+`<name>.ktav` for each `<name>.json`. The parser MUST accept that
+input and produce the JSON's `value`; the writer MUST then reject that
+Value with the JSON's reason code. These fixtures intentionally have no
+canonical-output file.
+
+A writer-conforming implementation's own error type MAY take any shape
+(exception class, error enum, tagged union, ...) — only the code names
+and the case each identifies are normative, not the API through which a
+caller observes them:
 
 | Reason code                   | Case                                                                                          |
 |--------------------------------|-------------------------------------------------------------------------------------------------|
@@ -1600,25 +1660,10 @@ does not mandate a specific traversal order or a deterministic
 "first" violation — that question belongs to the still-open
 structured-error contract (rust#12).
 
-Of these, `NonFiniteFloat` has no fixture under the ordinary
-`<name>.json` schema every other reason code uses: JSON, the format
-that schema is written in, has no portable literal for NaN or
-Infinity (implementations that accept the bare tokens `NaN` /
-`Infinity` as an extension disagree on round-tripping them). To still
-pin this case with a machine-checkable fixture,
-`versions/0.7/tests/unrepresentable/non_finite_float.json` uses one
-normative escape hatch inside its `"value"` field: a Float that would
-otherwise have no JSON encoding is written as the tagged object
-`{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
-`{"$float": "-Infinity"}` in place of an ordinary JSON number. The key
-name `$float` is reserved within `unrepresentable/` fixture `"value"`
-trees: an ordinary JSON Object that happens to have exactly this shape
-(a single key literally named `$float`) can never occur there for any
-other reason — no other reason code, and no fixture under `valid/`,
-ever needs this sentinel, since every other Value § 5 defines has a
-direct JSON mapping. A future `unrepresentable/` fixture MUST NOT use
-a literal Object with a `$float` key for any purpose other than this
-sentinel.
+The three `NonFiniteFloat` fixtures use the sentinel separately for
+NaN, positive Infinity, and negative Infinity. JSON has no portable
+literal for those values, so the sentinel is the only escape hatch and
+is reserved throughout both writer-unrepresentable categories.
 
 #### 5.9.1 Whitespace, indentation, line endings
 
@@ -1828,13 +1873,26 @@ Let *body* be the byte sequence of a String Value.
 
 - **Empty String (`""`):** emit as `key:` (no body after the
   colon) for a pair, or `::` (no body) for an array item.
-- **One-line printable, no edge-whitespace, no numeric/keyword
-  collision:** emit as `key: <body>` (pair) or `<body>` (item).
-- **One-line, but matches the integer or float literal grammar of
-  § 3.6 (regardless of whether the value fits the writer's own
-  numeric domain — § 5) or is exactly `null` / `true` / `false`:**
-  emit as `key:: <body>` (pair) or `:: <body>` (item), using the
-  raw marker.
+- **Position-specific selection:** the writer MUST apply the exhaustive
+  rule for the actual syntactic position before selecting a one-line
+  form. For a pair, apply § 5.9.5. Its plain `key: <body>` form is
+  available only when all of § 5.9.5's conditions hold: the body is a
+  one-line scalar with no edge-whitespace, does not match the integer or
+  float grammar or the `null` / `true` / `false` keywords, does not
+  start with `{` or `[`, and is not one of the `(`, `((`, `()`, or
+  `(())` dispatch forms. Otherwise § 5.9.5 requires the raw marker
+  `key:: <body>` for a one-line String. For an array item, apply
+  § 5.9.6. Its bare `<body>` form is available only when the same
+  plain-form conditions hold and none of § 5.9.6's item-position hazards
+  apply: the body is not exactly `}` or `]`, does not start with
+  `##` or `::`, and, for the first item of an Array root, is neither
+  a pair-shape candidate nor prefixed by U+FEFF. Otherwise § 5.9.6
+  requires the raw marker `:: <body>` for a one-line String. These
+  delegated pair/item rules cover numeric and keyword collisions, `{` /
+  `[` prefixes, all listed structural tokens, and the first-root-item
+  pair-shape/BOM cases; they are exhaustive and take precedence over
+  this section's general guidance. In particular, this section MUST NOT
+  select bare form when § 5.9.5 or § 5.9.6 requires a raw marker.
 - **Contains `LF`, leading/trailing whitespace, or any control byte
   (`0x00`–`0x1F` other than `0x09` `TAB` and `0x0A` `LF`, and not
   `0x0D` `CR`, which the next bullet handles separately):** emit
@@ -2174,9 +2232,11 @@ position's content can ever reach byte offset 0 of the document.
 ## 6. Errors
 
 A conforming parser MUST detect and report each of the error
-categories below for inputs that exhibit the relevant defect. The
-error MUST carry, at minimum, a 1-based source line number and a
-byte-offset Span covering the offending region.
+categories below for inputs that exhibit the relevant defect. Source-
+content parse errors MUST carry, at minimum, a 1-based source line
+number and a half-open byte-offset Span `[start, end)` covering the
+offending region. This location requirement does not apply to `Io`
+errors (§ 6.8); their location MAY be absent or implementation-defined.
 
 ### 6.1 Unbalanced or Mismatched Brackets
 
@@ -2266,9 +2326,19 @@ separator and so do NOT raise this error.
 
 ### 6.11 Unterminated Inline Compound
 
-A `{` or `[` appearing in a value-position not followed by a matching
-`}` / `]` on the same line is an `UnterminatedInlineCompound` error
-(§ 5.8).
+A `{` or `[` appearing in a value-position is an
+`UnterminatedInlineCompound` error when its quote-aware structural
+scan finds no matching `}` / `]` on the same line and encounters no
+invalid escape (§ 5.8). If a
+same-line matching closer is present, the candidate is closed for
+classification: content after that closer and other structural defects
+inside it are `MalformedInlineCompound` (§ 6.12), not
+`UnterminatedInlineCompound`. If that scan encounters a
+`BadEscapeSequence` before a matching closer, `BadEscapeSequence`
+takes precedence over the missing closer.
+An unterminated quoted key is governed by § 6.16 instead: that
+diagnosis takes precedence over a bad escape inside the unclosed
+quoted segment.
 
 ### 6.12 Malformed Inline Compound
 
@@ -2285,6 +2355,10 @@ not already classified as `UnterminatedInlineCompound` — is a
 - Other inline structural defects that do not raise
   `UnterminatedInlineCompound` (e.g. a missing pair separator
   inside an inline object: `{a 1, b: 2}`).
+- Non-whitespace content after the same-line matching closer of a
+  value-position compound (e.g. `x: {a: 1} junk` or
+  `x: [1] junk`). The closer makes the compound closed; the trailing
+  bytes are therefore malformed content, not an unterminated compound.
 
 Empty pair values (`{a:}`, `{a::}`) are NOT a defect — they yield
 an empty String per § 5.8.2.
@@ -2304,6 +2378,18 @@ A `\u` not immediately followed by exactly four hexadecimal digits
 surrogate — a high surrogate not immediately followed by a valid
 low-surrogate `\uXXXX` escape, or a low surrogate not immediately
 preceded by a high-surrogate `\uXXXX` escape.
+
+For precedence against `UnterminatedInlineCompound`, an inline
+compound is scanned left to right with its quote-aware, escape-aware
+delimiter rules. If an invalid escape is encountered before a matching
+same-line closer, `BadEscapeSequence` is reported immediately and
+takes precedence over the missing closer. If no invalid escape is
+encountered, the absence of a same-line matching closer is
+`UnterminatedInlineCompound`; escaped delimiters remain opaque during
+the scan. An unterminated quoted key is the exception: it remains
+quote-opaque and is diagnosed as `UnterminatedInlineCompound` per
+§ 6.16, including when an otherwise bad escape occurs inside that
+unclosed quoted segment.
 
 ### 6.14 Orphan Line After Top-Level Inline
 
@@ -2611,6 +2697,12 @@ A parser-conforming implementation:
   exemption for any implementation of any domain.
 - Rejects every fixture under `versions/0.7/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
+- Accepts every `<name>.ktav` under
+  `versions/0.7/tests/parseable-unrepresentable/` and produces the
+  sibling JSON's `value`. These inputs cover the parser-produced
+  `CRByte`, `BothFormsRequired`, `TrailingWhitespaceCollision`,
+  and `LeadingWhitespaceCollision` cases; the category has no
+  canonical-output files because its writer result MUST be rejection.
 
 ### 8.2 Writer-conforming
 
@@ -2644,7 +2736,19 @@ A writer-conforming implementation:
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
   (§ 5.9.0) — via whatever error-reporting shape its own API uses;
-  the code names are normative, the surfacing mechanism is not.
+  the code names are normative, the surfacing mechanism is not. Each
+  JSON object MUST contain exactly `value`,
+  `unrepresentable_reason`, and non-empty `note`, with no extra
+  fields; the Value mapping and the exact `$float` sentinel shape are
+  defined by § 5.9.0. The reason code MUST have a recursive witness in
+  the Value tree, rather than being inferred from the filename.
+- For each fixture under
+  `versions/0.7/tests/parseable-unrepresentable/`, accepts the
+  sibling `name.ktav` as a parser-conforming implementation and
+  produces `name.json["value"]`, then rejects that Value as a
+  writer-conforming implementation with the named reason code. These
+  fixtures are pairs, not valid triples, and MUST NOT have a canonical
+  output file.
 
 The canonical form is defined in § 5.9.
 

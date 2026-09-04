@@ -51,11 +51,17 @@ class CorpusTestCase(unittest.TestCase):
         return os.path.join(self.tmp, *root.split("/"))
 
     def build_full(self, root="tests"):
-        """Minimal corpus + unrepresentable/ + boundary manifest."""
+        """Minimal corpus + both writer-failure categories + boundary manifest."""
         tests = self.build_minimal(root)
         self.write(root + "/unrepresentable/nan.json",
-                   '{"value": null, "note": "not representable", '
-                   '"unrepresentable_reason": "NonFiniteFloat"}')
+                   '{"value": {"f": {"$float": "NaN"}}, '
+                   '"unrepresentable_reason": "NonFiniteFloat", '
+                   '"note": "not representable"}')
+        self.write(root + "/parseable-unrepresentable/nan.ktav", "{f: a\\rb}")
+        self.write(root + "/parseable-unrepresentable/nan.json",
+                   '{"value": {"f": "a\\rb"}, '
+                   '"unrepresentable_reason": "CRByte", '
+                   '"note": "parser-produced writer failure"}')
         self.write(root + "/boundary-fixtures.json", json.dumps(
             {"boundary_dependent_leaves": [
                 {"fixture": "alpha", "path": "/host",
@@ -103,6 +109,91 @@ class CorpusTestCase(unittest.TestCase):
         self.assertIn("unknown 'expected_error'", out)
         self.assertIn("TypoCategory", out)
         self.assertIn("must be one of", out)
+
+    # -- unrepresentable schema and recursive reason witnesses -----------
+
+    def test_unrepresentable_reason_witnesses_are_recursive(self):
+        tests = self.build_minimal()
+        values = {
+            "ScalarRoot": 42,
+            "EmptyKeyName": {"nested": [{"": "v"}]},
+            "NonFiniteFloat": {"nested": [{"f": {"$float": "NaN"}}]},
+            "CRByte": {"nested": [{"s": "a\rb"}]},
+            "BothFormsRequired": {"nested": [{"s": "))\n)"}]},
+            "TrailingWhitespaceCollision": {"nested": [{"s": "))\nx "}]},
+            "LeadingWhitespaceCollision": {"nested": [{"s": " ))\n x"}]},
+        }
+        for index, (reason, value) in enumerate(values.items()):
+            self.write("tests/unrepresentable/%02d.json" % index,
+                       json.dumps({"value": value,
+                                   "unrepresentable_reason": reason,
+                                   "note": "recursive witness"}))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_unrepresentable_null_nonfinite_false_green_rejected(self):
+        tests = self.build_minimal()
+        self.write("tests/unrepresentable/bad.json",
+                   '{"value": null, "unrepresentable_reason": '
+                   '"NonFiniteFloat", "note": "wrong witness"}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("does not contain a recursive witness", out)
+
+    def test_root_float_sentinel_uses_scalar_root_precedence(self):
+        tests = self.build_minimal()
+        value = {"$float": "NaN"}
+        self.write("tests/unrepresentable/root_nonfinite.json",
+                   json.dumps({"value": value,
+                               "unrepresentable_reason": "NonFiniteFloat",
+                               "note": "root float sentinel"}))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("does not contain a recursive witness", out)
+
+        self.write("tests/unrepresentable/root_nonfinite.json",
+                   json.dumps({"value": value,
+                               "unrepresentable_reason": "ScalarRoot",
+                               "note": "root float sentinel"}))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_multiline_collision_requires_common_prefix_from_position_zero(self):
+        tests = self.build_minimal()
+        self.write("tests/unrepresentable/non_common_prefix.json",
+                   json.dumps({
+                       "value": {"s": " \t))\n\t\tx"},
+                       "unrepresentable_reason": "LeadingWhitespaceCollision",
+                       "note": "matching whitespace after a differing first position",
+                   }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("does not contain a recursive witness", out)
+
+    def test_unrepresentable_exact_schema_and_sentinel_shape(self):
+        tests = self.build_minimal()
+        self.write("tests/unrepresentable/bad.json",
+                   '{"value": {"f": {"$float": "NaN", "extra": 1}}, '
+                   '"unrepresentable_reason": "NonFiniteFloat", '
+                   '"note": "bad", "extra": false}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected field(s)", out)
+        self.assertIn("'$float' must be the only field", out)
+
+    def test_parseable_unrepresentable_is_a_pair_without_canonical_output(self):
+        tests = self.build_minimal()
+        self.write("tests/parseable-unrepresentable/case.ktav", "{s: ))\\n)}")
+        self.write("tests/parseable-unrepresentable/case.json",
+                   '{"value": {"s": "))\\n)"}, '
+                   '"unrepresentable_reason": "BothFormsRequired", '
+                   '"note": "parseable"}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+        self.write("tests/parseable-unrepresentable/case.canonical.ktav", "")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("canonical output is not allowed", out)
 
     # -- closed set is version-specific ---------------------------------
 
@@ -273,6 +364,44 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 0, out)
 
+    # -- corpus inventory lock catches fixture deletion ------------------
+
+    def test_corpus_inventory_lock_catches_deleted_fixture(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/beta.ktav", KTAV_DOC)
+        self.write("tests/valid/beta.json", ALPHA_JSON)
+        self.write("tests/valid/beta.canonical.ktav", KTAV_DOC)
+        lock = {
+            "version": "0.7.0",
+            "valid": ["alpha", "beta"],
+            "invalid": ["bad"],
+            "unrepresentable": [],
+            "parseable_unrepresentable": [],
+        }
+        lock_path = self.write("lock/corpus-inventory.0.7.lock.json",
+                               json.dumps(lock))
+        for suffix in (".ktav", ".json", ".canonical.ktav"):
+            os.remove(os.path.join(tests, "valid", "beta" + suffix))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("corpus inventory lock", out)
+        self.assertIn("beta", out)
+
+    def test_corpus_inventory_lock_happy_path(self):
+        tests = self.build_minimal()
+        lock = {
+            "version": "0.7.0",
+            "valid": ["alpha"],
+            "invalid": ["bad"],
+            "unrepresentable": [],
+            "parseable_unrepresentable": [],
+        }
+        lock_path = self.write("lock/corpus-inventory.0.7.lock.json",
+                               json.dumps(lock))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
     # -- mutation 5: missing unrepresentable/ / manifest -----------------
 
     def test_mutation_5_missing_mandatory_items_rejected_when_required(self):
@@ -344,8 +473,19 @@ class CorpusTestCase(unittest.TestCase):
 
     def test_happy_path_full_corpus_passes_with_flags(self):
         tests = self.build_full()
+        lock_path = self.write(
+            "lock/corpus-inventory.0.7.lock.json",
+            json.dumps({
+                "version": "0.7.0",
+                "valid": ["alpha"],
+                "invalid": ["bad"],
+                "unrepresentable": ["nan"],
+                "parseable_unrepresentable": ["nan"],
+            }),
+        )
         code, out = self.run_main(tests, "--require-unrepresentable",
-                                  "--require-boundary")
+                                  "--require-boundary",
+                                  "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
         self.assertNotIn("[SKIP]", out)

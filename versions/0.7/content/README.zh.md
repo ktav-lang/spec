@@ -57,6 +57,16 @@
 (N >= 1)。`content/` 下的 `.md` 文件只有三个根 README(`README.md`、
 `README.ru.md`、`README.zh.md`);单元目录内完全禁止 `.md` 文件。
 
+## README 的统一源对象与 inventory lock
+
+`scripts/locks/section-inventory.0.7.lock.json` 是独立的、有版本的有序
+inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝 `manifest.js` 的
+成员或顺序发生漂移。
+
+`README.source.js` 是本目录三个 README 共用的 `{ en, ru, zh }` source
+object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+`README.zh.md`;手动修改任何一个 README 都会使 `--check` 失败。
+
 ### `meta.js`
 
 每个 `meta.js` 使用 `export default { ... }`(JSON 风格)。三种形态,
@@ -205,7 +215,7 @@ payload 执行 `JSON.parse`,然后**按顺序**静态扫描并解码 `body-1.js`
 命令:
 
 ```sh
-node scripts/build_spec.mjs          # writes the 3 spec .md files
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
 node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
 node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
 ```
