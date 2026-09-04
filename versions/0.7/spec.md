@@ -27,8 +27,10 @@ escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters `"` / `'` /
 `` ` ``); the `(…)` multi-line string form now also strips
 trailing whitespace from every content line — `(…)` already removed
 each line's shared leading indent (§ 5.6). Three independently-scoped
-breaking changes: value/key-edge trimming now covers the 19 non-ASCII
-code points in the § 3.3 set in addition to space/tab — non-breaking
+breaking changes: value/key-edge trimming now covers 21 additional
+code points beyond space/tab — VT and FF (§ 3.3's remaining two ASCII
+whitespace members) plus the 19 non-ASCII code points in the § 3.3
+set — non-breaking
 in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the `(…)` trailing-edge strip is
 breaking even for the Rust core, which previously preserved
@@ -335,7 +337,7 @@ producing hand-authored, non-canonical Ktav text, not the canonical
 algorithm. Where such a writer chooses to escape a byte that also
 has a named escape in the table above, it SHOULD prefer the named
 form (`\.` over the `\uXXXX` form of the same code point, for
-consistency with the other thirteen named forms) and use `\uXXXX` only
+consistency with the other twelve named forms) and use `\uXXXX` only
 for code points with no named escape. When `\uXXXX` is emitted, the four hex
 digits MUST be uppercase (`0-9A-F`) — parsing is case-insensitive
 (§ 3.7.1 above), but two writer-conforming implementations emitting
@@ -782,7 +784,13 @@ scalar after escape processing (§ 3.7), or the trimmed text of an
 array-item line that uses no marker — the parser classifies it as
 follows. Rules are applied in order; the first matching rule wins.
 Bodies after `::` are **not** dispatched through § 5.2; they are
-handled per § 5.3 / § 5.4 / § 5.8 as raw Strings.
+handled per § 5.3 / § 5.4 / § 5.8 as raw Strings. Rules 1–4 (the
+multi-line Object/Array/string openers) never apply to an inline
+scalar body either: § 5.8.5 already dispatches an inline value's
+leading `{`/`[` to nested-compound parsing before § 5.2 is ever
+reached, and a lone `(`/`((` in inline position is an ordinary
+one-byte String, not a multi-line opener, since an inline compound
+cannot continue onto a later line.
 
 1. If the body is exactly `{` → open a new Object scope (multi-line).
 2. If the body is exactly `[` → open a new Array scope (multi-line).
@@ -890,7 +898,8 @@ where:
 
 - `key` is one or more **segments** separated by unescaped dots
   (`<segment> ( <unescaped-dot> <segment> )*`, § 4). Each segment is
-  either a `<bare-segment>` (`key-token+`) or, as of 0.7.0, a
+  either a `<bare-segment>` (`<bare-first-token> <key-token>*`, § 4)
+  or, as of 0.7.0, a
   `<quoted-segment>` (§ 5.3.3) opened by `"`, `'`, or `` ` `` — the
   two forms may be mixed freely across the segments of one dotted
   key (`a."b.c".d: v`, § 5.3.3) and are validated per § 5.3.1. Each
@@ -1516,9 +1525,13 @@ kind:
 
 - **Object:** every pair's name is a non-empty string, and every
   pair's value is node-representable. An empty name is not
-  node-representable: § 4 requires every key segment to contain at
-  least one `<key-token>`, so no document can produce such a pair
-  (the parse-side counterpart is the `EmptyKey` error, § 6.5).
+  node-representable: § 4's grammar guarantees a non-empty
+  `<bare-segment>`, and a `<quoted-segment>`'s non-emptiness is
+  enforced separately, by § 6.5's `EmptyKey` check rather than by
+  § 4's grammar (a `<quoted-segment>` can be grammatically empty) —
+  either way, no document can produce a pair with an empty key
+  segment (the parse-side counterpart is the `EmptyKey` error,
+  § 6.5).
 - **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity. No literal
   grammar of § 3.6 produces a non-finite Float (an overflowing
@@ -1962,6 +1975,11 @@ unescaped content — the structural bytes `.`, `:`, `,`, `{`, `}`,
 `[`, `]` (bullet 1 below, excluding `\`, LF, and CR), or `(` / `)` (part of
 bullet 2 below, since neither opens a multi-line string at a
 key-segment position) — or an edge-whitespace escape (bullet 3
+below) for a byte a `<quoted-segment>` admits raw at that edge
+position — true for tab, VT, FF, and any non-ASCII § 3.3 whitespace
+code point, but not for LF or CR, which a `<quoted-segment>` never
+admits raw at all, edge or interior (§ 4's `<dq-char>` /
+`<sq-char>` / `<bt-char>` exclude them everywhere; see the exemption
 below); or (b) the segment's decoded content begins with `"`, `'`,
 or `` ` `` (a leading quote character in bare form would be misread
 as opening a `<quoted-segment>` on re-parse, so it always forces
@@ -1986,12 +2004,14 @@ as a comment; quoted form's opening `"` is the only way to avoid
 that collision, since it is the only form whose first byte is never
 `#`. A need to escape
 a literal backslash, LF, CR, a control byte, or DEL — bullet 1's
-`\\`/`\n`/`\r` entries and the control-byte/DEL part of bullet 2 —
+`\\`/`\n`/`\r` entries and the control-byte/DEL part of bullet 2,
+at any position in the segment, including its first or last byte —
 does NOT by itself trigger quoted form: a `<quoted-segment>` excludes
 and escapes each of these exactly as a `<bare-segment>` does
 (§ 4's `<dq-char>` / `<sq-char>` / `<bt-char>`, § 5.3.3), so quoting
 buys nothing for them, and bare remains the simpler, equally-escaped
-choice. Otherwise (quoted form selected) the delimiter is `"` unconditionally
+choice — an edge LF or CR falls under this exemption, not under
+(a)'s edge-whitespace disjunct above. Otherwise (quoted form selected) the delimiter is `"` unconditionally
 — the choice of delimiter is fixed, not content-dependent, so the
 writer never needs to scan the content against all three candidates
 first. Either form parses back to the same key (§ 5.3.3), but which

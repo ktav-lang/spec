@@ -21,8 +21,10 @@ escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters \`"\` / \`'\` /
 \`\` \` \`\`); the \`(…)\` multi-line string form now also strips
 trailing whitespace from every content line — \`(…)\` already removed
 each line's shared leading indent (§ 5.6). Three independently-scoped
-breaking changes: value/key-edge trimming now covers the 19 non-ASCII
-code points in the § 3.3 set in addition to space/tab — non-breaking
+breaking changes: value/key-edge trimming now covers 21 additional
+code points beyond space/tab — VT and FF (§ 3.3's remaining two ASCII
+whitespace members) plus the 19 non-ASCII code points in the § 3.3
+set — non-breaking
 in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the \`(…)\` trailing-edge strip is
 breaking even for the Rust core, which previously preserved
@@ -59,8 +61,10 @@ Ktav — это конфигурационный формат на основе 
 завершающие пробельные символы каждой содержательной строки —
 \`(…)\` уже убирала общий ведущий отступ каждой строки (§ 5.6). Три
 независимо-ограниченных ломающих изменения: обрезка на границе
-значения/ключа теперь покрывает 19 не-ASCII кодовых точек множества
-§ 3.3 в дополнение к пробелу/табуляции — на практике не ломающее ни
+значения/ключа теперь покрывает 21 дополнительную кодовую точку
+сверх пробела/табуляции — VT и FF (два оставшихся ASCII-члена
+множества § 3.3) плюс 19 не-ASCII кодовых точек этого множества —
+на практике не ломающее ни
 для одного релиза 0.6.x Rust-ядра, которое уже обрезало там полный
 набор; замыкающая обрезка \`(…)\` — ломающая даже для Rust-ядра,
 которое ранее сохраняло замыкающие пробельные символы (включая
@@ -89,7 +93,8 @@ Ktav 是一种基于纯文本的配置格式,设计目标是让每一行都能�
 的键(§ 5.3.3,分隔符 \`"\` / \`'\` / \`\` \` \`\`);多行字符串
 \`(…)\` 形式现在还会去除每个内容行的尾部空白 —— \`(…)\` 此前已去除每行
 共享的前导缩进(§ 5.6)。三项范围各自独立的破坏性变更:值/键边界的
-trim 现在覆盖 § 3.3 集合中除空格/制表符之外的 19 个非 ASCII 码点 ——
+trim 现在在空格/制表符之外额外覆盖 21 个码点:VT 与 FF(§ 3.3 集合中
+剩余的两个 ASCII 空白成员),加上该集合中的 19 个非 ASCII 码点 ——
 相对于每一个已发布的 0.6.x Rust 核心版本,实际上并非破坏性,它们本就
 已经去除了完整的集合;\`(…)\` 的尾部 trim 即使对 Rust 核心也是破坏性的
 —— 它此前在 stripped 块的每一行都保留尾部空白(包括普通 ASCII

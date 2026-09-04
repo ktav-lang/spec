@@ -44,7 +44,7 @@ producing hand-authored, non-canonical Ktav text, not the canonical
 algorithm. Where such a writer chooses to escape a byte that also
 has a named escape in the table above, it SHOULD prefer the named
 form (\`\\.\` over the \`\\uXXXX\` form of the same code point, for
-consistency with the other thirteen named forms) and use \`\\uXXXX\` only
+consistency with the other twelve named forms) and use \`\\uXXXX\` only
 for code points with no named escape. When \`\\uXXXX\` is emitted, the four hex
 digits MUST be uppercase (\`0-9A-F\`) — parsing is case-insensitive
 (§ 3.7.1 above), but two writer-conforming implementations emitting
@@ -103,7 +103,8 @@ writer, производящий написанный вручную, некан
 байт, у которого также есть именованный escape из таблицы выше, он
 SHOULD предпочесть
 именованную форму (\`\\.\` вместо формы \`\\uXXXX\` той же кодовой
-точки, для согласованности с уже существующими тринадцатью) и
+точки, для согласованности с остальными двенадцатью именованными
+формами) и
 использовать \`\\uXXXX\` только для кодовых точек без именованного
 escape. Когда writer всё же выводит \`\\uXXXX\`, четыре hex-цифры
 MUST быть в верхнем регистре (\`0-9A-F\`) — парсинг регистронезависим
@@ -145,7 +146,7 @@ MUST быть в верхнем регистре (\`0-9A-F\`) — парсинг
 SHOULD/MAY 措辞描述的是产生手写、非规范 Ktav 文本的 writer,而非
 规范算法。当 writer 选择转义一个在上表中也有命名形式的
 字节时,SHOULD 优先使用命名形式(\`\\.\` 优于点的 \`\\uXXXX\` 形式,与
-已有的十三个保持一致),仅对没有命名形式的码点使用 \`\\uXXXX\`。当
+其余十二个命名形式保持一致),仅对没有命名形式的码点使用 \`\\uXXXX\`。当
 writer 确实输出 \`\\uXXXX\` 时,四位十六进制数字 MUST 为大写
 (\`0-9A-F\`)—— 解析不区分大小写(见上文 § 3.7.1),但两个
 writer-conforming 实现输出同一码点时 MUST 产生字节相同的结果

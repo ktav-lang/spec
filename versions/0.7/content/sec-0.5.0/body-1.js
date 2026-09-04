@@ -126,7 +126,7 @@ export default {
 - **新增:** 附录 B —— 0.1.x → 0.5.0 迁移指南。
 - **移除:** 错误类别 \`InlineNonEmptyCompound\`(§ 6.7)、
   \`InvalidTypedScalar\`(§ 6.9)。号码保留;实现 MUST NOT 对
-  0.6.0 文档输出标签为此名称的错误。
+  0.5.0 文档输出标签为此名称的错误。
 - **变更:** Top-level kind detection(§ 5.0.1)扩展和重写。
 - **变更:** 合规性(§ 8)拆分为 parser-conforming(§ 8.1)、
   writer-conforming(§ 8.2)与 round-trip 性质(§ 8.3)。

@@ -11,7 +11,7 @@
 > A plain configuration format. JSON-shape — scalars, arrays, objects,
 > `null`, `true`, `false` — with none of JSON's punctuation in the
 > common case: no quotes around strings, no commas outside one-line
-> inline compounds, and a closed 11-entry escape table only for the
+> inline compounds, and a closed 10-entry escape table only for the
 > rare byte that truly needs one. Dotted keys for nesting, visible
 > opt-in markers for literal and multi-line strings.
 
@@ -217,7 +217,7 @@ value                  — inside an array: bare item (typed by form)
 
 That's the whole language. No commas or quotes are required for the
 common case — commas appear only as separators inside one-line inline
-compounds — and the closed 11-entry escape table (§ 3.7) covers only
+compounds — and the closed 10-entry escape table (§ 3.7) covers only
 the rare byte that truly needs one. The `::` marker (in the separator
 for pairs, or as a line prefix for array items) forces a literal
 string.

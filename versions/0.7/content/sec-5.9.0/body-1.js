@@ -19,9 +19,13 @@ kind:
 
 - **Object:** every pair's name is a non-empty string, and every
   pair's value is node-representable. An empty name is not
-  node-representable: § 4 requires every key segment to contain at
-  least one \`<key-token>\`, so no document can produce such a pair
-  (the parse-side counterpart is the \`EmptyKey\` error, § 6.5).
+  node-representable: § 4's grammar guarantees a non-empty
+  \`<bare-segment>\`, and a \`<quoted-segment>\`'s non-emptiness is
+  enforced separately, by § 6.5's \`EmptyKey\` check rather than by
+  § 4's grammar (a \`<quoted-segment>\` can be grammatically empty) —
+  either way, no document can produce a pair with an empty key
+  segment (the parse-side counterpart is the \`EmptyKey\` error,
+  § 6.5).
 - **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity. No literal
   grammar of § 3.6 produces a non-finite Float (an overflowing
@@ -131,9 +135,12 @@ sentinel.
 
 - **Object:** имя каждой пары — непустая строка, и значение каждой
   пары узлово-представимо. Пустое имя узлово-непредставимо:
-  § 4 требует, чтобы каждый сегмент ключа содержал хотя бы один
-  \`<key-token>\`, поэтому никакой документ не может породить такую
-  пару (парсинг-эквивалент — ошибка \`EmptyKey\`, § 6.5).
+  грамматика § 4 гарантирует непустой \`<bare-segment>\`, а непустота
+  \`<quoted-segment>\` обеспечивается отдельно, проверкой \`EmptyKey\`
+  из § 6.5, а не грамматикой § 4 (\`<quoted-segment>\` грамматически
+  может быть пустым) — в любом случае никакой документ не может
+  породить пару с пустым сегментом ключа (парсинг-эквивалент —
+  ошибка \`EmptyKey\`, § 6.5).
 - **Array:** каждый элемент V узлово-представим.
 - **Float:** V конечно — ни NaN, ни ±Infinity. Ни одна грамматика
   литералов § 3.6 не порождает неконечный Float (переполняющий
@@ -241,9 +248,11 @@ Object или среди потомков (например, String, удовл�
 的某项)。Value 为**节点可表示**,当且仅当按其类型:
 
 - **Object:** 每对的名是非空字符串,且每对的值节点可表示。空名
-  节点不可表示:§ 4 要求每个键段至少含一个 \`<key-token>\`,因此
-  任何文档都不能产生这样的对(解析侧对应 \`EmptyKey\` 错误,
-  § 6.5)。
+  节点不可表示:§ 4 的语法保证 \`<bare-segment>\` 非空,而
+  \`<quoted-segment>\` 的非空则由 § 6.5 的 \`EmptyKey\` 检查单独保证,
+  而非由 § 4 的语法保证(\`<quoted-segment>\` 在语法上可以为空)——
+  无论如何,任何文档都不能产生带有空键段的对(解析侧对应
+  \`EmptyKey\` 错误,§ 6.5)。
 - **Array:** V 的每一项都节点可表示。
 - **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity。§ 3.6 的任何
   字面量语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14
