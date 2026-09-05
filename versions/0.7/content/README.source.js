@@ -269,7 +269,7 @@ this README is rejected.
 
 Recommended workflow: edit unit files -> run \`node scripts/build_spec.mjs\`
 -> verify \`git diff\` on the three \`.md\` files shows exactly what you
-intended -> run \`scripts/check_translation_parity.py\` -> commit the unit
+intended -> run \`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md\` -> commit the unit
 changes and the regenerated \`.md\` files **together**.
 
 ## How to add a new section
@@ -630,7 +630,7 @@ closed-world-свойство, задокументированное в это�
 Рекомендуемый рабочий процесс: правите файлы юнитов -> запускаете
 \`node scripts/build_spec.mjs\` -> проверяете по \`git diff\`, что изменения
 трёх файлов \`.md\` — ровно то, что вы имели в виду -> запускаете
-\`scripts/check_translation_parity.py\` -> коммитите изменения юнитов и
+\`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md\` -> коммитите изменения юнитов и
 регенерированные файлы \`.md\` **вместе**.
 
 ## Как добавить новую секцию
@@ -959,7 +959,7 @@ closed-world 不变量都会被拒绝。
 
 推荐工作流:编辑单元文件 -> 运行 \`node scripts/build_spec.mjs\` ->
 核对三个 \`.md\` 文件的 \`git diff\` 是否与你的意图完全一致 -> 运行
-\`scripts/check_translation_parity.py\` -> 把单元改动与重新生成的
+\`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md\` -> 把单元改动与重新生成的
 \`.md\` 文件**一起**提交。
 
 ## 如何新增一节

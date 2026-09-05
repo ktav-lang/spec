@@ -278,7 +278,7 @@ closed-world-свойство, задокументированное в это�
 Рекомендуемый рабочий процесс: правите файлы юнитов -> запускаете
 `node scripts/build_spec.mjs` -> проверяете по `git diff`, что изменения
 трёх файлов `.md` — ровно то, что вы имели в виду -> запускаете
-`scripts/check_translation_parity.py` -> коммитите изменения юнитов и
+`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> коммитите изменения юнитов и
 регенерированные файлы `.md` **вместе**.
 
 ## Как добавить новую секцию

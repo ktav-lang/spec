@@ -264,6 +264,22 @@ test('unit bodies reject injected Setext H1 and H2 headings', async () => {
   }
 });
 
+test('a single dash uses Setext precedence over an empty list marker', async () => {
+  for (const body of [
+    'Root paragraph\n-\n\n',
+    '> Blockquote paragraph\n> -\n\n',
+    '- List paragraph\n  -\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains a Setext heading/,
+      body
+    );
+  }
+});
+
 test('a Unicode separator is content, not ASCII blank, before a Setext underline', async () => {
   for (const separator of ['\u2028', '\u00a0']) {
     const fx = baseFixtures();
@@ -384,6 +400,28 @@ test('fences are scoped to their container and reprocess lines that leave it', a
       body
     );
   }
+});
+
+test('list-contained fences survive unindented blank lines and preserve frame state', async () => {
+  for (const blanks of ['', '\n', '\n\n']) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([
+      '- ```text\n' + blanks +
+      '  # still inside the list fence\n' +
+      '  ```\n\n',
+    ])[0]];
+    await assert.doesNotReject(validate(fx), JSON.stringify(blanks));
+  }
+
+  const escaping = baseFixtures();
+  escaping[1].bodies = [sameLanguageBodies([
+    '- ```text\n\n' +
+    '# root heading escapes the list fence\n',
+  ])[0]];
+  await assert.rejects(
+    validate(escaping),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
 });
 
 test('list padding consumes one to four spaces but leaves five-plus as indented code', async () => {
@@ -605,6 +643,12 @@ test('named titles reject every numbered-heading prefix shape but allow prose', 
     '9.9.Review',
     '9.9:Review',
     '9.9/Review',
+    '2026',
+    '2026 Review',
+    '2026-Review',
+    '2026.Review',
+    '2026:Review',
+    '2026/Review',
   ];
   for (const title of numberedTitles) {
     const fx = baseFixtures();
@@ -617,7 +661,13 @@ test('named titles reject every numbered-heading prefix shape but allow prose', 
     );
   }
 
-  for (const title of ['Review 99', '99Review', '99_Review']) {
+  for (const title of [
+    'Review 99',
+    '99Review',
+    '99_Review',
+    '2026\u041e\u0431\u0437\u043e\u0440',
+    '2026\u6982\u89c8',
+  ]) {
     const fx = baseFixtures();
     const records = lockUnits(fx, fx.map((unit) => unit.name));
     fx[1].meta.title = { en: title, ru: title, zh: title };

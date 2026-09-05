@@ -241,7 +241,7 @@ closed-world 不变量都会被拒绝。
 
 推荐工作流:编辑单元文件 -> 运行 `node scripts/build_spec.mjs` ->
 核对三个 `.md` 文件的 `git diff` 是否与你的意图完全一致 -> 运行
-`scripts/check_translation_parity.py` -> 把单元改动与重新生成的
+`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> 把单元改动与重新生成的
 `.md` 文件**一起**提交。
 
 ## 如何新增一节

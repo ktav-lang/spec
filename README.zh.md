@@ -481,7 +481,9 @@ submodule 引入(或直接拷贝)。
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
 │   └── locks/                             语料库、boundary 与 section inventory 的 versioned 锁文件
 │       ├── corpus-inventory.0.6.lock.json  (0.6.4: valid/ 与 invalid/ 路径 + SHA-256)
-│       └── corpus-inventory.0.7.lock.json  (0.7: 语料库路径 + SHA-256)
+│       ├── corpus-inventory.0.7.lock.json  (0.7: 语料库路径 + SHA-256)
+│       ├── boundary-fixtures.0.7.lock.json (0.7: 边界叶节点 — fixture、path、class)
+│       └── section-inventory.0.7.lock.json (0.7: 有序节列表 + 结构元数据)
 ├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
 │                          翻译对等性检查,以及全部三套单元测试
 └── versions/

@@ -30,7 +30,8 @@ export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.z
 export const README_SOURCE_FILE = 'README.source.js';
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
 
-const NUMBERED_HEADING_RE = /^(\d+(?:\.\d+)*)\b/;
+const NUMBERED_HEADING_PREFIX_RE = /^\d+(?:\.\d+)*/u;
+const UNICODE_WORD_CODE_POINT_RE = /^[\p{L}\p{N}_]/u;
 
 const BODY_LINE_LIMIT = 120;
 const BODY_TARGET_LINES = 100;
@@ -204,6 +205,13 @@ function generatedHeadingLine(meta, lang) {
     (meta.kind === 'numbered' ? meta.number + meta.sep : '') + meta.title[lang];
 }
 
+function hasNumberedHeadingPrefix(text) {
+  const match = text.match(NUMBERED_HEADING_PREFIX_RE);
+  if (match === null) return false;
+  const next = text.slice(match[0].length);
+  return next.length === 0 || !UNICODE_WORD_CODE_POINT_RE.test(next);
+}
+
 function validateGeneratedHeading(unit, meta, lang) {
   if (meta.kind === 'frontmatter') return;
   const heading = generatedHeadingLine(meta, lang);
@@ -215,7 +223,7 @@ function validateGeneratedHeading(unit, meta, lang) {
         `${lang}: generated heading must render locked number ${JSON.stringify(meta.number)} ` +
         `with separator ${JSON.stringify(meta.sep)}`);
     }
-  } else if (NUMBERED_HEADING_RE.test(text)) {
+  } else if (hasNumberedHeadingPrefix(text)) {
     failUnit(unit,
       `${lang}: named title must not match numbered-heading syntax: ${JSON.stringify(meta.title[lang])}`);
   }
@@ -329,6 +337,7 @@ function parseListMarker(line, start) {
   return {
     markerStart,
     markerEnd: markerStart + text.length,
+    marker: text,
     ordered: /^\d/.test(text),
     number: /^\d/.test(text) ? text.slice(0, -1) : null,
   };
@@ -407,6 +416,9 @@ function normalizeContainerLine(line, state) {
 
     const list = parseListMarker(line, pos);
     if (list === null) break;
+    // A paragraph in this container makes a single dash a Setext H2
+    // underline, even though it also parses as an empty list marker.
+    if (list.marker === '-' && state.paragraphContainer === container) break;
     if (list.ordered && list.number !== '1' && state.paragraphContainer === container) break;
 
     const markerIndent = leadingColumns(line, pos).column;
@@ -478,6 +490,13 @@ function findHeadings(body) {
       const line = matchFenceContainer(raw, fence.containerFrames);
       if (line !== null) {
         if (isFenceCloser(line, fence)) fence = null;
+        paragraphLine = null;
+        containerState.paragraphContainer = null;
+        continue;
+      }
+      // A list-contained fence may span completely unindented ASCII blank
+      // lines. Keep the active fence and its container frames intact.
+      if (/^[ \t]*$/.test(raw)) {
         paragraphLine = null;
         containerState.paragraphContainer = null;
         continue;

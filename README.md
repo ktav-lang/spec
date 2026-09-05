@@ -526,7 +526,9 @@ pin to a version directory by path.
 │   │   └── extract_content_units.py         see content/README.md; refuses to overwrite content/
 │   └── locks/                             versioned corpus, boundary, and section-inventory lock files
 │       ├── corpus-inventory.0.6.lock.json  (0.6.4 valid/ and invalid/ paths + SHA-256)
-│       └── corpus-inventory.0.7.lock.json  (0.7 paths + SHA-256)
+│       ├── corpus-inventory.0.7.lock.json  (0.7 corpus paths + SHA-256)
+│       ├── boundary-fixtures.0.7.lock.json (0.7 boundary leaves: fixture, path, class)
+│       └── section-inventory.0.7.lock.json (0.7 ordered sections + structural metadata)
 ├── .github/workflows/     CI: content/ byte-identity check (0.7+), corpus validation,
 │                          translation-parity check, and all three unit test suites
 └── versions/

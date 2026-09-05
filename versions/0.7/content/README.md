@@ -268,7 +268,7 @@ this README is rejected.
 
 Recommended workflow: edit unit files -> run `node scripts/build_spec.mjs`
 -> verify `git diff` on the three `.md` files shows exactly what you
-intended -> run `scripts/check_translation_parity.py` -> commit the unit
+intended -> run `python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> commit the unit
 changes and the regenerated `.md` files **together**.
 
 ## How to add a new section

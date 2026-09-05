@@ -543,7 +543,9 @@ semantic/schema checks.
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
 │   └── locks/                             versioned lock-файлы корпуса, boundary и inventory секций
 │       ├── corpus-inventory.0.6.lock.json  (0.6.4: пути valid/ и invalid/ + SHA-256)
-│       └── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256)
+│       ├── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256)
+│       ├── boundary-fixtures.0.7.lock.json (0.7: boundary-листья — fixture, path, class)
+│       └── section-inventory.0.7.lock.json (0.7: порядок секций + структурные поля)
 ├── .github/workflows/     CI: проверка байт-идентичности content/ (0.7+), валидация корпуса,
 │                          проверка паритета переводов и все три набора модульных тестов
 └── versions/
