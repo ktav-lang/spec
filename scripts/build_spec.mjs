@@ -30,6 +30,8 @@ export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.z
 export const README_SOURCE_FILE = 'README.source.js';
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
 
+const NUMBERED_HEADING_PREFIX = /^(\d+(?:\.\d+)*)(\. | )/;
+
 const BODY_LINE_LIMIT = 120;
 const BODY_TARGET_LINES = 100;
 
@@ -197,10 +199,32 @@ function validateBodyPart(unit, k, d, label = `body-${k}.js`) {
   }
 }
 
+function generatedHeadingLine(meta, lang) {
+  return '#'.repeat(meta.level) + ' ' +
+    (meta.kind === 'numbered' ? meta.number + meta.sep : '') + meta.title[lang];
+}
+
+function validateGeneratedHeading(unit, meta, lang) {
+  if (meta.kind === 'frontmatter') return;
+  const heading = generatedHeadingLine(meta, lang);
+  const text = heading.slice(meta.level + 1);
+  const numbered = text.match(NUMBERED_HEADING_PREFIX);
+  if (meta.kind === 'numbered') {
+    if (numbered === null || numbered[1] !== meta.number || numbered[2] !== meta.sep) {
+      failUnit(unit,
+        `${lang}: generated heading must render locked number ${JSON.stringify(meta.number)} ` +
+        `with separator ${JSON.stringify(meta.sep)}`);
+    }
+  } else if (numbered !== null) {
+    failUnit(unit,
+      `${lang}: named title must not match numbered-heading syntax: ${JSON.stringify(meta.title[lang])}`);
+  }
+}
+
 // These are the CommonMark line-level rules needed to keep generated section
 // headings out of unit bodies. The builder does not need a full Markdown
-// parser: fenced blocks suppress ATX-heading detection, and every other ATX
-// heading is an inventory injection.
+// parser: fenced blocks suppress heading detection, and container prefixes
+// are normalized before applying the line-level rules.
 function parseFenceOpener(line) {
   let indent = 0;
   while (indent < line.length && line[indent] === ' ') indent++;
@@ -249,52 +273,123 @@ function isThematicBreak(line) {
   return /^(?: {0,3})(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
 }
 
-function isSetextParagraphLine(line) {
-  return !/^ {4}/.test(line) &&
+function isSetextParagraphLine(line, isIndentedCode = false) {
+  return !isIndentedCode &&
     /[^ \t]/.test(line) &&
     parseAtxHeading(line) === null &&
     parseFenceOpener(line) === null &&
     !isThematicBreak(line);
 }
 
+function parseListMarker(line, start) {
+  let spaces = 0;
+  while (start + spaces < line.length && line[start + spaces] === ' ') spaces++;
+  if (spaces > 3) return null;
+  const markerStart = start + spaces;
+  const match = line.slice(markerStart).match(/^(?:[*+-]|\d{1,9}[.)])(?=$|[ \t])/);
+  if (match === null) return null;
+  return { markerStart, markerEnd: markerStart + match[0].length };
+}
+
+// Normalize only the container syntax needed by the heading checks. A list
+// item gets a per-item identity so `- Title` cannot pair with the next list
+// item, while an indented continuation keeps the current item identity.
+function normalizeContainerLine(line, state) {
+  let pos = 0;
+  const prefix = [];
+  while (true) {
+    let spaces = 0;
+    while (pos + spaces < line.length && line[pos + spaces] === ' ') spaces++;
+    if (spaces > 3 || line[pos + spaces] !== '>') break;
+    pos += spaces + 1;
+    if (line[pos] === ' ' || line[pos] === '\t') pos++;
+    prefix.push('quote');
+  }
+
+  const parent = prefix.join('/');
+  const prefixStart = pos;
+  const list = parseListMarker(line, pos);
+  let container = parent || 'root';
+  let isContinuation = false;
+  if (list !== null) {
+    pos = list.markerEnd;
+    let markerSpaces = 0;
+    while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t') && markerSpaces < 4) {
+      pos++;
+      markerSpaces++;
+    }
+    container = `${parent || 'root'}/list-${state.nextListId++}`;
+    state.activeList = {
+      parent,
+      container,
+      indent: pos - prefixStart,
+    };
+  } else if (state.activeList !== null && state.activeList.parent === parent) {
+    let spaces = 0;
+    while (pos + spaces < line.length && line[pos + spaces] === ' ') spaces++;
+    if (spaces >= state.activeList.indent && state.activeList.indent > 0) {
+      pos += state.activeList.indent;
+      container = state.activeList.container;
+      isContinuation = true;
+    }
+  }
+
+  if (list === null && !isContinuation) state.activeList = null;
+  const content = line.slice(pos);
+  return {
+    content,
+    container,
+    // A tab or four leading spaces at the normalized block level is code,
+    // not a paragraph which can become a Setext heading.
+    isIndentedCode: content.startsWith('\t') || /^ {4}/.test(content),
+    raw: line,
+  };
+}
+
 function findHeadings(body) {
   const headings = [];
   let fence = null;
   let paragraphLine = null;
+  const containerState = { activeList: null, nextListId: 0 };
   const lines = body.split('\n');
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
+    const normalized = normalizeContainerLine(lines[index], containerState);
+    const line = normalized.content;
     if (fence === null) {
-      const opener = parseFenceOpener(line);
+      const opener = normalized.isIndentedCode ? null : parseFenceOpener(line);
       if (opener !== null) {
-        fence = opener;
+        fence = { ...opener, container: normalized.container };
         paragraphLine = null;
         continue;
       }
     } else {
-      if (isFenceCloser(line, fence)) fence = null;
+      if (normalized.container === fence.container &&
+          !normalized.isIndentedCode && isFenceCloser(line, fence)) fence = null;
       paragraphLine = null;
       continue;
     }
     const heading = parseAtxHeading(line);
     if (heading !== null) {
-      headings.push({ ...heading, type: 'ATX', line: index + 1 });
+      headings.push({ ...heading, raw: normalized.raw, container: normalized.container, type: 'ATX', line: index + 1 });
       paragraphLine = null;
       continue;
     }
     const underline = parseSetextUnderline(line);
-    if (underline !== null && paragraphLine !== null) {
+    if (underline !== null && paragraphLine !== null &&
+        paragraphLine.container === normalized.container) {
       headings.push({
         ...underline,
         type: 'Setext',
         line: index + 1,
+        raw: normalized.raw,
+        container: normalized.container,
         paragraph: paragraphLine.raw,
       });
       paragraphLine = null;
       continue;
     }
-    paragraphLine = isSetextParagraphLine(line)
-      ? { raw: line, line: index + 1 }
+    paragraphLine = isSetextParagraphLine(line, normalized.isIndentedCode)
+      ? { raw: normalized.raw, container: normalized.container, line: index + 1 }
       : null;
   }
   return headings;
@@ -305,7 +400,8 @@ function validateUnitHeadings(unit, meta, parts) {
     const body = parts.map((part) => part[lang]).join('');
     const headings = findHeadings(body);
     if (meta.kind === 'frontmatter') {
-      if (headings.length !== 1 || headings[0].type !== 'ATX' || headings[0].level !== 1) {
+      if (headings.length !== 1 || headings[0].container !== 'root' ||
+          headings[0].type !== 'ATX' || headings[0].level !== 1) {
         failUnit(unit,
           `${lang}: frontmatter must contain exactly one ATX level-1 heading ` +
           `and no other ATX/Setext heading (found ${headings.length})`);
@@ -777,6 +873,7 @@ export async function validateContentDir(contentDir, options = {}) {
 
     const meta = readJsonDefault(path.join(unitDir, 'meta.js'));
     validateMeta(unit, meta);
+    for (const lang of LANGS) validateGeneratedHeading(unit, meta, lang);
 
     if (meta.kind === 'frontmatter') {
       if (idx !== 0) {
@@ -894,10 +991,7 @@ export async function buildBuffers(contentDir, options = {}) {
       const body = Buffer.from(parts.map((p) => p[lang]).join(''), 'utf8');
       const arr = outputs[lang];
       if (meta.kind !== 'frontmatter') {
-        const title = meta.title[lang];
-        const headingLine =
-          '#'.repeat(meta.level) + ' ' +
-          (meta.kind === 'numbered' ? meta.number + meta.sep : '') + title;
+        const headingLine = generatedHeadingLine(meta, lang);
         const hbuf = Buffer.from(headingLine + '\n', 'utf8');
         const start = lens[lang];
         arr.push(hbuf);
@@ -1005,7 +1099,14 @@ function rollbackOutputTransaction(staged) {
         item.backupPath = null;
       }
     } catch (e) {
-      errors.push(`${item.destination}: ${e.message}`);
+      if (item.backupPath !== null) {
+        // A failed restore leaves the only known copy of the original at the
+        // backup path. Never let the later best-effort cleanup unlink it.
+        item.preserveBackup = true;
+        errors.push(`${item.destination}: could not restore backup ${item.backupPath}: ${e.message}`);
+      } else {
+        errors.push(`${item.destination}: ${e.message}`);
+      }
     }
   }
   for (const item of staged) {
@@ -1014,7 +1115,7 @@ function rollbackOutputTransaction(staged) {
     } catch (e) {
       if (e.code !== 'ENOENT') errors.push(`${item.tempPath}: ${e.message}`);
     }
-    if (item.backupPath !== null) {
+    if (item.backupPath !== null && !item.preserveBackup) {
       try {
         fs.unlinkSync(item.backupPath);
       } catch (e) {
@@ -1085,6 +1186,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       tempPath: null,
       fd: null,
       backupPath: null,
+      preserveBackup: false,
       replaced: false,
     });
   }

@@ -44,7 +44,7 @@ kind:
 - **String:** V is node-representable under § 5.9.7's rules (no
   \`CR\` byte, and none of the pathological multi-line collision
   cases defined there).
-- **Null, Bool, Integer**, and every other String: always
+- **Null, Bool, Integer**: always
   node-representable.
 
 Node-representability recurses through every Object pair's value and
@@ -122,7 +122,7 @@ with exactly these three fields and no others:
 - **String:** V узлово-представимо по правилам § 5.9.7 (нет байта
   \`CR\` и ни одного из определённых там патологических случаев
   коллизий multi-line формы).
-- **Null, Bool, Integer** и любое другое String: всегда
+- **Null, Bool, Integer**: всегда
   узлово-представимы.
 
 Узловая представимость рекурсивно проходит через значение каждой
@@ -191,7 +191,7 @@ with exactly these three fields and no others:
   String),且 § 5.9.8 未为其定义规范文本形式。
 - **String:** V 按 § 5.9.7 的规则节点可表示(无 \`CR\` 字节,且
   不属于该节定义的病态多行碰撞情形)。
-- **Null、Bool、Integer** 及所有其他 String:始终节点可表示。
+- **Null、Bool、Integer**:始终节点可表示。
 
 节点可表示性递归经过 Object 每对的值与 Array 的每一项,深度不限,
 且**不**重新施加上述根类型约束:可表示 Object 内部的 String 或

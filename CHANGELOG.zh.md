@@ -61,7 +61,7 @@
   writer-conforming 实现 MUST 以错误拒绝它们,不输出任何部分内容。
   此前 § 5.9 未定义的仅是只能通过程序构造的标量根、空键名和非有限
   Float 情形;对于解析器产生的含 `CR` 或发生 collision 的 String,
-  § 5.9.0 已有规定,但该规定过于宽松且含糊,允许任意或有损输出。
+  § 5.9.7 已有规定,但该规定过于宽松且含糊,允许任意或有损输出。
   现在抽象程序化 Float 载体已与声明的有限可解析/规范 Float 域区分开来。
   该载体 MUST 区分 NaN、+Infinity 与 -Infinity,以便三个
   `NonFiniteFloat` fixture 可以被提供并拒绝。这些 sentinel 仅属于
@@ -118,7 +118,7 @@
   定义 round-trip 保证。含 `CR` 字节或 stripped 多行形式的某种
   病态碰撞的 String,已由 § 5.9.0 明确排除在可表示域之外,属于
   不可表示 Value。writer-conforming 实现 MUST 以错误拒绝不可
-  表示的 Value,而不是将其序列化;此前 § 5.9.0 单独允许为同一类
+  表示的 Value,而不是将其序列化;此前 § 5.9.7 单独允许为同一类
   Value 输出任意或 lossy 编码,这与 § 5.9 的字节确定性要求不兼容。
 - **§ 5.9.6** —— 根 Array 的第一个项,若其裸形式本身会被 § 5.0.1
   规则 6 识别为 pair line(例如 `host: localhost`,或裸

@@ -77,7 +77,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   writer-conforming implementation MUST reject them with an error,
   emitting no partial output. Previously § 5.9 left the programmatic-only
   scalar-root, empty-key, and non-finite-Float cases undefined; for
-  parser-produced `CR`-bearing and collision Strings, § 5.9.0 already had
+  parser-produced `CR`-bearing and collision Strings, § 5.9.7 already had
   a permissive but ambiguous rule that allowed arbitrary or lossy output.
   The abstract programmatic Float carrier is now distinct from the
   declared finite parseable/canonical Float domain: it MUST distinguish
@@ -151,7 +151,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   of the pathological multi-line stripped-form collisions are
   explicitly excluded from the representable domain by § 5.9.0. A
   writer-conforming implementation MUST reject a non-representable
-  Value with an error rather than serialise it; previously § 5.9.0
+  Value with an error rather than serialise it; previously § 5.9.7
   separately allowed any implementation-chosen or lossy encoding for
   the same Values, which was incompatible with § 5.9's byte-
   determinism requirement.

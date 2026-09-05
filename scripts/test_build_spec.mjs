@@ -296,6 +296,30 @@ test('a standalone thematic break is not treated as a Setext heading', async () 
   await assert.doesNotReject(validate(fx));
 });
 
+test('unit heading checks normalize blockquote/list containers without treating indented code as prose', async () => {
+  const rejected = [
+    ['> ## injected\n\n', /unit "named-abstract": en: unit body contains an ATX heading/],
+    ['> Title\n> ---\n\n', /unit "named-abstract": en: unit body contains a Setext heading/],
+    ['- ## injected\n\n', /unit "named-abstract": en: unit body contains an ATX heading/],
+    ['- Title\n  ---\n\n', /unit "named-abstract": en: unit body contains a Setext heading/],
+  ];
+  for (const [body, expected] of rejected) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(validate(fx), expected, JSON.stringify(body));
+  }
+
+  for (const body of [
+    '\tindented code\n---\n\n',
+    '    indented code\n---\n\n',
+    '> text\n---\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx), JSON.stringify(body));
+  }
+});
+
 test('fence marker lengths follow CommonMark 4-backtick/3-backtick behavior', async () => {
   for (const body of [
     '````md\n### inside\n```\n````\n\n',
@@ -442,6 +466,16 @@ test('section inventory lock leaves title prose unlocked', async () => {
   const records = lockUnits(fx, fx.map((unit) => unit.name));
   fx[2].meta.title.en = 'Renamed prose title';
   await assert.doesNotReject(validate(fx, null, null, { lock: records }));
+});
+
+test('generated heading classification rejects numbered syntax in unlocked named titles', async () => {
+  const fx = baseFixtures();
+  const records = lockUnits(fx, fx.map((unit) => unit.name));
+  fx[1].meta.title = { en: '99 Review', ru: '99 Review', zh: '99 Review' };
+  await assert.rejects(
+    validate(fx, null, null, { lock: records }),
+    /unit "named-abstract": en: named title must not match numbered-heading syntax/
+  );
 });
 
 test('README source object rejects a non-canonical shape', async () => {
@@ -1032,6 +1066,61 @@ test('a later output rename rolls back all six outputs and cleans temps and back
         []
       );
     }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('rollback preserves an unrestorable backup and continues restoring other outputs', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-rollback-obstruction-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const destinations = LANGS.flatMap((lang) => [
+      path.join(versionDir, OUT_FILES[lang]),
+      path.join(contentDir, README_FILES[lang]),
+    ]);
+    const originals = new Map(destinations.map((destination) => [
+      destination,
+      Buffer.from(`recoverable ${path.basename(destination)}\n`),
+    ]));
+    for (const [destination, bytes] of originals) write(destination, bytes);
+
+    const failure = new Error('injected rollback trigger');
+    failure.code = 'EIO';
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        renameSync(source, destination) {
+          if (path.basename(destination) === 'README.ru.md') {
+            fs.rmSync(path.join(versionDir, 'spec.md'));
+            fs.mkdirSync(path.join(versionDir, 'spec.md'));
+            throw failure;
+          }
+          fs.renameSync(source, destination);
+        },
+      }),
+      (error) => error.code === 'EIO' &&
+        /could not restore backup .*\.spec\.md\.[^\\/]+\.bak/.test(error.message)
+    );
+
+    assert.deepEqual(
+      fs.readFileSync(path.join(contentDir, 'README.ru.md')),
+      originals.get(path.join(contentDir, 'README.ru.md'))
+    );
+    assert.equal(fs.statSync(path.join(versionDir, 'spec.md')).isDirectory(), true);
+    const backupPaths = [versionDir, contentDir]
+      .flatMap((directory) => fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.bak'))
+        .map((name) => path.join(directory, name)));
+    assert.equal(backupPaths.length, 1);
+    assert.deepEqual(fs.readFileSync(backupPaths[0]), originals.get(path.join(versionDir, 'spec.md')));
+    assert.deepEqual(
+      [versionDir, contentDir].flatMap((directory) => fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.tmp') || (name.endsWith('.bak') && path.join(directory, name) !== backupPaths[0]))),
+      []
+    );
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

@@ -1692,7 +1692,7 @@ kind:
 - **String:** V is node-representable under § 5.9.7's rules (no
   `CR` byte, and none of the pathological multi-line collision
   cases defined there).
-- **Null, Bool, Integer**, and every other String: always
+- **Null, Bool, Integer**: always
   node-representable.
 
 Node-representability recurses through every Object pair's value and
