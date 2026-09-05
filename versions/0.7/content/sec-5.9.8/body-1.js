@@ -6,12 +6,13 @@ export default {
   values.
 - **Float:** the declared Float domain includes the decimal-conversion
   and rounding semantics used by parsing and writing, and its conversion
-  policy MUST be deterministic. Every finite Float admitted to the Ktav
-  Value model MUST have at least one finite decimal candidate \`(s, D, k)\`
-  that round-trips exactly under those semantics. A host representation's
-  finite value without such a candidate (for example exact-rational
-  \`1/3\`) is outside the declared Ktav Float domain, rather than an
-  additional writer error case. For the minimum binary64 domain, the
+  policy MUST be deterministic. Every non-zero finite Float admitted to
+  the Ktav Value model MUST have at least one finite decimal candidate
+  \`(s, D, k)\` that round-trips exactly under those semantics. Positive
+  and negative zero are admitted separately by the zero rule below. A
+  host representation's non-zero finite value without such a candidate
+  (for example exact-rational \`1/3\`) is outside the declared Ktav Float domain,
+  rather than an additional writer error case. For the minimum binary64 domain, the
   declared rounding semantics MUST be IEEE 754 \`roundTiesToEven\`. The chosen textual form matches one of the two
   alternatives of § 3.6:
   - \`sign? digits "." digits ("e" sign? digits)?\`
@@ -79,10 +80,11 @@ export default {
   Знак минус сохраняется для отрицательных значений.
 - **Float:** заявленный домен Float включает семантику decimal-преобразования и
   округления, используемую при разборе и выводе, а политика преобразования
-  MUST быть детерминированной. Каждый конечный Float, допускаемый в модель
-  Ktav Value, MUST иметь хотя бы один конечный десятичный кандидат
-  \`(s, D, k)\`, точно проходящий round-trip с этой семантикой. Конечное
-  значение хост-представления без такого кандидата (например, точная
+  MUST быть детерминированной. Каждый ненулевой конечный Float, допускаемый
+  в модель Ktav Value, MUST иметь хотя бы один конечный десятичный кандидат
+  \`(s, D, k)\`, точно проходящий round-trip с этой семантикой. Положительный
+  и отрицательный ноль допускаются отдельно по правилу нуля ниже. Ненулевое
+  конечное значение хост-представления без такого кандидата (например, точная
   рациональ \`1/3\`) находится вне заявленного домена Ktav Float, а не
   образует дополнительного случая ошибки writer. Для минимального домена
   binary64 заявленная семантика округления MUST быть IEEE 754
@@ -189,11 +191,11 @@ export default {
 
   声明相同的 Float 域、解析与写入所用的十进制转换和舍入语义的
   两个 writer-conforming 实现 MUST 使用确定性的转换策略,并 MUST 对同一
-  Value 产生相同输出。每个被接纳进 Ktav Value 模型的有限 Float
+  Value 产生相同输出。每个被接纳进 Ktav Value 模型的非零有限 Float
   MUST 至少有一个按该语义精确 round-trip 的有限十进制候选
-  \`(s, D, k)\`;主机表示中没有这种候选的有限值(例如精确有理数
-  \`1/3\`)不属于声明的 Ktav Float 域,也不是额外的 writer 错误情形。
-  对最小 binary64 域,声明的舍入语义 MUST 是 IEEE 754
+  \`(s, D, k)\`;正零与负零按下面的零规则单独接纳。主机表示中没有
+  这种候选的非零有限值(例如精确有理数 \`1/3\`)不属于声明的 Ktav Float
+  域,也不是额外的 writer 错误情形。对最小 binary64 域,声明的舍入语义 MUST 是 IEEE 754
   \`roundTiesToEven\`。fixture \`*.canonical.ktav\` 假定 binary64 语义。声明不同域或不同
   语义的实现 MAY 产生不同输出,但仅限于这些声明导致不同 Value 或候选
   的地方。

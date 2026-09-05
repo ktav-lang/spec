@@ -408,17 +408,6 @@ push/PR.
 README (\`README.md\`, \`README.ru.md\`, \`README.zh.md\`); внутри директорий
 юнитов Markdown запрещён полностью.
 
-## Единый источник README и inventory lock
-
-\`scripts/locks/section-inventory.0.7.lock.json\` — независимый
-версионированный упорядоченный inventory. Builder требует его в обычном
-CLI-запуске и отвергает расхождение состава или порядка с \`manifest.js\`.
-
-\`README.source.js\` — единый source object \`{ en, ru, zh }\` для трёх README в
-этой директории. Builder статически проверяет его и генерирует из него
-\`README.md\`, \`README.ru.md\` и \`README.zh.md\`; ручное изменение любого README
-делает \`--check\` ошибочным.
-
 ### \`meta.js\`
 
 Каждый \`meta.js\` использует \`export default { ... }\` (в стиле JSON). Три
@@ -574,6 +563,17 @@ N-1 точек разреза выбираются как пустые стро�
 lock \`scripts/locks/section-inventory.0.7.lock.json\` хранит тот же
 упорядоченный список; при намеренном добавлении или удалении секции оба файла
 MUST обновляться вместе. Изменение только манифеста отвергается проверкой lock.
+
+### Единый источник README и inventory lock
+
+\`scripts/locks/section-inventory.0.7.lock.json\` — независимый
+версионированный упорядоченный inventory. Builder требует его в обычном
+CLI-запуске и отвергает расхождение состава или порядка с \`manifest.js\`.
+
+\`README.source.js\` — единый source object \`{ en, ru, zh }\` для трёх README в
+этой директории. Builder статически проверяет его и генерирует из него
+\`README.md\`, \`README.ru.md\` и \`README.zh.md\`; ручное изменение любого README
+делает \`--check\` ошибочным.
 
 ## Как генератор собирает файл
 
@@ -757,16 +757,6 @@ push/PR.
 (N >= 1)。\`content/\` 下的 \`.md\` 文件只有三个根 README(\`README.md\`、
 \`README.ru.md\`、\`README.zh.md\`);单元目录内完全禁止 \`.md\` 文件。
 
-## README 的统一源对象与 inventory lock
-
-\`scripts/locks/section-inventory.0.7.lock.json\` 是独立的、有版本的有序
-inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝 \`manifest.js\` 的
-成员或顺序发生漂移。
-
-\`README.source.js\` 是本目录三个 README 共用的 \`{ en, ru, zh }\` source
-object。Builder 会静态检查它并据此生成 \`README.md\`、\`README.ru.md\` 和
-\`README.zh.md\`;手动修改任何一个 README 都会使 \`--check\` 失败。
-
 ### \`meta.js\`
 
 每个 \`meta.js\` 使用 \`export default { ... }\`(JSON 风格)。三种形态,
@@ -899,6 +889,16 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 真实位置。独立的 lock \`scripts/locks/section-inventory.0.7.lock.json\`
 保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
 仅修改 manifest 会被 lock 检查拒绝。
+
+### README 的统一源对象与 inventory lock
+
+\`scripts/locks/section-inventory.0.7.lock.json\` 是独立的、有版本的有序
+inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝 \`manifest.js\` 的
+成员或顺序发生漂移。
+
+\`README.source.js\` 是本目录三个 README 共用的 \`{ en, ru, zh }\` source
+object。Builder 会静态检查它并据此生成 \`README.md\`、\`README.ru.md\` 和
+\`README.zh.md\`;手动修改任何一个 README 都会使 \`--check\` 失败。
 
 ## 生成器如何构建文件
 

@@ -27,13 +27,14 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   **declared Float domain**. That declaration MUST include the finite
   values admitted as Ktav Floats, the decimal-conversion and rounding
   semantics used to parse and render them, and a deterministic conversion
-  policy. Every finite Float admitted to the Ktav Value model MUST have
-  at least one finite decimal candidate \`(s, D, k)\` whose exact decimal
-  value reparses under those declared semantics to exactly that Float
-  (§ 5.9.8). A wider host representation MAY contain values with no such
-  candidate (for example, exact-rational \`1/3\`), but such a value is
-  outside the declared Ktav Float domain and MUST NOT be admitted as a
-  Ktav Float. The implementation MUST support at least the range and
+  policy. Every non-zero finite Float admitted to the Ktav Value model
+  MUST have at least one finite decimal candidate \`(s, D, k)\` whose exact
+  decimal value reparses under those declared semantics to exactly that
+  Float (§ 5.9.8). Positive and negative zero are admitted separately by
+  the zero rule in § 5.9.8. A wider host representation MAY contain non-zero
+  finite values with no such candidate (for example, exact-rational \`1/3\`),
+  but such a value is outside the declared Ktav Float domain and MUST NOT be admitted
+  as a Ktav Float. The implementation MUST support at least the range and
   precision of IEEE 754 binary64 and MAY support a wider representation
   (e.g. arbitrary-precision decimal). For the minimum binary64 domain,
   converting a decimal float literal (§ 3.6) MUST follow IEEE 754's
@@ -87,14 +88,16 @@ Value — одно из: **Null**, **Bool**, **Integer**, **Float**, **String**,
   (например, decimal произвольной точности). Её **заявленный домен Float**
   MUST включать конечные значения, допускаемые как Ktav Float, семантику
   decimal-преобразования и округления, используемую при разборе и выводе,
-  а также детерминированную политику преобразования. Каждый конечный
-  Float, допускаемый в модель Ktav Value, MUST иметь хотя бы один конечный
-  десятичный кандидат \`(s, D, k)\`, точное decimal-значение которого
-  при повторном разборе с этой семантикой даёт в точности тот же Float
-  (§ 5.9.8). Более широкое представление MAY содержать значения без
-  такого кандидата (например, точную рациональ \`1/3\`), но такое значение
-  находится вне заявленного домена Ktav Float и MUST NOT допускаться как
-  Ktav Float. Для минимального домена binary64 преобразование decimal
+  а также детерминированную политику преобразования. Каждый ненулевой
+  конечный Float, допускаемый в модель Ktav Value, MUST иметь хотя бы один
+  конечный десятичный кандидат \`(s, D, k)\`, точное decimal-значение
+  которого при повторном разборе с этой семантикой даёт в точности тот же
+  Float (§ 5.9.8). Положительный и отрицательный ноль допускаются отдельно
+  по правилу нуля из § 5.9.8. Более широкое представление MAY содержать
+  ненулевые конечные значения без такого кандидата (например, точную
+  рациональ \`1/3\`), но такое значение находится вне заявленного домена Ktav
+  Float и MUST NOT
+  допускаться как Ktav Float. Для минимального домена binary64 преобразование decimal
   float-литерала (§ 3.6) MUST следовать атрибуту направления округления
   IEEE 754 \`roundTiesToEven\`, а представление MUST включать
   субнормальные (gradual-underflow) значения вплоть до наименьшего
@@ -138,10 +141,11 @@ Value — одно из: **Null**, **Bool**, **Integer**, **Float**, **String**,
 - **Float** —— 数值标量,携带实现**声明的 Float 域**中的值。该声明
   MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
   转换与舍入语义,以及确定性的转换策略。每个被接纳进 Ktav Value
-  模型的有限 Float MUST 至少有一个有限十进制候选 \`(s, D, k)\`,其精确
-  十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。更宽的
-  主机表示 MAY 含有不存在这种候选的值(例如精确有理数 \`1/3\`),但这种
-  值在声明的 Ktav Float 域之外,MUST NOT 作为 Ktav Float 接纳。实现
+  模型的非零有限 Float MUST 至少有一个有限十进制候选 \`(s, D, k)\`,其
+  精确十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。
+  正零与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示 MAY 含有不
+  存在这种候选的非零有限值(例如精确有理数 \`1/3\`),但这种值在声明的 Ktav
+  Float 域之外,MUST NOT 作为 Ktav Float 接纳。实现
   MUST 至少支持 IEEE 754 binary64 的范围与精度,且 MAY 支持更宽表示
   (如任意精度 decimal)。对最小 binary64 域,将 decimal Float 字面量
   (§ 3.6)转换时 MUST 遵循 IEEE 754 的 \`roundTiesToEven\` 舍入方向属性,

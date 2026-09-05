@@ -76,7 +76,7 @@ class CorpusTestCase(unittest.TestCase):
 
     def run_main(self, tests_dir, *flags):
         out = io.StringIO()
-        with contextlib.redirect_stdout(out):
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
             code = validate_corpus.main([tests_dir] + list(flags))
         return code, out.getvalue()
 
@@ -180,6 +180,17 @@ class CorpusTestCase(unittest.TestCase):
             9223372036854775808,
         )
         self.assertIsNone(validate_corpus._parse_integer_literal("0X8000000000000000"))
+
+    def test_integer_literal_decimal_digit_limit_is_not_overflow(self):
+        self.assertEqual(validate_corpus._parse_integer_literal("0" * 5000), 0)
+        self.assertEqual(
+            validate_corpus._parse_integer_literal("1" + "0" * 5000),
+            validate_corpus.I64_MAX + 1,
+        )
+        self.assertEqual(
+            validate_corpus._parse_integer_literal("-1" + "0" * 5000),
+            validate_corpus.I64_MIN - 1,
+        )
 
     # -- mutation 3: unknown expected_error ----------------------------
 
@@ -463,6 +474,12 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
         self.assertIn("non-finite JSON number '1e400' is not allowed", out)
+
+    def test_sentinel_policy_accepts_only_documented_modes(self):
+        with self.assertRaisesRegex(ValueError, "sentinel_policy"):
+            validate_corpus._inspect_unrepresentable_value(
+                {}, sentinel_policy="unsupported"
+            )
 
     def test_float_sentinel_is_ordinary_valid_oracle_data(self):
         tests = self.build_minimal()
@@ -785,6 +802,39 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests, "--require-boundary")
         self.assertEqual(code, 1)
         self.assertIn("could not identify one unquoted Ktav source literal", out)
+
+    def test_boundary_source_matching_rejects_escaped_colon_key(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/hostile.ktav",
+                   "a\\:: 9223372036854775808\n")
+        self.write("tests/valid/hostile.json",
+                   json.dumps({"a\\": "9223372036854775808"}))
+        self.write("tests/valid/hostile.canonical.ktav",
+                   "a\\:: 9223372036854775808\n")
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "hostile", "path": "/a\\",
+                "boundary_class": "integer_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("could not identify one unquoted Ktav source literal", out)
+
+    def test_tests_dir_must_be_a_real_directory(self):
+        regular_file = self.write("not-a-directory", "not a directory")
+        code, out = self.run_main(regular_file)
+        self.assertEqual(code, 2)
+        self.assertIn("not a regular directory", out)
+
+    @unittest.skipUnless(os.name == "posix", "symlinks require POSIX")
+    def test_tests_dir_symlink_is_rejected_before_traversal(self):
+        tests = self.build_minimal()
+        link = os.path.join(self.tmp, "tests-link")
+        os.symlink(tests, link, target_is_directory=True)
+        code, out = self.run_main(link)
+        self.assertEqual(code, 2)
+        self.assertIn("symlink/junction", out)
 
     def test_boundary_record_schema_is_closed_before_lock_comparison(self):
         tests = self.build_full()

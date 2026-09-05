@@ -32,6 +32,7 @@ export default {
                                        of bare-with-escape, same result
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
+<raw-line>      ::= any-chars-until-line-end       ; zero or more bytes before line end
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
@@ -49,7 +50,7 @@ export default {
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw string item
+<item-literal>  ::= (ws) "::" <sep-end> <raw-line> <line-end> ; raw string item
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -99,6 +100,7 @@ export default {
                                        экранированием, но результат тот же
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
+<raw-line>      ::= any-chars-until-line-end       ; ноль или более байтов до конца строки
 <value-part-opt> ::= <value-start> | ""             ; value-часть опциональна; "" ⇒ пустая String
 <value-start>   ::= "{" (ws) "}" (ws)                ; пустой inline-объект
                   | "[" (ws) "]" (ws)                ; пустой inline-массив
@@ -116,7 +118,7 @@ export default {
                     ; обрезается; интерпретируется по § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw-строковый элемент
+<item-literal>  ::= (ws) "::" <sep-end> <raw-line> <line-end> ; raw-строковый элемент
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -162,15 +164,16 @@ export default {
                                        中间段是 quoted 而非 bare-with-escape,但结果相同
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
+<raw-line>      ::= any-chars-until-line-end       ; 行末之前零个或多个字节
 <value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
 <value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
                   | "[" (ws) "]" (ws)                ; 空 inline 数组
                   | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
                   | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
-                   | "{" (ws) &line-end                ; 对象开启(多行 body)
-                   | "[" (ws) &line-end                ; 数组开启(多行 body)
-                   | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
-                   | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
+                  | "{" (ws) &line-end                ; 对象开启(多行 body)
+                  | "[" (ws) &line-end                ; 数组开启(多行 body)
+                  | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
+                  | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
                   | "()" (ws)                        ; 空 inline(得到 "")
                   | "(())" (ws)                      ; 空 inline(得到 "")
                   | <scalar-body>                    ; 标量值,按 § 5.2 分发
@@ -179,7 +182,7 @@ export default {
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw 字符串项
+<item-literal>  ::= (ws) "::" <sep-end> <raw-line> <line-end> ; raw 字符串项
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>

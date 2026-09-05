@@ -25,6 +25,13 @@ before deciding between rules 8 and 9.
 An unterminated quoted key remains quote-opaque and is diagnosed per
 § 6.16 as \`UnterminatedInlineCompound\`, even if an otherwise bad
 escape occurs inside that unclosed quoted segment.
+The scan is also scalar-aware: dispatch is decided once from the first
+non-whitespace byte. If that byte is neither \`{\` nor \`[\`, later
+\`{\`, \`}\`, \`[\`, and \`]\` bytes follow the inline-scalar delimiter
+rules of § 5.8.5 rather than changing nested compound depth. A raw-marker
+body is opaque to this dispatch: after \`::\`, § 5.8's
+\`<inline-raw-scalar>\` treats those bytes as literal data and never enters
+this compound scan.
 
 1. If the body is exactly \`{\` → open a new Object scope (multi-line).
 2. If the body is exactly \`[\` → open a new Array scope (multi-line).
@@ -67,8 +74,10 @@ escape occurs inside that unclosed quoted segment.
     its numeric value is finite in the implementation's declared
     Float domain (§ 5): Float carrying the numeric value parsed
     from the body. The declared-domain check includes § 5's requirement
-    that every admitted finite Float have a finite decimal candidate
-    that round-trips exactly under the declared conversion semantics.
+    that every admitted non-zero finite Float have a finite decimal
+    candidate that round-trips exactly under the declared conversion
+    semantics; positive and negative zero are admitted separately by the
+    zero rule of § 5.9.8.
     The internal representation is implementation-defined (see § 5
     description of Float); the canonical textual form is specified in
     § 5.9.8. A literal whose
@@ -113,6 +122,13 @@ inline-значения во вложенный разбор составног�
 Незакрытый quoted-ключ остаётся непрозрачным для кавычек и
 диагностируется по § 6.16 как \`UnterminatedInlineCompound\`, даже если внутри этого
 незакрытого quoted-сегмента встречается иная ошибочная escape-последовательность.
+Сканирование также учитывает скалярный режим: диспетчеризация выбирается
+один раз по первому непробельному байту. Если этот байт не является \`{\`
+или \`[\`, последующие байты \`{\`, \`}\`, \`[\` и \`]\` подчиняются
+правилам разделителей inline-скаляра из § 5.8.5, а не меняют глубину
+вложенного составного. Тело с raw-маркером непрозрачно для этой
+диспетчеризации: после \`::\` § 5.8's \`<inline-raw-scalar>\` считает эти
+байты литеральными данными и никогда не входит в это сканирование.
 
 1. Если тело — в точности \`{\` → открыть новый Object scope
    (многострочный).
@@ -157,9 +173,10 @@ inline-значения во вложенный разбор составног�
     его числовое значение конечно в заявленном реализацией домене
     Float (§ 5): Float, несущий числовое значение, разобранное из
     тела. Проверка заявленного домена включает требование § 5, чтобы
-    каждый допускаемый конечный Float имел конечный десятичный
+    каждый допускаемый ненулевой конечный Float имел конечный десятичный
     кандидат, точно проходящий round-trip с заявленной семантикой
-    преобразования. Внутреннее представление определяется
+    преобразования; положительный и отрицательный ноль допускаются
+    отдельно по правилу нуля § 5.9.8. Внутреннее представление определяется
     реализацией (см. § 5); каноническая текстовая форма указана в
     § 5.9.8. Литерал, чьё разобранное значение не было бы конечным
     в этом домене — например, binary64-бэкенд, получивший
@@ -195,6 +212,11 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。\`::\` 之
 规则 8 或 9 之前适用。
 未终止的 quoted 键保持引号不透明, 并按 § 6.16 诊断为
 \`UnterminatedInlineCompound\`,即使该未闭合 quoted 段内部还出现了其他错误 escape。
+扫描还必须感知标量模式:根据首个非空白字节只作一次分发决定。
+如果该字节既不是 \`{\` 也不是 \`[\`,后续的 \`{\`、\`}\`、\`[\` 与 \`]\`
+按 § 5.8.5 的 inline 标量分隔符规则处理,而不是改变嵌套复合深度。
+raw-marker 体对这种分发是不透明的:在 \`::\` 之后,§ 5.8 的
+\`<inline-raw-scalar>\` 将这些字节视为字面数据,从不进入此复合扫描。
 
 1. 体恰为 \`{\` → 打开新的 Object scope(多行)。
 2. 体恰为 \`[\` → 打开新的 Array scope(多行)。
@@ -223,8 +245,9 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。\`::\` 之
     规则 15。
 14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所声明的
     Float 域(§ 5)内有限:Float,携带从体解析的数值。声明域的检查
-    还包括 § 5 的要求:每个被接纳的有限 Float 都必须有一个有限
-    十进制候选,并按声明的转换语义精确 round-trip。内部表示
+    还包括 § 5 的要求:每个被接纳的非零有限 Float 都必须有一个有限
+    十进制候选,并按声明的转换语义精确 round-trip;正零与负零按
+    § 5.9.8 的零规则单独接纳。内部表示
     由实现定义(见 § 5);规范文本形式见 § 5.9.8。解析值在该域内
     非有限的字面量 —— 例如 binary64 后端遇到 \`1e9999\`,溢出为
     无穷 —— 回退到规则 15(String),与规则 13 中超出范围的整数

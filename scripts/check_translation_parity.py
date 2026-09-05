@@ -276,16 +276,14 @@ GRAMMAR_TOKEN_RE = re.compile(
 # find_malformed_grammar_productions below): if some other production ever
 # fails to tokenize as pure BNF, that is treated as a real defect (a typo,
 # a corrupted terminal, a translation mistake) and reported as an error
-# rather than silently excluded, unlike these eleven.
+# rather than silently excluded, unlike these nine.
 SEMI_FORMAL_PROSE_LHS = frozenset([
-    "<comment>",            # "(ws) \"##\" (any-chars until line-end)"
     "<unescaped-dot>",      # "\".\" that is NOT preceded by ..."
     "<non-quote-key-char>", # "<key-char> excluding \"\\\"\", \"'\", \"`\""
     "<dq-char>",            # "any UTF-8 code point except ..." (multi-line prose)
     "<sq-char>",            # "same exclusions as <dq-char>, but excluding ..."
     "<bt-char>",            # "same exclusions as <dq-char>, but excluding ..."
     "<key-char>",           # "any UTF-8 code point except ..." (long multi-paragraph prose)
-    "<scalar-body>",        # "(ws) any-chars-until-eol"
     "<inline-raw-scalar>",  # raw-marker bytes through an unescaped delimiter
     "<inline-scalar>",      # "sequence of bytes terminated by an unescaped ..."
     "<multiline-content-line>",  # "any line within an open <multiline>; ..."
@@ -630,8 +628,17 @@ def read_lines(path):
 
 
 def section_sort_key(number):
-    """Sort '3.7.1' before '10.2' numerically, not lexically."""
-    return tuple(int(part) for part in number.split("."))
+    """Sort decimal section components without converting them to integers.
+
+    Heading numbers are untrusted input. Comparing each normalized decimal
+    component by significant length and then digits preserves numeric order
+    while avoiding Python's bounded decimal-to-int conversion entirely.
+    """
+    components = []
+    for part in number.split("."):
+        significant = part.lstrip("0") or "0"
+        components.append((len(significant), significant))
+    return tuple(components)
 
 
 def heading_level(line):
@@ -815,14 +822,21 @@ def extract_grammar_lhs(lines, start, end, excluded):
     non-empty, so it only fires on sections that actually are grammar
     sections and never misfires on a section whose fence(s) hold, say, an
     ordinary example ktav document with no BNF-shaped lines at all."""
-    names = set()
+    return set(extract_grammar_lhs_occurrences(
+        lines, start, end, excluded))
+
+
+def extract_grammar_lhs_occurrences(lines, start, end, excluded):
+    """Return declaration occurrence counts before RHS maps can overwrite."""
+    counts = {}
     for idx in range(start, end):
         if not excluded[idx]:
             continue
         m = GRAMMAR_LHS_RE.match(lines[idx])
         if m:
-            names.add(m.group(1))
-    return names
+            lhs = m.group(1)
+            counts[lhs] = counts.get(lhs, 0) + 1
+    return counts
 
 
 def _rhs_fragment(text):
@@ -1226,6 +1240,8 @@ def check_translation(en_lines, en_sections, en_code_counts,
         en_lhs = extract_grammar_lhs(en_lines, en_start, en_end, en_excluded)
         if en_lhs:
             t_lhs = extract_grammar_lhs(t_lines, t_start, t_end, t_excluded)
+            t_lhs_occurrences = extract_grammar_lhs_occurrences(
+                t_lines, t_start, t_end, t_excluded)
             missing = sorted(en_lhs - t_lhs)
             extra = sorted(t_lhs - en_lhs)
             if missing or extra:
@@ -1240,23 +1256,30 @@ def check_translation(en_lines, en_sections, en_code_counts,
                     "grammar production LHS set mismatch (EN has %d "
                     "nonterminal(s), translation has %d; %s)"
                     % (len(en_lhs), len(t_lhs), "; ".join(detail)))
-            en_prod, _ = extract_grammar_productions(
-                en_lines, en_start, en_end, en_excluded)
-            t_prod, t_malformed = extract_grammar_productions(
-                t_lines, t_start, t_end, t_excluded)
-            for lhs in sorted(en_prod):
-                if en_prod[lhs] != t_prod.get(lhs):
+            for lhs in sorted(t_lhs_occurrences):
+                count = t_lhs_occurrences[lhs]
+                if count > 1:
                     problems.append(
-                        "grammar production RHS mismatch for %s "
-                        "(EN=%r, translation=%r)"
-                        % (lhs, en_prod[lhs], t_prod.get(lhs)))
-            for lhs, frag in t_malformed:
-                problems.append(
-                    "grammar production %s failed to parse as pure BNF "
-                    "in translation (fragment: %r) -- not on the "
-                    "semi-formal prose allowlist, so this is a corrupted "
-                    "terminal/nonterminal, not legitimate translated prose"
-                    % (lhs, frag))
+                        "duplicate grammar production LHS %s "
+                        "(%d declarations in translation)" % (lhs, count))
+            if not any(count > 1 for count in t_lhs_occurrences.values()):
+                en_prod, _ = extract_grammar_productions(
+                    en_lines, en_start, en_end, en_excluded)
+                t_prod, t_malformed = extract_grammar_productions(
+                    t_lines, t_start, t_end, t_excluded)
+                for lhs in sorted(en_prod):
+                    if en_prod[lhs] != t_prod.get(lhs):
+                        problems.append(
+                            "grammar production RHS mismatch for %s "
+                            "(EN=%r, translation=%r)"
+                            % (lhs, en_prod[lhs], t_prod.get(lhs)))
+                for lhs, frag in t_malformed:
+                    problems.append(
+                        "grammar production %s failed to parse as pure BNF "
+                        "in translation (fragment: %r) -- not on the "
+                        "semi-formal prose allowlist, so this is a corrupted "
+                        "terminal/nonterminal, not legitimate translated prose"
+                        % (lhs, frag))
             # Semi-formal-prose productions are NOT held to verbatim RHS
             # parity (their prose is legitimately translated), but the
             # real grammar terminals EMBEDDED in their prose are still
@@ -1485,6 +1508,26 @@ def main(argv):
         en_sections, en_fence_ranges, en_lines)
     en_numbers_sorted = sorted(en_sections, key=section_sort_key)
 
+    en_grammar_duplicates = []
+    for num in en_numbers_sorted:
+        start, end = en_sections[num]
+        if extract_grammar_lhs(en_lines, start, end, en_excluded):
+            lhs_occurrences = extract_grammar_lhs_occurrences(
+                en_lines, start, end, en_excluded)
+            for lhs in sorted(lhs_occurrences):
+                if lhs_occurrences[lhs] > 1:
+                    en_grammar_duplicates.append(
+                        (num, lhs, lhs_occurrences[lhs]))
+    if en_grammar_duplicates:
+        for num, lhs, count in en_grammar_duplicates:
+            print("[FAIL] %s Sec %s: duplicate grammar production LHS %s "
+                  "(%d declarations)" %
+                  (args.en_path, num, lhs, count))
+        print("error: EN file %s contains duplicate grammar production "
+              "declaration(s); EN is canonical, so translations are not "
+              "compared" % args.en_path, file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
     en_grammar_malformed = []
     for num in en_numbers_sorted:
         start, end = en_sections[num]

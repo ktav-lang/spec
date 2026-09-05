@@ -54,8 +54,10 @@ Notes on the notation:
   production when \`(ws)=0\` at EOF.
 - \`any-chars-until-line-end\` denotes zero or more source bytes and stops
   before (without consuming) \`<line-end>\`; the enclosing line production
-  consumes it. The zero-length case permits an empty \`<comment-body>\` and
-  an empty raw-marker \`<item-literal>\`.
+  consumes it. The zero-length case permits an empty \`<comment-body>\`.
+  \`<raw-line>\` is a line-bounded alias for the same zero-or-more form;
+  its zero-length case permits an empty raw-marker \`<item-literal>\` or
+  raw pair value.
 - At an inline-pair position, the parser MUST recognise the two-byte raw
   marker \`::\` before the one-byte plain separator \`:\`. Equivalently,
   \`<plain-inline-separator>\` is inapplicable when the next byte is \`:\`;
@@ -134,7 +136,9 @@ Notes on the notation:
 - \`any-chars-until-line-end\` обозначает ноль или более байтов исходного
   текста и останавливается перед \`<line-end>\`, не поглощая его; его поглощает
   окружающая продукция строки. Нулевая длина допускает пустой
-  \`<comment-body>\` и пустой raw-маркерный \`<item-literal>\`.
+  \`<comment-body>\`. \`<raw-line>\` — ограниченный строкой псевдоним той
+  же формы «ноль или более»; его нулевая длина допускает пустой
+  raw-маркерный \`<item-literal>\` или raw-значение пары.
 - В позиции inline-пары парсер MUST распознавать двухбайтовый raw-маркер
   \`::\` раньше однобайтового обычного разделителя \`:\`. Эквивалентно,
   \`<plain-inline-separator>\` неприменим, если следующий байт — \`:\`;
@@ -206,7 +210,8 @@ Notes on the notation:
   \`(ws)=0\` 且到达 EOF 时,\`<line>*\` 不会重复零宽的 \`blank\` 产生式。
 - \`any-chars-until-line-end\` 表示零个或多个源字节,在 \`<line-end>\`
   之前停止且不消耗它;由外层行产生式消耗该终止符。零长度情形允许
-  空 \`<comment-body>\` 和空 raw-marker \`<item-literal>\`。
+  空 \`<comment-body>\`。\`<raw-line>\` 是同一零个或多个形式的行界
+  别名;其零长度情形允许空 raw-marker \`<item-literal>\` 或空 raw pair 值。
 - 在 inline pair 位置,parser MUST 先识别两字节 raw 标记 \`::\`,再识别
   单字节普通分隔符 \`:\`。等价地,若下一个字节是 \`:\`,则
   \`<plain-inline-separator>\` 不适用;\`::\` 绝不能解析为普通 \`:\`

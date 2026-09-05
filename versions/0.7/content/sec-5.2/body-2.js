@@ -4,8 +4,10 @@ are matched **case-sensitively**. A body of \`True\`, \`NULL\`, \`False\`,
 \`0xZZ\`, \`0o9\`, etc., is a String.
 
 Scalar classification under this section is a deterministic function
-of the trimmed, escape-processed byte sequence — determinism only,
-not a license to re-run classification against escape-produced bytes
+of the trimmed, escape-processed byte sequence plus a retained
+contained-recognised-escape provenance flag — the flag is part of the
+classifier's input, not a license to re-run classification against
+escape-produced bytes
 as if they were raw, unescaped source: § 3.7's provenance rule (an
 escape's output is never re-examined as structural) applies here too,
 so a body like \`\\{value\\}\` classifies by the literal characters
@@ -49,7 +51,9 @@ boundary.
 
 Классификация скаляра в этой секции — детерминированная функция
 обрезанной, прошедшей escape-обработку байтовой последовательности
-— это только детерминизм, а не разрешение заново прогонять
+плюс сохранённого флага происхождения, отмечающего наличие
+распознанной escape-последовательности в теле; этот флаг входит во вход
+классификатора, а не разрешает заново прогонять
 классификацию против байтов, произведённых escape, как если бы
 они были сырым, неэкранированным исходным текстом: правило
 происхождения из § 3.7 (результат escape никогда не пересматривается
@@ -91,8 +95,9 @@ Value kind для одного и того же тела. Это общее пр
 как реально зондирующие такую границу.
 
 `,
-  zh: `本节的标量分类是经 trim、经 escape 处理后字节序列的确定性函数 ——
-这仅指确定性,并不允许把 escape 产生的字节当作未经转义的原始
+  zh: `本节的标量分类是经 trim、经 escape 处理后的字节序列加上保留的
+「体内含有已识别 escape」来源标志的确定性函数 —— 该标志是分类器
+的输入,并不允许把 escape 产生的字节当作未经转义的原始
 源文本重新送入分类:§ 3.7 的来源规则(escape 的结果永远不会被
 重新视为结构性内容)在此同样适用,因此形如 \`\\{value\\}\` 的体
 按字面字符 \`{value}\` 依规则 15(String)分类,而不是在解码出的

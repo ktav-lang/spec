@@ -395,7 +395,7 @@ by decoded escapes.
                     § 5.4), exactly as § 6.1 states.
 
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; default, scalar dispatched per § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; literal String
+                  | <key> "::" <sep-end> <raw-line> <line-end>       ; literal String, no dispatch
 
 <key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
 <raw-segment>        ::= (ws) <segment> (ws)
@@ -543,6 +543,7 @@ by decoded escapes.
                                        of bare-with-escape, same result
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
+<raw-line>      ::= any-chars-until-line-end       ; zero or more bytes before line end
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
@@ -560,7 +561,7 @@ by decoded escapes.
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
-<item-literal>  ::= (ws) "::" <sep-end> any-chars-until-line-end <line-end> ; raw string item
+<item-literal>  ::= (ws) "::" <sep-end> <raw-line> <line-end> ; raw string item
 <item-inline>   ::= (ws) "{" (ws) <inline-pair-list> (ws) "}" (ws) <line-end>
                   | (ws) "[" (ws) <inline-item-list> (ws) "]" (ws) <line-end>
                   | (ws) "{}" (ws) <line-end>
@@ -631,8 +632,10 @@ Notes on the notation:
   production when `(ws)=0` at EOF.
 - `any-chars-until-line-end` denotes zero or more source bytes and stops
   before (without consuming) `<line-end>`; the enclosing line production
-  consumes it. The zero-length case permits an empty `<comment-body>` and
-  an empty raw-marker `<item-literal>`.
+  consumes it. The zero-length case permits an empty `<comment-body>`.
+  `<raw-line>` is a line-bounded alias for the same zero-or-more form;
+  its zero-length case permits an empty raw-marker `<item-literal>` or
+  raw pair value.
 - At an inline-pair position, the parser MUST recognise the two-byte raw
   marker `::` before the one-byte plain separator `:`. Equivalently,
   `<plain-inline-separator>` is inapplicable when the next byte is `:`;
@@ -680,13 +683,14 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   **declared Float domain**. That declaration MUST include the finite
   values admitted as Ktav Floats, the decimal-conversion and rounding
   semantics used to parse and render them, and a deterministic conversion
-  policy. Every finite Float admitted to the Ktav Value model MUST have
-  at least one finite decimal candidate `(s, D, k)` whose exact decimal
-  value reparses under those declared semantics to exactly that Float
-  (§ 5.9.8). A wider host representation MAY contain values with no such
-  candidate (for example, exact-rational `1/3`), but such a value is
-  outside the declared Ktav Float domain and MUST NOT be admitted as a
-  Ktav Float. The implementation MUST support at least the range and
+  policy. Every non-zero finite Float admitted to the Ktav Value model
+  MUST have at least one finite decimal candidate `(s, D, k)` whose exact
+  decimal value reparses under those declared semantics to exactly that
+  Float (§ 5.9.8). Positive and negative zero are admitted separately by
+  the zero rule in § 5.9.8. A wider host representation MAY contain non-zero
+  finite values with no such candidate (for example, exact-rational `1/3`),
+  but such a value is outside the declared Ktav Float domain and MUST NOT be admitted
+  as a Ktav Float. The implementation MUST support at least the range and
   precision of IEEE 754 binary64 and MAY support a wider representation
   (e.g. arbitrary-precision decimal). For the minimum binary64 domain,
   converting a decimal float literal (§ 3.6) MUST follow IEEE 754's
@@ -867,6 +871,13 @@ before deciding between rules 8 and 9.
 An unterminated quoted key remains quote-opaque and is diagnosed per
 § 6.16 as `UnterminatedInlineCompound`, even if an otherwise bad
 escape occurs inside that unclosed quoted segment.
+The scan is also scalar-aware: dispatch is decided once from the first
+non-whitespace byte. If that byte is neither `{` nor `[`, later
+`{`, `}`, `[`, and `]` bytes follow the inline-scalar delimiter
+rules of § 5.8.5 rather than changing nested compound depth. A raw-marker
+body is opaque to this dispatch: after `::`, § 5.8's
+`<inline-raw-scalar>` treats those bytes as literal data and never enters
+this compound scan.
 
 1. If the body is exactly `{` → open a new Object scope (multi-line).
 2. If the body is exactly `[` → open a new Array scope (multi-line).
@@ -909,8 +920,10 @@ escape occurs inside that unclosed quoted segment.
     its numeric value is finite in the implementation's declared
     Float domain (§ 5): Float carrying the numeric value parsed
     from the body. The declared-domain check includes § 5's requirement
-    that every admitted finite Float have a finite decimal candidate
-    that round-trips exactly under the declared conversion semantics.
+    that every admitted non-zero finite Float have a finite decimal
+    candidate that round-trips exactly under the declared conversion
+    semantics; positive and negative zero are admitted separately by the
+    zero rule of § 5.9.8.
     The internal representation is implementation-defined (see § 5
     description of Float); the canonical textual form is specified in
     § 5.9.8. A literal whose
@@ -932,8 +945,10 @@ are matched **case-sensitively**. A body of `True`, `NULL`, `False`,
 `0xZZ`, `0o9`, etc., is a String.
 
 Scalar classification under this section is a deterministic function
-of the trimmed, escape-processed byte sequence — determinism only,
-not a license to re-run classification against escape-produced bytes
+of the trimmed, escape-processed byte sequence plus a retained
+contained-recognised-escape provenance flag — the flag is part of the
+classifier's input, not a license to re-run classification against
+escape-produced bytes
 as if they were raw, unescaped source: § 3.7's provenance rule (an
 escape's output is never re-examined as structural) applies here too,
 so a body like `\{value\}` classifies by the literal characters
@@ -1642,12 +1657,13 @@ kind:
   § 6.5).
 - **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity — and belongs to
-  the declared Ktav Float domain of § 5. Consequently it has at least
-  one finite decimal candidate that round-trips exactly under the
-  domain's declared conversion semantics (§ 5.9.8). A wider host
-  representation may contain a finite exact value with no such candidate
-  (for example, exact-rational `1/3`); that value is outside the Ktav
-  Float domain and is not an additional writer error case. No literal
+  the declared Ktav Float domain of § 5. Consequently, if V is non-zero,
+  it has at least one finite decimal candidate that round-trips exactly
+  under the domain's declared conversion semantics (§ 5.9.8). Positive
+  and negative zero are admitted separately by § 5.9.8's zero rule. A
+  wider host representation may contain a non-zero finite exact value with no such
+  candidate (for example, exact-rational `1/3`); that value is outside the
+  Ktav Float domain and is not an additional writer error case. No literal
   grammar of § 3.6 produces a non-finite Float (an overflowing literal
   falls through to String at § 5.2 rule 14), and § 5.9.8 defines no
   canonical textual form for one.
@@ -2078,12 +2094,13 @@ requires a segment trimming to `))`.
   values.
 - **Float:** the declared Float domain includes the decimal-conversion
   and rounding semantics used by parsing and writing, and its conversion
-  policy MUST be deterministic. Every finite Float admitted to the Ktav
-  Value model MUST have at least one finite decimal candidate `(s, D, k)`
-  that round-trips exactly under those semantics. A host representation's
-  finite value without such a candidate (for example exact-rational
-  `1/3`) is outside the declared Ktav Float domain, rather than an
-  additional writer error case. For the minimum binary64 domain, the
+  policy MUST be deterministic. Every non-zero finite Float admitted to
+  the Ktav Value model MUST have at least one finite decimal candidate
+  `(s, D, k)` that round-trips exactly under those semantics. Positive
+  and negative zero are admitted separately by the zero rule below. A
+  host representation's non-zero finite value without such a candidate
+  (for example exact-rational `1/3`) is outside the declared Ktav Float domain,
+  rather than an additional writer error case. For the minimum binary64 domain, the
   declared rounding semantics MUST be IEEE 754 `roundTiesToEven`. The chosen textual form matches one of the two
   alternatives of § 3.6:
   - `sign? digits "." digits ("e" sign? digits)?`
@@ -3569,28 +3586,37 @@ The Rust reference implementation already trimmed the full
 25-code-point set at key-segment edges in every 0.6.x release. For Rust,
 and for implementations whose 0.6.x behaviour already matched that
 trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
-that rely on any of the four breaking forms below, previously
+that rely on any of the five breaking forms below, previously
 round-tripping documents retain their meaning under 0.7.0.
 
-An implementation that followed old § 4 literally and trimmed only its
-specified ASCII whitespace has an additional **document-behaviour**
-change. A document whose key segment has leading or trailing § 3.3
-whitespace that the old rule did not trim can now produce a different
-key/path or error under 0.7.0. Such documents require migration review;
-this is not merely an implementation-code update.
+An implementation that followed the old § 3.3 / § 4 wording literally and
+trimmed only its specified ASCII whitespace has an additional
+**document-behaviour** change. A document that relies on one of the other
+members of the 25-code-point set at structural, blank-line, comment, or
+root-dispatch positions; around separators; at scalar or key edges; or on
+content lines in a stripped `(…)` block can parse differently or produce a
+different value or error under 0.7.0. Such documents require migration review
+across all of those sites, not merely an implementation-code update.
 
-Four breaking changes apply to every implementation, Rust included.
+Five breaking changes apply to every implementation, Rust included.
 The value/key-edge trimming clarification above remains separately
 scoped: it changes documents only for implementations that did not
 already implement the 0.6.x Rust-compatible trim.
 
-1. **`(…)` multi-line strings no longer preserve trailing whitespace
+1. **A leading byte-order mark (U+FEFF) is now stripped from the document.**
+   A 0.7.0-conforming parser MUST skip exactly one U+FEFF when it is the
+   document's first code point, and a canonical writer MUST NOT emit one.
+   In 0.6.x this behavior was unspecified, so a document that relied on a
+   leading U+FEFF as content needs migration: move it away from the document
+   start or revise the expected value. A U+FEFF anywhere else remains ordinary
+   content.
+2. **`(…)` multi-line strings no longer preserve trailing whitespace
    (§ 3.3 — any of the 25 code points, not just space/tab) on each
    content line.** If a document relies on trailing whitespace inside
    a `(…)` block being preserved verbatim, switch that block to
    `((…))`, which keeps both edges byte-for-byte in both 0.6.x and
    0.7.0.
-2. **A key segment's leading, unescaped `"`, `'`, or `` ` `` now opens
+3. **A key segment's leading, unescaped `"`, `'`, or `` ` `` now opens
    a quoted segment (§ 5.3.3, § 10.7) instead of being ordinary key
    content.** In 0.6.x, an Object pair whose key began with one of
    these three characters kept that character as literal key text —
@@ -3613,12 +3639,13 @@ already implement the 0.6.x Rust-compatible trim.
 Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
 
-3. **A recognised escape in an inline scalar now forces String before
+4. **A recognised escape in an inline scalar now forces String before
    keyword or numeric classification (§ 3.7, § 5.2).** In 0.6.x, a
    body such as `1\.0` could decode and then classify as Float; in
    0.7.0 it is String. This applies to every recognised escape, including
-   `\.` and `\:`, even when the decoded byte has no structural role.
-4. **A float literal that is non-finite in the declared Float domain now
+   `\.`, `\:`, and the three quote escapes `\"`, `\'`, and
+   `` \` ``, even when the decoded byte has no structural role.
+5. **A float literal that is non-finite in the declared Float domain now
    falls back to String (§ 5.2 rule 14).** In 0.6.x, a literal such as
    `1e9999` could become a non-finite Float on a binary64 backend; in
    0.7.0 it is String. Finite underflow to signed zero remains Float.

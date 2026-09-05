@@ -28,12 +28,13 @@ kind:
   § 6.5).
 - **Array:** every item of V is node-representable.
 - **Float:** V is finite — neither NaN nor ±Infinity — and belongs to
-  the declared Ktav Float domain of § 5. Consequently it has at least
-  one finite decimal candidate that round-trips exactly under the
-  domain's declared conversion semantics (§ 5.9.8). A wider host
-  representation may contain a finite exact value with no such candidate
-  (for example, exact-rational \`1/3\`); that value is outside the Ktav
-  Float domain and is not an additional writer error case. No literal
+  the declared Ktav Float domain of § 5. Consequently, if V is non-zero,
+  it has at least one finite decimal candidate that round-trips exactly
+  under the domain's declared conversion semantics (§ 5.9.8). Positive
+  and negative zero are admitted separately by § 5.9.8's zero rule. A
+  wider host representation may contain a non-zero finite exact value with no such
+  candidate (for example, exact-rational \`1/3\`); that value is outside the
+  Ktav Float domain and is not an additional writer error case. No literal
   grammar of § 3.6 produces a non-finite Float (an overflowing literal
   falls through to String at § 5.2 rule 14), and § 5.9.8 defines no
   canonical textual form for one.
@@ -102,13 +103,14 @@ with exactly these three fields and no others:
   ошибка \`EmptyKey\`, § 6.5).
 - **Array:** каждый элемент V узлово-представим.
 - **Float:** V конечен — ни NaN, ни ±Infinity — и принадлежит
-  заявленному в § 5 домену Ktav Float. Поэтому он имеет хотя бы один
-  конечный десятичный кандидат, точно проходящий round-trip с заявленной
-  семантикой преобразования домена (§ 5.9.8). Более широкое представление
-  хоста может содержать конечное точное значение без такого кандидата
-  (например, точную рациональ \`1/3\`); такое значение находится вне
-  домена Ktav Float и не образует дополнительного случая ошибки writer.
-  Ни одна грамматика литералов § 3.6 не порождает неконечный Float
+  заявленному в § 5 домену Ktav Float. Поэтому для ненулевого V он имеет
+  хотя бы один конечный десятичный кандидат, точно проходящий round-trip
+  с заявленной семантикой преобразования домена (§ 5.9.8). Положительный
+  и отрицательный ноль допускаются отдельно по правилу нуля § 5.9.8.
+  Более широкое представление хоста может содержать ненулевое конечное точное
+  значение без такого кандидата (например, точную рациональ \`1/3\`); такое
+  значение находится вне домена Ktav Float и не образует дополнительного
+  случая ошибки writer. Ни одна грамматика литералов § 3.6 не порождает неконечный Float
   (переполняющий литерал проваливается в String в § 5.2, правило 14), и
   § 5.9.8 не определяет канонической текстовой формы для него.
 - **String:** V узлово-представимо по правилам § 5.9.7 (нет байта
@@ -171,9 +173,10 @@ with exactly these three fields and no others:
   \`EmptyKey\` 错误,§ 6.5)。
 - **Array:** V 的每一项都节点可表示。
 - **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity —— 且属于
-  § 5 声明的 Ktav Float 域。因此它至少有一个有限十进制候选,按该域
-  声明的转换语义精确 round-trip(§ 5.9.8)。更宽的主机表示可能含有
-  没有这种候选的有限精确值(例如精确有理数 \`1/3\`);该值在 Ktav
+  § 5 声明的 Ktav Float 域。因此对于非零 V,它至少有一个按该域
+  声明的转换语义精确 round-trip 的有限十进制候选(§ 5.9.8)。正零
+  与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示可能含有
+  没有这种候选的非零有限精确值(例如精确有理数 \`1/3\`);该值在 Ktav
   Float 域之外,不构成额外的 writer 错误情形。§ 3.6 的任何字面量
   语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14 回退为
   String),且 § 5.9.8 未为其定义规范文本形式。

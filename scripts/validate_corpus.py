@@ -38,7 +38,8 @@ Usage:
 Exit codes:
     0  all checks passed (or were legitimately skipped)
     1  one or more checks failed
-    2  usage error (wrong argument count, tests_dir missing or not a directory)
+    2  usage error (wrong argument count, tests_dir missing or not a regular
+       directory)
 """
 
 import argparse
@@ -47,6 +48,7 @@ import json
 import math
 import os
 import re
+import stat
 import sys
 from decimal import Decimal, InvalidOperation
 
@@ -132,11 +134,30 @@ I64_MIN = -(1 << 63)
 I64_MAX = (1 << 63) - 1
 JSON_PARSE_FAILED = object()
 JSON_RECURSION_ERROR = "maximum recursion depth exceeded while parsing JSON"
+SENTINEL_POLICIES = frozenset({"allow", "ordinary"})
 
 
 def rel(path, tests_dir):
     """Path relative to tests_dir with forward slashes, for deterministic output."""
     return os.path.relpath(path, tests_dir).replace(os.sep, "/")
+
+
+def _is_regular_directory(path):
+    """Use lstat semantics so the traversal root cannot be redirected."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        return False
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None and isjunction(path):
+        return False
+    if os.name == "nt":
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if getattr(info, "st_file_attributes", 0) & reparse:
+            return False
+    return stat.S_ISDIR(info.st_mode)
 
 
 class Results:
@@ -554,9 +575,11 @@ def _oracle_path(path, key):
 def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
     """Validate a recursive Value oracle and collect writer-failure witnesses.
 
-    sentinel_policy is "allow" for programmatic-only fixtures and "forbid"
+    sentinel_policy is "allow" for programmatic-only fixtures and "ordinary"
     for parser-produced fixtures.
     """
+    if sentinel_policy not in SENTINEL_POLICIES:
+        raise ValueError("sentinel_policy must be 'allow' or 'ordinary'")
     errors = []
     witnesses = {reason: False for reason in UNREPRESENTABLE_REASONS}
 
@@ -567,13 +590,7 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                 if surrogate is not None:
                     errors.append("%s: Object key contains lone surrogate U+%04X"
                                   % (path, surrogate))
-            if FLOAT_SENTINEL_KEY in node and sentinel_policy != "ordinary":
-                if sentinel_policy == "forbid":
-                    errors.append("%s: '$float' sentinel is not allowed in a "
-                                  "parser-produced Value oracle" % path)
-                    for key, child in node.items():
-                        walk(child, _oracle_path(path, key))
-                    return
+            if FLOAT_SENTINEL_KEY in node and sentinel_policy == "allow":
                 if (set(node) != {FLOAT_SENTINEL_KEY}
                         or not isinstance(node[FLOAT_SENTINEL_KEY], str)
                         or node[FLOAT_SENTINEL_KEY] not in FLOAT_SENTINEL_VALUES):
@@ -604,7 +621,7 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
         elif isinstance(node, float) and not math.isfinite(node):
             errors.append("%s: ordinary JSON number must be finite" % path)
         elif (isinstance(node, int) and not isinstance(node, bool)
-              and sentinel_policy in ("ordinary", "forbid")
+              and sentinel_policy == "ordinary"
               and not I64_MIN <= node <= I64_MAX):
             errors.append("%s: parser-produced JSON Integer %d is outside "
                           "the mandatory i64 range [%d, %d]"
@@ -895,7 +912,10 @@ def _source_literals_for_pointer(text, tokens):
     accepted; inline, ambiguous, or context-dependent forms are rejected
     rather than guessed.
     """
-    if not tokens:
+    if (not tokens or any(
+            not token or any(char in token for char in
+                             ("\\", "'", '"', "`", ":", "."))
+            for token in tokens)):
         return []
     target = ".".join(tokens)
     matches = []
@@ -903,14 +923,37 @@ def _source_literals_for_pointer(text, tokens):
         stripped = _strip_ktav_whitespace(line)
         if not stripped or stripped.startswith("#"):
             continue
-        match = re.match(r"^(.+?)(::|:)(.*)$", stripped)
-        if match is None:
+        separator_at = None
+        separator = None
+        quote = None
+        escaped = False
+        for index, char in enumerate(stripped):
+            if escaped:
+                escaped = False
+                continue
+            if char == "\\":
+                escaped = True
+                continue
+            if quote is not None:
+                if char == quote:
+                    quote = None
+                continue
+            if char in "'\"`":
+                quote = char
+                continue
+            if char == ":":
+                separator_at = index
+                separator = "::" if stripped[index:index + 2] == "::" else ":"
+                break
+        if separator_at is None or quote is not None or escaped:
             continue
-        key, separator, remainder = match.groups()
+        remainder = stripped[separator_at + len(separator):]
+        key = stripped[:separator_at]
         if not remainder or remainder[0] not in KTAV_WHITESPACE:
             continue
         literal = _strip_ktav_whitespace(remainder)
-        if any(char in key for char in "'\"`"):
+        if (not key or any(char in key for char in "\\'\"`")
+                or any(char in KTAV_WHITESPACE for char in key)):
             continue
         if key == target:
             matches.append((key, separator, literal))
@@ -946,12 +989,16 @@ def _parse_integer_literal(literal):
         base = 16
     else:
         base = 10
-    try:
-        return sign * int(cleaned, base)
-    except ValueError:
-        # Python 3.11+ limits decimal string-to-int conversions. A literal
-        # that trips that limit is necessarily outside the i64 boundary.
-        return I64_MAX + 1 if sign > 0 else I64_MIN - 1
+    if base == 10:
+        significant = cleaned.lstrip("0")
+        if not significant:
+            return 0
+        # Avoid Python's decimal digit limit while retaining exact boundary
+        # handling for values that can fit in a small native conversion.
+        if len(significant) > len(str(I64_MAX)):
+            return I64_MAX + 1 if sign > 0 else I64_MIN - 1
+        return sign * int(significant, 10)
+    return sign * int(cleaned, base)
 
 
 def _parse_float_literal(literal):
@@ -1382,8 +1429,9 @@ def main(argv):
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
-    if not os.path.isdir(tests_dir):
-        print("error: tests_dir does not exist or is not a directory: %s"
+    if not _is_regular_directory(tests_dir):
+        print("error: tests_dir does not exist, is not a regular directory, "
+              "or is a symlink/junction: %s"
               % tests_dir, file=sys.stderr)
         return 2
 

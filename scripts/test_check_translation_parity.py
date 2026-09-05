@@ -14,6 +14,7 @@ Run:  python scripts/test_check_translation_parity.py
 import contextlib
 import io
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -154,7 +155,7 @@ ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
 
     # -- embedded grammar terminals in semi-formal prose productions ---------
     #
-    # The 11 SEMI_FORMAL_PROSE_LHS productions mix real language-
+    # The 9 SEMI_FORMAL_PROSE_LHS productions mix real language-
     # independent syntax into translatable prose. Before this check was
     # added, a translation could silently corrupt an embedded normative
     # terminal (e.g. swap "." for ":" inside <unescaped-dot>'s prose RHS)
@@ -169,7 +170,7 @@ ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
 SEMI_GRAMMAR_LINES_EN = [
     "<document>      ::= <line>*",
     "<line>          ::= <comment> | <blank> | <header-line> | <pair-line>",
-    '<comment>       ::= (ws) "##" (any-chars until line-end)',
+    '<comment>       ::= (ws) "##" any-chars-until-line-end',
     "<blank>         ::= (ws)",
     r'<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"',
     r'<non-quote-key-char> ::= <key-char> excluding "\"", "\'", "`"',
@@ -186,7 +187,7 @@ SEMI_GRAMMAR_LINES_EN = [
     r'                    "\\" (escape lead), and "\"" (the delimiter itself)',
     "<sq-char>       ::= same exclusions as <dq-char>, but excluding \"'\"",
     '                    (its own delimiter) instead of "\\""',
-    "<scalar-body>   ::= (ws) any-chars-until-eol",
+    "<scalar-body>   ::= (ws) any-chars-until-line-end",
     "                    ; trimmed; interpreted per the value rules",
     '<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)',
     '                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)',
@@ -218,6 +219,63 @@ def semi_doc(fence_lines):
     )
 
 
+BODY_SOURCE_RE = re.compile(
+    r'\Aexport default \{\n'
+    r'  en: `(?P<en>(?:\\.|[^`])*)`,\n'
+    r'  ru: `(?P<ru>(?:\\.|[^`])*)`,\n'
+    r'  zh: `(?P<zh>(?:\\.|[^`])*)`,\n'
+    r'\};\n\Z',
+    re.DOTALL,
+)
+
+
+def decode_body_template(text, path, lang):
+    """Decode the three escapes permitted in content body templates."""
+    decoded = []
+    idx = 0
+    while idx < len(text):
+        if text[idx] != "\\":
+            decoded.append(text[idx])
+            idx += 1
+            continue
+        if text.startswith("\\\\", idx):
+            decoded.append("\\")
+            idx += 2
+        elif text.startswith("\\`", idx):
+            decoded.append("`")
+            idx += 2
+        elif text.startswith("\\${", idx):
+            decoded.append("${")
+            idx += 3
+        else:
+            raise AssertionError(
+                "%s %s contains an unsupported template escape at offset %d"
+                % (path, lang, idx))
+    return "".join(decoded)
+
+
+def read_repository_sec4_bodies():
+    """Read and decode every checked-in Sec 4 body part per language."""
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    body_dir = os.path.join(
+        repo_root, "versions", "0.7", "content", "sec-4")
+    body_names = sorted(
+        (name for name in os.listdir(body_dir)
+         if re.fullmatch(r"body-\d+\.js", name)),
+        key=lambda name: (len(name[5:-3]), name[5:-3]))
+    result = {lang: [] for lang in ("en", "ru", "zh")}
+    for name in body_names:
+        body_path = os.path.join(body_dir, name)
+        with open(body_path, encoding="utf-8") as body_file:
+            match = BODY_SOURCE_RE.fullmatch(body_file.read())
+        if match is None:
+            raise AssertionError("unexpected content body shape: %s" % body_path)
+        for lang in result:
+            result[lang].append(
+                decode_body_template(match.group(lang), body_path, lang))
+    return {lang: "".join(parts) for lang, parts in result.items()}
+
+
 class TranslationParityTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.mkdtemp(prefix="ktav-parity-test-")
@@ -242,6 +300,19 @@ class TranslationParityTestCase(unittest.TestCase):
         with contextlib.redirect_stdout(out):
             code = ctp.main(list(args))
         return code, out.getvalue()
+
+    def test_section_sort_key_handles_4301_digit_numbers_without_traceback(self):
+        huge = "9" * 4301
+        en = self.write(
+            "spec.md",
+            EN_DOC + "\n## %s Huge section\n\nA MUST remains here.\n" % huge)
+        ru = self.write(
+            "spec.ru.md",
+            RU_DOC_OK + "\n## %s Огромный раздел\n\nЗдесь остаётся MUST.\n" % huge)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+        self.assertNotIn("Traceback", out)
 
     def assert_no_fail_lines_for(self, out, *paths):
         for path in paths:
@@ -652,6 +723,32 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("grammar production LHS set mismatch", out)
         self.assertIn("<quoted-segment>", out)
 
+    def test_duplicate_grammar_lhs_replacing_ignored_continuation_fails(self):
+        # The prose continuation is intentionally ignored by the pure-BNF
+        # production map. Replacing it with a second pure declaration must
+        # still fail before that map can overwrite the first RHS.
+        duplicate = list(SEMI_GRAMMAR_LINES_EN)
+        duplicate[duplicate.index(
+            "                    ASCII control bytes < 0x20 other than the whitespace"
+        )] = "<document>      ::= <line>*"
+        en = self.write("spec.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", semi_doc(duplicate))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("duplicate grammar production LHS <document>", out)
+        self.assertIn("2 declarations in translation", out)
+
+    def test_duplicate_grammar_lhs_in_en_is_fatal_before_translation_compare(self):
+        duplicate = list(SEMI_GRAMMAR_LINES_EN)
+        duplicate.append("<document>      ::= <line>*")
+        en = self.write("spec.md", semi_doc(duplicate))
+        ru = self.write("spec.ru.md", semi_doc(SEMI_GRAMMAR_LINES_EN))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("duplicate grammar production LHS <document>", out)
+        self.assertNotIn("spec.ru.md", out)
+
     def test_grammar_production_terminal_swap_fails_despite_matching_lhs(self):
         # Reproduces round-15's adversarial case: a translation swaps one
         # terminal inside an existing production (":" -> ";" in
@@ -767,7 +864,11 @@ class TranslationParityTestCase(unittest.TestCase):
                 self.assertIn(
                     "failed to parse as pure BNF in translation", out)
 
-    def test_real_spec_line_end_grammar_signature_matches_all_languages(self):
+    # ---- repository content-pin integration tests ------------------------
+    # These deliberately open the checked-in generated spec/content files.
+    # They are not synthetic parity fixtures and must remain strict pins.
+
+    def test_repository_content_pin_line_end_grammar_signature_matches_all_languages(self):
         # The generated files must expose the same new atom signature; this
         # focused check does not run the full parity command.
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -822,30 +923,45 @@ class TranslationParityTestCase(unittest.TestCase):
             "grammar production RHS mismatch for <item-literal>", out)
         self.assertNotIn("failed to parse as pure BNF", out)
 
-    def test_source_item_literal_has_bounded_zero_or_more_body(self):
-        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        body_dir = os.path.join(
-            repo_root, "versions", "0.7", "content", "sec-4")
-        body_names = sorted(
-            (name for name in os.listdir(body_dir)
-             if name.startswith("body-") and name.endswith(".js")),
-            key=lambda name: int(name[5:-3]))
-        source_parts = []
-        for name in body_names:
-            with open(os.path.join(body_dir, name), encoding="utf-8") as f:
-                source_parts.append(f.read())
-        source = "".join(source_parts)
-
+    def test_repository_content_pin_source_item_literal_uses_bounded_raw_line(self):
         production = (
             '<item-literal>  ::= (ws) "::" <sep-end> '
-            'any-chars-until-line-end <line-end>')
-        self.assertEqual(source.count(production), 3)
-        self.assertNotIn("<any-chars>", source)
-        self.assertIn("denotes zero or more source bytes", source)
-        self.assertIn("обозначает ноль или более байтов исходного", source)
-        self.assertIn("表示零个或多个源字节", source)
+            '<raw-line> <line-end>')
+        for lang, source in read_repository_sec4_bodies().items():
+            with self.subTest(lang=lang):
+                self.assertEqual(source.count(production), 1)
+                self.assertNotIn(
+                    '<item-literal>  ::= (ws) "::" <sep-end> '
+                    'any-chars-until-line-end <line-end>', source)
 
-    def test_source_ws_is_line_bounded_in_all_languages(self):
+    def test_repository_content_pin_source_raw_pair_line_uses_raw_line_only(self):
+        expected_pair = '| <key> "::" <sep-end> <raw-line> <line-end>'
+        expected_raw_line = '<raw-line> ::= any-chars-until-line-end'
+        for lang, source in read_repository_sec4_bodies().items():
+            with self.subTest(lang=lang):
+                raw_pair_lines = [
+                    line for line in source.splitlines()
+                    if re.match(r'^\s*\|\s*<key>\s+"::"\s+<sep-end>', line)
+                ]
+                self.assertEqual(len(raw_pair_lines), 1, raw_pair_lines)
+                pair_syntax = raw_pair_lines[0].split(';', 1)[0]
+                self.assertEqual(' '.join(pair_syntax.split()), expected_pair)
+
+                raw_line_declarations = [
+                    line for line in source.splitlines()
+                    if re.match(r'^\s*<raw-line>\s*::=', line)
+                ]
+                self.assertEqual(
+                    len(raw_line_declarations), 1, raw_line_declarations)
+                raw_line_syntax = raw_line_declarations[0].split(';', 1)[0]
+                self.assertEqual(
+                    ' '.join(raw_line_syntax.split()), expected_raw_line)
+
+                guarded_syntax = pair_syntax + "\n" + raw_line_syntax
+                self.assertNotIn('<value-part-opt>', guarded_syntax)
+                self.assertNotIn('<value-start>', guarded_syntax)
+
+    def test_repository_content_pin_source_ws_is_line_bounded_in_all_languages(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         body_path = os.path.join(
             repo_root, "versions", "0.7", "content", "sec-4", "body-1.js")
@@ -975,7 +1091,7 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn(
             "grammar production RHS mismatch for <escapable-byte>", out)
 
-    def test_real_spec_grammar_has_no_malformed_productions(self):
+    def test_repository_content_pin_grammar_has_no_malformed_productions(self):
         # Protective test over the ACTUAL versions/0.7/spec.md: fixes the
         # expected set of productions this checker holds to exact BNF
         # parity, and asserts zero malformed productions right now. If
@@ -993,13 +1109,15 @@ class TranslationParityTestCase(unittest.TestCase):
         productions, malformed = ctp.extract_grammar_productions(
             lines, start, end, excluded)
         self.assertEqual(malformed, [])
-        self.assertEqual(len(lhs_set), 44)
-        self.assertEqual(len(productions), 35)
-        newly_pure = {"<comment>", "<scalar-body>",
-                      "<plain-inline-separator>"}
+        self.assertEqual(len(lhs_set), 45)
+        self.assertEqual(len(productions), 36)
         self.assertEqual(
             lhs_set - set(productions),
-            ctp.SEMI_FORMAL_PROSE_LHS - newly_pure)
+            ctp.SEMI_FORMAL_PROSE_LHS)
+        self.assertIn("<raw-line>", lhs_set)
+        self.assertEqual(
+            productions["<raw-line>"], ["any-chars-until-line-end"])
+        self.assertNotIn("<raw-line>", ctp.SEMI_FORMAL_PROSE_LHS)
         for lhs in ("<line-end>", "<comment-body>", "<raw-segment>"):
             self.assertIn(lhs, lhs_set)
 
@@ -1158,11 +1276,11 @@ class TranslationParityTestCase(unittest.TestCase):
             self.assertIn(
                 "grammar production RHS mismatch for %s" % lhs, out)
 
-    def test_semi_formal_comment_terminal_swap_fails(self):
+    def test_pure_comment_terminal_swap_fails(self):
         mutated = self._replace_semi_line(
             SEMI_GRAMMAR_LINES_EN, "<comment>",
-            '<comment>       ::= (ws) "//" (any-chars until line-end)')
-        self.run_semi_mutation(mutated, "<comment>")
+            '<comment>       ::= (ws) "//" any-chars-until-line-end')
+        self.run_grammar_triplet_mutation(mutated, "<comment>")
 
     def test_semi_formal_unescaped_dot_terminal_swap_fails(self):
         mutated = self._replace_semi_line(
@@ -1621,7 +1739,7 @@ class TranslationParityTestCase(unittest.TestCase):
 
     # -- protective real-spec test for the embedded-terminal check ----------
 
-    def test_real_spec_semi_formal_terminal_multisets_match_translations(self):
+    def test_repository_content_pin_semi_formal_terminal_multisets_match_translations(self):
         # Self-verifying pin over the ACTUAL shipped files: for every
         # SEMI_FORMAL_PROSE_LHS production in § 4, the significant
         # embedded-terminal multiset in RU and ZH must exactly equal EN's.
@@ -1651,7 +1769,6 @@ class TranslationParityTestCase(unittest.TestCase):
             self.assertEqual(ru[lhs], en[lhs], "RU drift in %s" % lhs)
             self.assertEqual(zh[lhs], en[lhs], "ZH drift in %s" % lhs)
         # Named terminals present in EN's lists.
-        self.assertIn('"##"', en["<comment>"])
         self.assertIn('"."', en["<unescaped-dot>"])
         self.assertIn('"\\\\"', en["<unescaped-dot>"])
         self.assertIn("<key-char>", en["<non-quote-key-char>"])
@@ -1670,7 +1787,7 @@ class TranslationParityTestCase(unittest.TestCase):
         for t in ('")"', '"))"', "<multiline>"):
             self.assertIn(t, en["<multiline-content-line>"])
 
-    def test_real_spec_semi_formal_compound_atom_pairs_match_translations(self):
+    def test_repository_content_pin_semi_formal_compound_atom_pairs_match_translations(self):
         # Compound companion to the test above, over the ACTUAL shipped
         # files: for every SEMI_FORMAL_PROSE_LHS production in § 4, the
         # multiset of (control-byte name, hex code point) pairs in RU and
@@ -1700,7 +1817,7 @@ class TranslationParityTestCase(unittest.TestCase):
                      ("FF", "0x0C"), ("DEL", "0x7F")]:
             self.assertIn(pair, en_key)
 
-    def test_real_spec_fixed_threshold_and_tab_constants_hold(self):
+    def test_repository_content_pin_fixed_threshold_and_tab_constants_hold(self):
         # Positive pin over the ACTUAL shipped EN/RU/ZH files (round-20
         # finding 2): wherever the '<'-anchored control-byte threshold
         # occurs in a semi-formal production it is 0x20, and wherever a

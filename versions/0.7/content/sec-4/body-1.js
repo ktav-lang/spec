@@ -43,7 +43,7 @@ by decoded escapes.
                     § 5.4), exactly as § 6.1 states.
 
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; default, scalar dispatched per § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; literal String
+                  | <key> "::" <sep-end> <raw-line> <line-end>       ; literal String, no dispatch
 
 <key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
 <raw-segment>        ::= (ws) <segment> (ws)
@@ -123,7 +123,7 @@ by decoded escapes.
                     как и указано в § 6.1.
 
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; обычная, скаляр через § 5.2
-                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; литеральная String
+                  | <key> "::" <sep-end> <raw-line> <line-end>       ; литеральная String, без диспетчеризации
 
 <key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
 <raw-segment>        ::= (ws) <segment> (ws)
@@ -199,7 +199,7 @@ decoded escape 产生的码点的处理。
                     与 § 6.1 的表述一致。
 
 <pair-line>     ::= <key> ":"  <sep-end> <value-part-opt> <line-end> ; 默认形式,标量按 § 5.2 分发
-                  | <key> "::" <sep-end> <value-part-opt> <line-end> ; 字面 String
+                  | <key> "::" <sep-end> <raw-line> <line-end>       ; 字面 String,不进行分发
 
 <key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
 <raw-segment>        ::= (ws) <segment> (ws)

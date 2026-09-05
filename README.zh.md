@@ -123,9 +123,10 @@ motd: (
 或 Float。在*被测实现的域中下溢*的小数仍然成为 Float,并在该域中
 舍入到带符号的 `0.0`,而非 String;若更宽的域中不发生下溢,则保留
 非零 Float。声明的 Float 域包括十进制转换与舍入语义,并 MUST 只接纳
-拥有可精确 round-trip 的有限十进制表示的有限 Float;最小 binary64
-转换使用 `roundTiesToEven`。不支持的精确有理值(如 `1/3`)不属于
-Ktav Float 域。
+有限 Float。每个非零有限 Float MUST 拥有可精确 round-trip 的有限
+十进制表示;
+带符号零另行处理,保持为 `0.0` / `-0.0`;最小 binary64 转换使用
+`roundTiesToEven`。不支持的精确有理值(如 `1/3`)不属于 Ktav Float 域。
 
 ```text
 retries: 3
@@ -242,6 +243,10 @@ server: {
 - 在小型配置中做局部修改而不重组结构。
 - 起初扁平、根据需要再长出嵌套段落的文件。
 
+解码后内容以 `##` 开头的键可以使用 bare 输入
+`\u0023#a:b: 1`;其中 `\u0023` escape 是可接受的输入。但规范 writer
+MUST 改用引号包围该键,例如 `"##a:b": 1`,这样输出不会被误读为注释。
+
 ### 字符串，直给
 
 非复合标量 body 在分类前会修剪两端。非空且不属于关键字或数字
@@ -275,9 +280,10 @@ Integer;带小数点或指数 → Float;其余一切 → String。在最小数�
 字面量分类为 Integer 或 Float。在*实现域中下溢*的小数仍然成为
 Float,并在该域中舍入到带符号的 `0.0`;若更宽的域中不发生下溢,
 则保留非零 Float。声明的 Float 域包括十进制转换与舍入语义;每个被
-接纳的有限 Float MUST 有一个可精确 round-trip 的有限十进制候选,
-最小 binary64 转换使用 `roundTiesToEven`。主机表示中没有这种候选的
-有限值(例如精确有理数 `1/3`)不是 Ktav Float。
+接纳的非零有限 Float MUST 有一个可精确 round-trip 的有限十进制候选。
+带符号零另行处理,保持为 `0.0` / `-0.0`;最小 binary64 转换使用
+`roundTiesToEven`。主机表示中没有这种候选的有限值(例如精确有理数
+`1/3`)不是 Ktav Float。
 
 ```text
 port:    8080
@@ -316,7 +322,8 @@ verbatim: ((
 ```
 
 `(` 会剥除公共前导缩进——在文件里按可读的方式书写代码/文本，结果
-依然干净。`((` 逐字节保留，文档可以字节级往返。
+依然干净。`((` 在换行符规范化后保留每个内容行的字节,但不保留整个
+文档的字节。
 
 ### 关键字
 
@@ -347,8 +354,8 @@ timeout: null
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.6/tests/)，最多分为三个 fixture
-类别外加一个顶层元数据文件。一致性 runner MUST 遍历目标版本中存在的
+[`versions/<v>/tests/`](versions/0.6/tests/)，分为四个 fixture 类别外加
+一个顶层元数据文件。一致性 runner MUST 遍历目标版本中存在的
 每个 fixture 类别——静默跳过
 不认识的类别会得到假绿色结果，比该类别完全没有 fixture 还糟。
 
@@ -379,7 +386,9 @@ timeout: null
   序列化、而非输出 lossy 或部分内容的 `Value`。这些是只能编程
   构造的情形,每个用例只有一个 `<name>.json`,且恰好包含 `value`、
   `unrepresentable_reason` 与非空 `note`;Value 映射及 `$float`
-  sentinel 的精确形状见 § 5.9.0。原因代码 MUST 在树中有递归见证,
+  sentinel 的精确形状见 § 5.9.0。该 sentinel 仅限于此 fixture 编码的
+  上下文,不会把 `$float` 保留为 parser Object 的键名。原因代码 MUST
+  在树中有递归见证,
   且只能是 `ScalarRoot`、`EmptyKeyName` 或 `NonFiniteFloat`,
   MUST NOT 从文件名推导。
 - **`parseable-unrepresentable/`***(0.7 起)*——解析器产生、但
@@ -446,7 +455,7 @@ submodule 引入(或直接拷贝)。
 │   ├── test_build_spec.mjs                (0.7+) build_spec.mjs 的对抗性单元测试(负面路径)
 │   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
-│   └── locks/                             boundary 与完整语料 inventory 的 versioned 锁文件
+│   └── locks/                             boundary、完整语料与 section inventory 的 versioned 锁文件
 ├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
 │                          翻译对等性检查,以及全部三套单元测试
 └── versions/

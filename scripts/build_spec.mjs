@@ -828,6 +828,60 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
   for (const [destination, data] of outputs) atomicWriteOutput(destination, data, options);
 }
 
+function readCheckTarget(destination, fileName, lang, expectedLength) {
+  let stat;
+  try {
+    stat = fs.lstatSync(destination);
+  } catch (e) {
+    if (e.code === 'ENOENT') {
+      fail(
+        `build_spec --check: MISMATCH in ${fileName} (${lang}): ` +
+        `output file missing at ${destination}; expected ${expectedLength} bytes`);
+    }
+    fail(`build_spec --check: cannot inspect comparison target ${destination}: ${e.message}`);
+  }
+  if (!stat.isFile()) {
+    const kind = stat.isSymbolicLink() ? 'symlink' : 'special file';
+    fail(
+      `build_spec --check: cannot compare ${fileName} (${lang}): ` +
+      `output comparison target ${destination} is not a regular file ` +
+      `(${kind}; --check refuses to follow it)`);
+  }
+  try {
+    return fs.readFileSync(destination);
+  } catch (e) {
+    fail(`build_spec --check: cannot read comparison target ${destination}: ${e.message}`);
+  }
+}
+
+export function checkBuildOutputs(specDir, contentDir,
+                                  { bufs, totalLen, pieces, readmeBufs }) {
+  validateWriteRoots(specDir, contentDir);
+
+  for (const lang of LANGS) {
+    const outPath = path.join(specDir, OUT_FILES[lang]);
+    const existing = readCheckTarget(outPath, OUT_FILES[lang], lang, totalLen[lang]);
+    const diff = firstByteDiff(existing, bufs[lang]);
+    if (diff !== -1) {
+      const unit = unitForLine(pieces, lang, diff);
+      fail(formatMismatchDiagnostic(
+        OUT_FILES[lang], lang, existing, bufs[lang], diff, unit));
+    }
+  }
+
+  for (const lang of LANGS) {
+    const outPath = path.join(contentDir, README_FILES[lang]);
+    const existing = readCheckTarget(
+      outPath, README_FILES[lang], lang, readmeBufs[lang].length);
+    const diff = firstByteDiff(existing, readmeBufs[lang]);
+    if (diff !== -1) {
+      fail(formatMismatchDiagnostic(
+        README_FILES[lang], lang, existing, readmeBufs[lang], diff,
+        README_SOURCE_FILE));
+    }
+  }
+}
+
 export function firstByteDiff(existing, expected) {
   const min = Math.min(existing.length, expected.length);
   let diff = 0;
@@ -903,6 +957,9 @@ async function cli() {
 
   let build;
   try {
+    // --check reads generated outputs, so reject linked roots before content
+    // validation can traverse a directory outside the repository.
+    if (checkMode) validateWriteRoots(specDir, contentDir);
     build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
   } catch (e) {
     process.stderr.write(`build_spec: ${e.message}\n`);
@@ -920,47 +977,7 @@ async function cli() {
   }
 
   // --check mode: silent on success, first divergence diagnostic on stderr.
-  for (const lang of LANGS) {
-    const outPath = path.join(specDir, OUT_FILES[lang]);
-    let existing;
-    try {
-      existing = fs.readFileSync(outPath);
-    } catch {
-      process.stderr.write(
-        `build_spec --check: MISMATCH in ${OUT_FILES[lang]} (${lang}): ` +
-        `output file missing at ${outPath}; expected ${totalLen[lang]} bytes\n`
-      );
-      process.exit(1);
-    }
-    const diff = firstByteDiff(existing, bufs[lang]);
-
-    if (diff !== -1) {
-      const unit = unitForLine(pieces, lang, diff);
-      process.stderr.write(formatMismatchDiagnostic(
-        OUT_FILES[lang], lang, existing, bufs[lang], diff, unit));
-      process.exit(1);
-    }
-  }
-
-  for (const lang of LANGS) {
-    const outPath = path.join(contentDir, README_FILES[lang]);
-    let existing;
-    try {
-      existing = fs.readFileSync(outPath);
-    } catch {
-      process.stderr.write(
-        `build_spec --check: MISMATCH in ${README_FILES[lang]} (${lang}): ` +
-        `output file missing at ${outPath}; expected ${readmeBufs[lang].length} bytes\n`
-      );
-      process.exit(1);
-    }
-    const diff = firstByteDiff(existing, readmeBufs[lang]);
-    if (diff !== -1) {
-      process.stderr.write(formatMismatchDiagnostic(
-        README_FILES[lang], lang, existing, readmeBufs[lang], diff, README_SOURCE_FILE));
-      process.exit(1);
-    }
-  }
+  checkBuildOutputs(specDir, contentDir, build);
   process.exit(0);
 }
 

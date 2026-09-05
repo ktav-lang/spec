@@ -92,6 +92,12 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   raw-marker escape hatch (§ 5.4 rule 1) available for an Array item
   needing an unambiguous leading quote character. No document whose
   keys avoid a leading `"` / `'` / `` ` `` is affected.
+- **§ 3.7 / § 5.2 — any recognised escape in an inline scalar now forces
+  String before keyword or numeric classification.** A body such as
+  `1\.0`, which 0.6.x could decode and then type as Float, is String in
+  0.7.0. This applies to every recognised escape, including `\.` / `\:`
+  and the three quote escapes `\"` / `\'` / `` \` ``, even when the
+  decoded byte has no structural role.
 
 ### Changed
 
@@ -111,9 +117,9 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   DEL, control bytes). Keys containing `(`, `)`, DEL, or a control code
   point are emittable in canonical form for the first time.
   Also newly documented (a pre-existing hazard, not new
-  behaviour): a key beginning with `##` MUST have the first `#`
-  escaped as `\u0023`, or the canonical line is silently read as
-  a comment.
+  behaviour): a bare `\u0023` escape is accepted input for a key beginning
+  with `##`, but the canonical writer MUST quote that key, for example
+  `"##a:b": 1`, so the canonical line is not silently read as a comment.
 - **`<key-char>` (§ 4)** now admits raw VT (`0x0B`) and FF (`0x0C`) as
   literal key content, matching the § 3.3 widening. Non-breaking — only
   accepts documents previously rejected as `InvalidKey`.
@@ -202,12 +208,15 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   for non-representable Values are now normative (§ 5.9.0), and
   `§ 8.2` requires a writer-conforming implementation to reject each
   `versions/0.7/tests/unrepresentable/` fixture's Value with the
-  named reason code.** Seven reason codes: `ScalarRoot`,
-  `EmptyKeyName`, `NonFiniteFloat`, `CRByte`, `BothFormsRequired`,
-  `TrailingWhitespaceCollision`, `LeadingWhitespaceCollision` — all
-  seven now have a fixture (`NonFiniteFloat`'s uses a `{"$float":
-  ...}` sentinel in place of an ordinary JSON number, since JSON has
-  no portable NaN/Infinity literal; see below). The API shape a
+  named reason code.** The three programmatic-only reason codes
+  `ScalarRoot`, `EmptyKeyName`, and `NonFiniteFloat` have fixtures in this
+  category. `NonFiniteFloat` uses the three fixtures
+  `versions/0.7/tests/unrepresentable/nan.json`,
+  `versions/0.7/tests/unrepresentable/negative_infinity.json`, and
+  `versions/0.7/tests/unrepresentable/positive_infinity.json`; each uses
+  a contextual `{"$float": ...}` sentinel in this fixture encoding only,
+  since JSON has no portable NaN/Infinity literal. The sentinel does not
+  reserve `$float` as a parser Object key. The API shape a
   writer uses to report the rejection is
   implementation-defined; only the code names are normative. README
   (en/ru/zh) documents the new category and the existing `valid/` /
@@ -239,6 +248,24 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   opens a key segment with no matching closer before end-of-line on a
   line already known to be a pair line; `InvalidKey` (§ 6.4) and
   `EmptyKey` (§ 6.5) each gain one new triggering case.
+- **`parseable-unrepresentable/` conformance category (0.7+)** — parser-
+  produced Values that a conforming writer MUST reject now have paired
+  `<name>.ktav` / `<name>.json` fixtures and four normative String reason
+  codes: `CRByte`, `BothFormsRequired`, `TrailingWhitespaceCollision`,
+  and `LeadingWhitespaceCollision`. This category is distinct from the
+  programmatic-only `unrepresentable/` category and has no canonical-output
+  files.
+- **Corpus and section inventory locks (0.7+)** —
+  `scripts/locks/corpus-inventory.0.7.lock.json` locks every corpus path and
+  digest, while `scripts/locks/section-inventory.0.7.lock.json` locks the
+  ordered content-unit manifest; the builder and corpus validator reject
+  additions, deletions, drift, and order changes outside an intentional
+  lock update.
+- **`versions/0.7/content/README.source.js` is the single README source
+  object** for the English, Russian, and Chinese content READMEs. The
+  builder statically validates and decodes it, then byte-compares all three
+  generated files; the per-section `content/` units are likewise the source
+  of truth for the generated specification files.
 
 ### Fixed
 
@@ -278,8 +305,8 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   with `##` as a comment unconditionally, before pair-line processing,
   so a raw `##`-prefixed line can structurally never reach key
   validation. Both sections now state this and point to § 5.9.10's
-  writer-side escape (escape the leading `#`) as the actual mechanism
-  preventing the collision.
+  guidance: `\u0023` bare form is accepted input, but the canonical writer
+  MUST quote the key, for example `"##a:b": 1`, to prevent the collision.
 - **§ 5.3 / § 5.3.1 — error precedence made explicit:** for a
   dispatched pair line, checks run `MissingSeparator` (§ 6.6) →
   `EmptyKey` (§ 6.5, empty prefix) → `MissingSeparatorSpace` (§ 6.10)
@@ -368,12 +395,13 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   collision rules at once, or an Object with both an empty key and a
   separately non-representable child, technically uncovered, since a
   key is not itself a Value descendant.
-- **`versions/0.7/tests/unrepresentable/non_finite_float.json`** — the
-  one reason code (`NonFiniteFloat`) that plain JSON cannot encode a
-  fixture for now has one, via a normative `{"$float": "NaN"|
-  "Infinity"|"-Infinity"}` sentinel reserved for exactly this case.
-  README documents the sentinel alongside the rest of the
-  `unrepresentable/` schema.
+- **`versions/0.7/tests/unrepresentable/nan.json`,
+  `negative_infinity.json`, and `positive_infinity.json`** — the
+  `NonFiniteFloat` reason has three fixtures because plain JSON cannot
+  encode NaN or Infinity. Each uses a normative `{"$float": ...}`
+  sentinel in the unrepresentable-fixture encoding only; it is contextual
+  and does not reserve `$float` as a parser Object key. README documents
+  the sentinel alongside the rest of the `unrepresentable/` schema.
 - **§ 5.2 no longer conflates a general semantic rule with a fixture
   list.** The same-kind `MUST` (scoped to same numeric domain) is now
   stated as a rule about every document a parser might see; § 8.1 /
@@ -402,15 +430,13 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   `100` — a bare `100` would re-parse as an Integer, breaking the
   Float round-trip; § 5.9.8's decimal alternative always keeps the
   decimal point.
-- **§ 5.9.0 — the `$float` sentinel key is now explicitly reserved**
-  inside `unrepresentable/` fixture `value` trees, closing a shape
-  collision with an ordinary JSON Object that happens to have a single
-  `$float` key.
-- **CHANGELOG — removed a self-contradiction**: this section
-  previously said both that `NonFiniteFloat` had no fixture (stale,
-  from before the fixture existed) and that
-  `unrepresentable/non_finite_float.json` had been added, in the same
-  "Unreleased" section describing one coherent draft state.
+- **§ 5.9.0 — the `$float` sentinel is contextual to the
+  unrepresentable-fixture JSON encoding**, not a reserved parser Object
+  key name; ordinary parsed Objects may use `$float` as a key.
+- **CHANGELOG — corrected stale NonFiniteFloat fixture references** to
+  name the current `nan.json`, `negative_infinity.json`, and
+  `positive_infinity.json` fixtures, and removed the claim that the reason
+  had no fixture.
 - **`boundary-fixtures.json` (`versions/0.7/tests/boundary-fixtures.json`,
   outside `valid/` so a runner enumerating `valid/**/*.json` never
   mistakes it for a fixture) gives the numeric-domain divergence

@@ -72,6 +72,11 @@
   上下文的规则,以及为需要无歧义前导引号字符的 Array 项提供的
   `::` raw 标记逃生舱(§ 5.4 规则 1),见 § 5.3.3。任何键不以 `"` /
   `'` / `` ` `` 开头的文档均不受影响。
+- **§ 3.7 / § 5.2 —— inline 标量中的任何已识别 escape 现在会在关键字
+  或数字分类之前强制为 String。** 像 `1\.0` 这样的 body 在 0.6.x
+  中可以先解码再定型为 Float,在 0.7.0 中则是 String。该规则适用于
+  每一个已识别的 escape,包括 `\.` / `\:` 以及三个引号 escape（三者）
+  `\"` / `\'` / `` \` ``,即使解码出的字节不具有结构性作用。
 
 ### 变更
 
@@ -86,9 +91,9 @@
   码点(不仅是 `\`/`.`/`:`),并要求对边界空白与没有命名形式的结构
   字节(`(`、`)`、DEL、控制字节)使用 `\uXXXX`。含有 `(`、`)`、DEL
   或控制码点的键首次可在规范形式中输出。
-  另外首次记录(此前就存在的风险,并非新行为):以 `##` 开头
-  的键 MUST 将第一个 `#` escape 为 `\u0023`,否则规范输出的该行
-  会被悄悄读作注释。
+  另外首次记录(此前就存在的风险,并非新行为):以 `##` 开头的键接受
+  `\u0023` bare 形式作为输入,但规范 writer MUST 使用引号,例如
+  `"##a:b": 1`,从而不会让规范输出的该行被悄悄读作注释。
 - **`<key-char>`(§ 4)** 现在允许原始 VT(`0x0B`)与 FF(`0x0C`)
   作为字面键内容,与 § 3.3 的扩展一致。非破坏性 —— 仅接受此前被
   拒绝为 `InvalidKey` 的文档。
@@ -159,12 +164,15 @@
 - **`unrepresentable/` 一致性类别(spec#4)—— 不可表示 Value 的
   原因代码现已规范化(§ 5.9.0),§ 8.2 要求 writer-conforming 实现
   以指定原因代码拒绝 `versions/0.7/tests/unrepresentable/` 中每个
-  fixture 的 Value。** 七个原因代码:`ScalarRoot`、
-  `EmptyKeyName`、`NonFiniteFloat`、`CRByte`、`BothFormsRequired`、
-  `TrailingWhitespaceCollision`、`LeadingWhitespaceCollision` ——
-  现在七个都有 fixture(`NonFiniteFloat` 的 fixture 使用
-  `{"$float": ...}` 哨兵取代普通 JSON 数字,因为 JSON 没有可移植的
-  NaN/Infinity 字面量;见下文)。writer
+  fixture 的 Value。** 三个只能编程构造的原因码——`ScalarRoot`、
+  `EmptyKeyName` 与 `NonFiniteFloat`——在此类别中都有 fixture。
+  `NonFiniteFloat` 有三个 fixture:
+  `versions/0.7/tests/unrepresentable/nan.json`、
+  `versions/0.7/tests/unrepresentable/negative_infinity.json` 与
+  `versions/0.7/tests/unrepresentable/positive_infinity.json`;每个都在
+  unrepresentable fixture 的 JSON 编码中使用上下文限定的
+  `{"$float": ...}` 哨兵,因为 JSON 没有可移植的 NaN/Infinity 字面量。
+  该哨兵不会把 `$float` 保留为 parser Object 的键名。writer
   用以报告拒绝的 API 形式是 implementation-defined,规范性的只是
   代码名称。README(en/ru/zh)在既有 `valid/` / `invalid/` 旁记录了
   新类别,并要求 runner MUST 遍历每个存在的类别,而非静默跳过不
@@ -188,6 +196,21 @@
   在已知为 pair line 的行上,当引号开启键段却在行末前没有匹配
   闭合符时报告;`InvalidKey`(§ 6.4)与 `EmptyKey`(§ 6.5)各自
   新增一种触发场景。
+- **`parseable-unrepresentable/` 一致性类别(0.7 起)** —— parser 产生、但
+  conforming writer MUST 拒绝的 Value 现在使用
+  `<name>.ktav` / `<name>.json` 配对 fixture,并限定四个规范性 String
+  原因码:`CRByte`、`BothFormsRequired`、`TrailingWhitespaceCollision`
+  与 `LeadingWhitespaceCollision`。它区别于只能编程构造的
+  `unrepresentable/`,不包含 canonical-output 文件。
+- **语料库与节 inventory lock(0.7 起)** ——
+  `scripts/locks/corpus-inventory.0.7.lock.json` 锁定每个语料路径及
+  digest,而 `scripts/locks/section-inventory.0.7.lock.json` 锁定有序的
+  content-unit manifest;builder 与语料校验器会拒绝未伴随有意 lock
+  更新的新增、删除、漂移与顺序变化。
+- **`versions/0.7/content/README.source.js` 是 README 的单一源对象**,
+  为英文、俄文与中文 content README 提供 `{ en, ru, zh }`。Builder
+  静态校验并解码它,再逐字节比较三个生成文件;各节 `content/` unit
+  同样是生成规范文件的事实来源。
 
 ### 已修复
 
@@ -206,8 +229,8 @@
   声明。** § 5.1 规则 2 会无条件地把任何修剪后以 `##` 开头的行当作
   注释消费,发生在任何 pair line 处理之前,因此裸 `##` 前缀行在
   结构上永远无法到达键校验。两节现在都陈述了这一点,并指出
-  § 5.9.10 的 writer 侧 escape(escape 首个 `#`)才是防止该碰撞的
-  真正机制。
+  § 5.9.10 的规则:`\u0023` bare 形式是可接受的输入,但规范 writer
+  MUST 为该键使用引号,例如 `"##a:b": 1`,以防止该碰撞。
 - **§ 5.3 / § 5.3.1 —— 错误优先级被明确化:** 对已分发的 pair
   line,检查顺序为 `MissingSeparator`(§ 6.6)→ 空前缀的
   `EmptyKey`(§ 6.5)→ `MissingSeparatorSpace`(§ 6.10)→ 键段校验;
@@ -288,11 +311,13 @@
   键,而不仅是后代。** 旧措辞(「在 Value 的后代中」)使得同时满足
   两条冲突规则的 String,或同时有空键与另一处不可表示子节点的
   Object 在技术上未被覆盖 —— 键本身并不是 Value 的后代。
-- **`versions/0.7/tests/unrepresentable/non_finite_float.json`** ——
-  唯一一个 plain JSON 无法为其编码 fixture 的原因代码
-  (`NonFiniteFloat`)如今有了 fixture:通过一个规范性
-  `{"$float": "NaN"|"Infinity"|"-Infinity"}` 哨兵,专为此情形保留。
-  README 在 `unrepresentable/` 其余 schema 之旁记录了该哨兵。
+- **`versions/0.7/tests/unrepresentable/nan.json`、
+  `negative_infinity.json` 与 `positive_infinity.json`** ——
+  `NonFiniteFloat` 原因有三个 fixture,因为 plain JSON 无法编码 NaN
+  或 Infinity。每个 fixture 仅在 unrepresentable fixture 的 JSON 编码
+  中使用规范性 `{"$float": ...}` 上下文哨兵;它不会把 `$float` 保留为
+  parser Object 的键名。README 在 `unrepresentable/` 其余 schema 之旁
+  记录了该哨兵。
 - **§ 5.2 不再把一般语义规则与 fixture 清单混为一谈。**
   同 kind 的 `MUST`(限定于相同数值域)现在作为关于解析器可能见到的
   每一份文档的规则来陈述;§ 8.1 / § 8.2 则单独指名 —— 仅对共享一致性
@@ -315,13 +340,12 @@
   区分这一点。另外,`1e2` 的规范形式是 `100.0` 而非 `100` —— 裸的
   `100` 会重解析为 Integer,破坏 Float 的 round-trip;§ 5.9.8 的
   decimal 替代形式始终保留小数点。
-- **§ 5.9.0 —— `$float` 哨兵键现在被显式保留**于
-  `unrepresentable/` fixture 的 `value` 树内,从而消除了与恰好
-  带有单个 `$float` 键的普通 JSON Object 的形状碰撞。
-- **CHANGELOG —— 移除一处自相矛盾**:本节此前同时说
-  `NonFiniteFloat` 没有 fixture(过时信息,早于该 fixture 出现),
-  又说 `unrepresentable/non_finite_float.json` 已被添加 —— 二者都
-  出现在描述同一草稿状态的同一「未发布」节中。
+- **§ 5.9.0 —— `$float` 哨兵仅限于 unrepresentable fixture 的
+  JSON 编码**,并不是 parser Object 的保留键名;普通解析出的 Object
+  可以使用 `$float` 作为键。
+- **CHANGELOG —— 修正过时的 NonFiniteFloat fixture 引用**:现在列出
+  当前的 `nan.json`、`negative_infinity.json` 与 `positive_infinity.json`,
+  并删除「没有 fixture」的说法。
 - **`boundary-fixtures.json`(`versions/0.7/tests/boundary-fixtures.json`,
   位于 `valid/` 之外,使以 `valid/**/*.json` 枚举 fixture 的 runner
   永远不会把它误认为 fixture)为 § 8.1 / § 8.2 所许可的数值域偏差

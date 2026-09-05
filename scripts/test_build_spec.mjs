@@ -18,6 +18,7 @@ import {
   lineAtByte,
   formatMismatchDiagnostic,
   buildBuffers,
+  checkBuildOutputs,
   writeBuildOutputs,
   defaultSectionInventoryLockPath,
   LANGS,
@@ -666,6 +667,64 @@ test('write build rejects a specification destination symlink without touching i
   }
 });
 
+test('check build rejects a generated spec file symlink before reading its target', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-check-file-link-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const outside = path.join(temp, 'outside-spec.md');
+    write(outside, 'must remain unchanged\n');
+    fs.rmSync(path.join(versionDir, 'spec.md'), { force: true });
+    fs.symlinkSync(outside, path.join(versionDir, 'spec.md'), 'file');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => checkBuildOutputs(versionDir, contentDir, build),
+      (e) => /check: cannot compare spec\.md \(en\).*output comparison target .*spec\.md.*not a regular file \(symlink/.test(e.message)
+    );
+    assert.equal(fs.readFileSync(outside, 'utf8'), 'must remain unchanged\n');
+
+    // README outputs are comparison targets too; check mode must lstat them
+    // before reading, just like generated specification files.
+    fs.unlinkSync(path.join(versionDir, 'spec.md'));
+    writeBuildOutputs(versionDir, contentDir, build);
+    const outsideReadme = path.join(temp, 'outside-readme.md');
+    write(outsideReadme, 'README target must remain unchanged\n');
+    fs.rmSync(path.join(contentDir, 'README.md'));
+    fs.symlinkSync(outsideReadme, path.join(contentDir, 'README.md'), 'file');
+    assert.throws(
+      () => checkBuildOutputs(versionDir, contentDir, build),
+      (e) => /check: cannot compare README\.md \(en\).*output comparison target .*README\.md.*not a regular file \(symlink/.test(e.message)
+    );
+    assert.equal(fs.readFileSync(outsideReadme, 'utf8'), 'README target must remain unchanged\n');
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('check build reports a missing generated output deterministically', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-check-missing-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    fs.rmSync(path.join(versionDir, 'spec.md'), { force: true });
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => checkBuildOutputs(versionDir, contentDir, build),
+      (e) => /check: MISMATCH in spec\.md \(en\): output file missing at .*spec\.md; expected \d+ bytes/.test(e.message)
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('write build rejects a generated README directory before creating temporary outputs', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-special-'));
   try {
@@ -742,6 +801,29 @@ test('write build rejects a specification directory symlink before creating temp
     assert.deepEqual(
       fs.readdirSync(realVersionDir).filter((name) => name.endsWith('.tmp')),
       []
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('check build rejects a specification directory symlink before reading generated outputs', async (t) => {
+  if (!directoryLinksSupported()) {
+    t.skip('directory symlink/junction creation unavailable; this test MUST run when directory links are supported');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-check-root-link-'));
+  try {
+    const realVersionDir = path.join(temp, 'real-version');
+    const versionDir = path.join(temp, 'version-link');
+    makeContent(realVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    makeDirectoryLink(realVersionDir, versionDir);
+    const contentDir = path.join(versionDir, 'content');
+    const build = await buildBuffers(path.join(realVersionDir, 'content'));
+
+    assert.throws(
+      () => checkBuildOutputs(versionDir, contentDir, build),
+      (e) => /specDir path component .* is a symlink or junction/.test(e.message)
     );
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
