@@ -26,6 +26,10 @@ encodes a non-finite Float MUST use the sentinel object with exactly one
 field, \`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\`, or
 \`{"$float": "-Infinity"}\`; no other shape is a valid sentinel. This
 fixture-encoding sentinel is permitted only in \`unrepresentable/\`. The
+sentinel denotes a programmatic value in the abstract Float carrier,
+not a parsed Float, a canonical Float, or a node-representable Float. The
+three spellings MUST remain distinct so a writer-conformance implementation
+can supply and reject each one. The
 rule does not reserve the key name: a parser-produced Object MAY contain
 a literal \`$float\` key like any other key, and its \`value\` root MUST
 be an Object or Array.
@@ -98,7 +102,11 @@ MUST NOT содержать одиночный surrogate. Непредстави
 кодирующая неконечный Float, MUST использовать sentinel-объект ровно с
 одним полем: \`{"$float": "NaN"}\`, \`{"$float": "Infinity"}\` или
 \`{"$float": "-Infinity"}\`; никакая другая форма не является
-допустимым sentinel. Этот sentinel как часть кодирования фикстуры
+допустимым sentinel. Этот sentinel обозначает программное значение
+абстрактного Float-носителя, а не Float, полученный парсингом,
+канонический Float или узлово-представимый Float. Три формы MUST
+оставаться различными, чтобы writer-conforming реализация могла подать и
+отвергнуть каждую из них. Этот sentinel как часть кодирования фикстуры
 разрешён только в \`unrepresentable/\`. Правило не резервирует имя
 ключа: порождённый парсером Object MAY содержать буквальный ключ
 \`$float\`, как любой другой ключ, а его корень \`value\` MUST быть
@@ -151,7 +159,10 @@ Object или среди потомков (например, String, удовл�
 编码非有限 Float 的不可表示 fixture MUST 使用恰好含一个字段的
 sentinel Object:\`{"$float": "NaN"}\`、\`{"$float": "Infinity"}\`
 或 \`{"$float": "-Infinity"}\`;其他形状都不是有效 sentinel。这个
-fixture 编码 sentinel 仅允许用于 \`unrepresentable/\`。该规则不保留
+fixture 编码 sentinel 表示抽象 Float 载体中的程序化值,而不是解析所得
+的 Float、规范 Float 或节点可表示的 Float。三种写法 MUST 保持彼此
+不同,以便 writer-conformance 实现能够提供并拒绝每一种。该 fixture
+编码 sentinel 仅允许用于 \`unrepresentable/\`。该规则不保留
 键名:parser 产生的 Object MAY 像使用其他键一样包含字面键
 \`$float\`,且其 \`value\` 根 MUST 是 Object 或 Array。
 只有当该原因情形出现在 Value 树中的某处时,

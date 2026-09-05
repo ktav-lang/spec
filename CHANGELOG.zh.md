@@ -59,8 +59,12 @@
   非有限 Float(NaN / ±Infinity)、含 `CR` 字节或 stripped 形式碰撞
   的 String,以及任意深度包含不可表示 Value 的任何复合值均不可表示,
   writer-conforming 实现 MUST 以错误拒绝它们,不输出任何部分内容。
-  此前 § 5.9 未定义这些仅经编程方式出现的情形。Rust 参考核心已
-  拒绝标量根与含 `CR` 的 String;弥补其余缺口另行跟踪。
+  此前 § 5.9 未区分抽象程序化 Float 载体与声明的有限可解析/规范
+  Float 域。该载体 MUST 区分 NaN、+Infinity 与 -Infinity,以便三个
+  `NonFiniteFloat` fixture 可以被提供并拒绝。这些 sentinel 仅属于
+  程序化情形;含 `CR` 或 collision 的 String 由解析器产生,另由
+  `parseable-unrepresentable/` 覆盖。Rust 参考核心已拒绝标量根与含
+  `CR` 的 String;弥补其余缺口另行跟踪。
 - **键中的前导引号字符现在会开启 `<quoted-segment>`
   (§ 5.3.3、§ 10.7)。** 某行的首个内容 —— 经 § 4 的键段修剪后 ——
   以 `"`、`'` 或 `` ` `` 开头时,不再必然按引入 quoted keys 之前的

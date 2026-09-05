@@ -129,13 +129,17 @@ on binary64, is kept as a String; a wider implementation MAY retain the
 literal as Integer or Float. A decimal that *underflows in the tested
 implementation's domain* still becomes a Float, rounded to signed
 `0.0` in that domain, not a String; a wider domain in which it does
-not underflow retains a non-zero Float. A declared Float domain includes
-its decimal-conversion and rounding semantics and MUST admit only finite
-Float values. Every non-zero finite Float MUST have a finite decimal
+not underflow retains a non-zero Float. The abstract programmatic Float
+carrier MUST distinguish NaN, +Infinity, and -Infinity so writer-conformance
+tests can supply the three non-finite sentinels; those sentinels are outside
+the parseable and canonical domains. Parsed Floats are finite members of the
+declared Float domain. That domain includes its decimal-conversion and
+rounding semantics and MUST admit only finite Float values. Every non-zero finite Float MUST have a finite decimal
 representation that round-trips exactly; signed zeros are handled
 separately and remain `0.0` / `-0.0`;
 the minimum binary64 conversion uses `roundTiesToEven`. An unsupported
-exact-rational value such as `1/3` is outside the Ktav Float domain.
+exact-rational value such as `1/3` is outside the declared Ktav Float domain
+and is not a parseable or canonical Float.
 
 ```text
 retries: 3
@@ -303,12 +307,16 @@ raising an error; a wider domain MAY classify that same boundary literal
 as Integer or Float. A decimal that *underflows in the implementation's
 domain* still becomes a Float, rounded to signed `0.0` in that domain;
 a wider domain in which it does not underflow retains a non-zero Float.
-The declared Float domain includes decimal-conversion and rounding
+The abstract programmatic Float carrier MUST distinguish NaN, +Infinity,
+and -Infinity for writer-conformance; these sentinels are outside the
+parseable and canonical domains. Parsed Floats are finite members of the
+declared Float domain, which includes decimal-conversion and rounding
 semantics; every admitted non-zero finite Float MUST have a finite decimal
 candidate that round-trips exactly. Signed zeros are handled separately
 and remain `0.0` / `-0.0`; minimum binary64 uses `roundTiesToEven`. A
 finite host value without such a candidate, such as exact-rational `1/3`,
-is not a Ktav Float.
+is outside the declared Ktav Float domain and is not a parseable or
+canonical Float.
 
 ```text
 port:    8080
@@ -424,7 +432,9 @@ having no fixtures for it at all.
   `value`, `unrepresentable_reason`, and non-empty `note`; the Value
   mapping and exact `$float` sentinel shape are defined by § 5.9.0. The
   `$float` sentinel is contextual to this fixture encoding and does not
-  reserve `$float` as a parser Object key name.
+  reserve `$float` as a parser Object key name. For `NonFiniteFloat`, it
+  denotes the abstract programmatic Float carrier, not a parsed or
+  canonical Float, and is outside node-representability.
   Only `ScalarRoot`, `EmptyKeyName`, and `NonFiniteFloat` are allowed.
   The reason code MUST have a recursive witness and MUST NOT be inferred
   from the filename.

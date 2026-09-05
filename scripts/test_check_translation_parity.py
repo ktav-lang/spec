@@ -395,6 +395,94 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("OVERALL: FAIL", out)
         self.assertIn("unclosed fenced code block", out)
 
+    def test_tilde_fence_with_info_string_excludes_contents(self):
+        lines = [
+            "## 1. Section",
+            "   ~~~json",
+            "## 9.9 not a heading",
+            "   ~~~ \t",
+            "## 2. After",
+        ]
+        sections, opens, occurrences, _, excluded, _, unclosed, ranges = (
+            ctp.parse_file(lines))
+        self.assertEqual(opens, [1])
+        self.assertEqual(occurrences, {"1": 1, "2": 1})
+        self.assertEqual(sorted(sections), ["1", "2"])
+        self.assertTrue(excluded[2])
+        self.assertFalse(unclosed)
+        self.assertEqual(ranges, [(1, 2, 3)])
+
+    def test_four_backtick_fence_requires_four_backtick_closer(self):
+        lines = [
+            "## 1. Section",
+            "````python",
+            "```",
+            "## 9.9 still inside the fence",
+            "````  \t",
+            "## 2. After",
+        ]
+        sections, opens, occurrences, _, excluded, _, unclosed, ranges = (
+            ctp.parse_file(lines))
+        self.assertEqual(opens, [1])
+        self.assertEqual(occurrences, {"1": 1, "2": 1})
+        self.assertEqual(sorted(sections), ["1", "2"])
+        self.assertTrue(excluded[2])
+        self.assertTrue(excluded[3])
+        self.assertFalse(unclosed)
+        self.assertEqual(ranges, [(1, 2, 4)])
+
+    def test_fence_closer_rejects_info_text_and_unicode_whitespace(self):
+        lines = [
+            "## 1. Section",
+            "~~~",
+            "~~~language",
+            "\u2028",
+            "~~~\u00a0",
+            "## 9.9 still inside the fence",
+            "~~~",
+            "## 2. After",
+        ]
+        sections, opens, occurrences, _, excluded, _, unclosed, ranges = (
+            ctp.parse_file(lines))
+        self.assertEqual(opens, [1])
+        self.assertEqual(occurrences, {"1": 1, "2": 1})
+        self.assertTrue(excluded[2])
+        self.assertTrue(excluded[3])
+        self.assertTrue(excluded[4])
+        self.assertFalse(unclosed)
+        self.assertEqual(ranges, [(1, 2, 6)])
+
+    def test_four_space_fence_indent_is_content_not_a_fence(self):
+        lines = [
+            "## 1. Section",
+            "    ```",
+            "## 9.9 is a heading after indented content",
+            "Text MUST remain visible.",
+        ]
+        sections, opens, occurrences, _, excluded, _, unclosed, _ = (
+            ctp.parse_file(lines))
+        self.assertEqual(opens, [])
+        self.assertEqual(occurrences, {"1": 1, "9.9": 1})
+        self.assertFalse(excluded[1])
+        self.assertFalse(unclosed)
+
+    def test_unicode_whitespace_cannot_be_blank_heading_or_list_indentation(self):
+        self.assertFalse(ctp.ascii_blank("\u0085"))
+        self.assertFalse(ctp.ascii_blank("\u2028"))
+        self.assertFalse(ctp.ascii_blank("\u2029"))
+        self.assertFalse(ctp.ascii_blank("\v"))
+        self.assertFalse(ctp.ascii_blank("\f"))
+        self.assertIsNone(ctp.HEADING_RE.match("\u2028## 2. Not a heading"))
+        self.assertIsNone(ctp.LIST_ITEM_RE.match("\u2029- not a list"))
+        self.assertIsNone(ctp.TABLE_ROW_RE.match("\u0085| not a row"))
+        self.assertIsNone(ctp.parse_fence_opener("\u2028```"))
+
+        lines = ["## 1. Section", "\u2028", "Text MUST remain content."]
+        sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+        self.assertEqual(ctp.count_content(
+            lines, sections["1"][0], sections["1"][1], excluded),
+            (1, 0, 0))
+
     def test_happy_path_identical_structure_passes(self):
         en = self.write("spec.md", EN_DOC)
         ru = self.write("spec.ru.md", RU_DOC_OK)

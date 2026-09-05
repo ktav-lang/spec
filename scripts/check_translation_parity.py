@@ -229,11 +229,14 @@ import datetime
 import re
 import sys
 
-HEADING_RE = re.compile(r'^#{1,6}\s+\S')
-NUMBERED_HEADING_RE = re.compile(r'^#{1,6}\s+(\d+(?:\.\d+)*)\b')
-FENCE_RE = re.compile(r'^[ \t]*```')
-LIST_ITEM_RE = re.compile(r'^\s*(?:[-*]|\d+\.)\s+')
-TABLE_ROW_RE = re.compile(r'^\s*\|')
+# Markdown structural whitespace is deliberately ASCII-only.  In particular,
+# Python's ``\s`` and ``str.strip()`` also recognize Unicode line/paragraph
+# separators and controls that are content in these source files.
+HEADING_RE = re.compile(r'^[ ]{0,3}#{1,6}[ \t]+[^ \t]')
+NUMBERED_HEADING_RE = re.compile(
+    r'^[ ]{0,3}#{1,6}[ \t]+([0-9]+(?:\.[0-9]+)*)\b')
+LIST_ITEM_RE = re.compile(r'^[ \t]*(?:[-*]|[0-9]+\.)[ \t]+')
+TABLE_ROW_RE = re.compile(r'^[ \t]*\|')
 # A BNF production's left-hand side, e.g. "<quoted-segment> ::= ..." (§ 4).
 # Only whitespace is allowed before the '<' so a mid-sentence "<foo> ::="
 # fragment inside prose is not mistaken for an actual production line.
@@ -594,19 +597,19 @@ def extract_semi_formal_rhs(lines, start, end, excluded):
 # deeper), blockquote lines (the legitimate per-language disclaimer),
 # bold '**Label:** ...' field lines, and the bold Version/Date label
 # lines in all three shipped languages.
-H1_RE = re.compile(r'^#\s+\S')
-BLOCKQUOTE_RE = re.compile(r'^\s*>')
+H1_RE = re.compile(r'^[ ]{0,3}#[ \t]+[^ \t]')
+BLOCKQUOTE_RE = re.compile(r'^[ \t]*>')
 # Requires the actual "**Label:** value" shape: a colon immediately before
 # the closing '**' (so a plain bold PROSE paragraph like "**note text**"
 # with no colon is rejected), and at least one non-whitespace character
 # after the closing '**' (so a label with no value is rejected). A space
 # between the closing '**' and the value is NOT required — the shipped ZH
 # Date line writes "**日期:**(未发布 ...)" with none.
-FIELD_LINE_RE = re.compile(r'^\s*\*\*[^*:]+:\*\*\s*\S')
+FIELD_LINE_RE = re.compile(r'^[ \t]*\*\*[^*:]+:\*\*[ \t]*[^ \t]')
 VERSION_LINE_RE = re.compile(
-    r'^\s*\*\*(?:Version|Версия|版本):\*\*\s*(\S.*?)\s*$')
+    r'^[ \t]*\*\*(?:Version|Версия|版本):\*\*[ \t]*([^ \t].*?)[ \t]*$')
 DATE_LINE_RE = re.compile(
-    r'^\s*\*\*(?:Date|Дата|日期):\*\*\s*(\S.*?)\s*$')
+    r'^[ \t]*\*\*(?:Date|Дата|日期):\*\*[ \t]*([^ \t].*?)[ \t]*$')
 # Digit-bounded on both sides so "2026-09-020" (an extra trailing digit)
 # is not mistaken for the valid date "2026-09-02" followed by an ignored
 # stray digit — plain '\d{4}-\d{2}-\d{2}' would substring-match it.
@@ -624,9 +627,9 @@ SOURCE_LINE_END_RE = re.compile(r"\r\n|\r|\n")
 # double-counted as a bare MUST/SHOULD.
 KEYWORD_PATTERNS = [
     ("MUST NOT", re.compile(r'\bMUST NOT\b')),
-    ("MUST", re.compile(r'\bMUST\b(?!\s+NOT\b)')),
+    ("MUST", re.compile(r'\bMUST\b(?![ \t]+NOT\b)')),
     ("SHOULD NOT", re.compile(r'\bSHOULD NOT\b')),
-    ("SHOULD", re.compile(r'\bSHOULD\b(?!\s+NOT\b)')),
+    ("SHOULD", re.compile(r'\bSHOULD\b(?![ \t]+NOT\b)')),
     ("MAY", re.compile(r'\bMAY\b')),
 ]
 
@@ -672,7 +675,71 @@ def section_sort_key(number):
 
 def heading_level(line):
     """Count of leading '#' characters on a heading line."""
-    return len(line) - len(line.lstrip("#"))
+    idx = 0
+    while idx < len(line) and line[idx] == " ":
+        idx += 1
+    start = idx
+    while idx < len(line) and line[idx] == "#":
+        idx += 1
+    return idx - start
+
+
+def ascii_blank(line):
+    """Whether a Markdown line is blank under the ASCII whitespace rules."""
+    return not line or all(char in " \t" for char in line)
+
+
+def ascii_strip(text):
+    """Strip only the ASCII space and tab characters from both ends."""
+    return text.strip(" \t")
+
+
+def parse_fence_opener(line):
+    """Return ``(character, length)`` for a valid Markdown fence opener."""
+    indent = 0
+    while indent < len(line) and line[indent] == " ":
+        indent += 1
+    if indent > 3 or indent == len(line) or line[indent] not in "`~":
+        return None
+    marker = line[indent]
+    end = indent
+    while end < len(line) and line[end] == marker:
+        end += 1
+    length = end - indent
+    if length < 3:
+        return None
+    # CommonMark forbids backticks in a backtick fence's info string.  A
+    # tilde fence may carry arbitrary info text, which remains excluded with
+    # the opener line just like a backtick fence's info string.
+    if marker == "`" and "`" in line[end:]:
+        return None
+    return marker, length
+
+
+def is_fence_closer(line, fence):
+    """Whether ``line`` closes ``fence`` (marker character and length)."""
+    marker, opener_length = fence
+    indent = 0
+    while indent < len(line) and line[indent] == " ":
+        indent += 1
+    if indent > 3 or indent == len(line) or line[indent] != marker:
+        return False
+    end = indent
+    while end < len(line) and line[end] == marker:
+        end += 1
+    if end - indent < opener_length:
+        return False
+    return all(char in " \t" for char in line[end:])
+
+
+def heading_text(line):
+    """Return the text of a heading matched by ``HEADING_RE``."""
+    idx = 0
+    while idx < len(line) and line[idx] == " ":
+        idx += 1
+    while idx < len(line) and line[idx] == "#":
+        idx += 1
+    return ascii_strip(line[idx:])
 
 
 def parse_file(lines):
@@ -682,8 +749,9 @@ def parse_file(lines):
     unclosed_fence, fence_ranges):
       sections: dict of section-number -> (start_idx, end_idx) text range,
         end_idx exclusive, keyed by the FIRST occurrence of that number.
-      fence_opens: sorted list of line indices where a ``` fence OPENS
-        (i.e., the line index of the toggle from not-in-fence to in-fence).
+      fence_opens: sorted list of line indices where a valid backtick or
+        tilde fence OPENS (i.e., the line index of the toggle from
+        not-in-fence to in-fence).
       occurrences: dict of section-number -> count of numbered-heading
         occurrences (outside fences), for duplicate detection.
       levels: dict of section-number -> heading level of its FIRST
@@ -695,8 +763,8 @@ def parse_file(lines):
         heading (outside fences) that is NOT numbered and whose level is
         >= 2 (i.e. excluding the h1 document title); end_idx uses the
         same rule as numbered sections.
-      unclosed_fence: True if the file ends while still "in a fence"
-        (an odd number of ``` delimiter lines were seen). When True,
+      unclosed_fence: True if the file ends while still "in a fence".
+        When True,
         everything after the last real fence-open was silently treated
         as excluded (code) content by this same pass, which corrupts the
         paragraph/list/table/keyword counts for whatever section(s)
@@ -704,7 +772,7 @@ def parse_file(lines):
         than trusting section content counts derived from this parse.
       fence_ranges: ordered list of (open_idx, content_start, content_end)
         for every COMPLETE (closed) fence, in document order: open_idx is
-        the line index of the opening ``` delimiter (matching an entry in
+        the line index of the opening fence delimiter (matching an entry in
         fence_opens, used to attribute the fence to a section the same
         way count_code_blocks_per_section does); content_start/content_end
         bound lines[content_start:content_end], the fence's content lines
@@ -722,19 +790,23 @@ def parse_file(lines):
     fence_opens = []
     fence_ranges = []
     excluded = []
-    in_fence = False
+    fence = None
     open_idx = None
     for idx, line in enumerate(lines):
-        if FENCE_RE.match(line):
-            excluded.append(True)
-            if not in_fence:
+        if fence is None:
+            opener = parse_fence_opener(line)
+            if opener is not None:
+                fence = opener
                 fence_opens.append(idx)
                 open_idx = idx
-            else:
-                fence_ranges.append((open_idx, open_idx + 1, idx))
-            in_fence = not in_fence
+                excluded.append(True)
+                continue
+        elif is_fence_closer(line, fence):
+            excluded.append(True)
+            fence_ranges.append((open_idx, open_idx + 1, idx))
+            fence = None
             continue
-        if in_fence:
+        if fence is not None:
             excluded.append(True)
             continue
         excluded.append(False)
@@ -748,7 +820,7 @@ def parse_file(lines):
                     numbered[num] = idx
                     levels[num] = heading_level(line)
             elif heading_level(line) >= 2:
-                named.append((line.lstrip("#").strip(), heading_level(line),
+                named.append((heading_text(line), heading_level(line),
                               idx, None))
 
     heading_indices.sort()
@@ -768,7 +840,7 @@ def parse_file(lines):
                 break
         named[i] = (text, level, start, end)
     return (sections, fence_opens, occurrences, levels, excluded, named,
-            in_fence, fence_ranges)
+            fence is not None, fence_ranges)
 
 
 def count_content(lines, start, end, excluded):
@@ -783,7 +855,7 @@ def count_content(lines, start, end, excluded):
     in_block = False
     for idx in range(start, end):
         line = lines[idx]
-        if excluded[idx] or not line.strip() or HEADING_RE.match(line):
+        if excluded[idx] or ascii_blank(line) or HEADING_RE.match(line):
             in_block = False
             continue
         if not in_block:
@@ -831,7 +903,7 @@ def count_fence_line_counts_per_section(sections, fence_ranges, lines):
         for num, (start, end) in items:
             if start <= open_idx < end:
                 nonblank = sum(1 for i in range(content_start, content_end)
-                               if lines[i].strip())
+                               if not ascii_blank(lines[i]))
                 counts[num].append(nonblank)
                 break
     return counts
@@ -1129,21 +1201,29 @@ def scan_front_matter(lines):
         field line (e.g. '**Languages:** ...') being dropped from a
         translation even though its label text is untranslatable-by-regex.
 
-    Lines inside ``` fences are ignored, matching parse_file."""
+    Lines inside valid backtick/tilde fences are ignored, matching
+    parse_file."""
     h1_count = 0
     version_values = []
     date_values = []
     strays = []
     field_count = 0
-    in_fence = False
+    fence = None
     in_front_matter = True
     for line in lines:
-        if FENCE_RE.match(line):
-            in_fence = not in_fence
+        if fence is None:
+            opener = parse_fence_opener(line)
+            if opener is not None:
+                fence = opener
+                if in_front_matter:
+                    strays.append(line)
+                continue
+        elif is_fence_closer(line, fence):
+            fence = None
             if in_front_matter:
                 strays.append(line)
             continue
-        if in_fence:
+        if fence is not None:
             continue
         if in_front_matter and HEADING_RE.match(line):
             if h1_count >= 1:
@@ -1154,7 +1234,7 @@ def scan_front_matter(lines):
                 in_front_matter = False
         if H1_RE.match(line):
             h1_count += 1
-        if not in_front_matter or not line.strip():
+        if not in_front_matter or ascii_blank(line):
             continue
         if HEADING_RE.match(line):
             # The h1 title (and the heading ending the region) is part of

@@ -594,6 +594,20 @@ class CorpusTestCase(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn("InvalidUtf8", out)
 
+    def test_valid_inventory_lock_profile_controls_error_categories(self):
+        tests = self.build_minimal("temporary/tests")
+        self.write_invalid_utf8_fixture("temporary/tests")
+        lock_path = self.write_corpus_lock(
+            tests, "lock/v06.json", version="0.6.4"
+        )
+        code, out = self.run_main(
+            tests, "--corpus-inventory-lock", lock_path
+        )
+        self.assertEqual(code, 1)
+        self.assertIn("unknown 'expected_error'", out)
+        self.assertIn("InvalidUtf8", out)
+        self.assertNotIn("Traceback", out)
+
     # -- bug 1/2: invalid_utf8 exemption/expected_error is not cross-checked --
 
     def test_invalid_utf8_valid_bytes_but_expected_error_says_invalid_rejected(self):
@@ -860,6 +874,36 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests, "--require-boundary")
         self.assertEqual(code, 1)
         self.assertIn("could not identify one unquoted Ktav source literal", out)
+
+    def test_boundary_fixture_rejects_nul_before_filesystem_operations(self):
+        tests = self.build_full()
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "boundary\x00", "path": "/overflow",
+                "boundary_class": "integer_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("contains NUL", out)
+        self.assertNotIn("ValueError", out)
+        self.assertNotIn("UnicodeEncodeError", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_boundary_fixture_rejects_lone_surrogate_before_filesystem_operations(self):
+        tests = self.build_full()
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "boundary\ud800", "path": "/overflow",
+                "boundary_class": "integer_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("contains lone surrogate U+D800", out)
+        self.assertNotIn("ValueError", out)
+        self.assertNotIn("UnicodeEncodeError", out)
+        self.assertNotIn("Traceback", out)
 
     def test_tests_dir_must_be_a_real_directory(self):
         regular_file = self.write("not-a-directory", "not a directory")

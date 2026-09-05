@@ -682,11 +682,16 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   the literal `0`); a leading `+` is dropped; signed-zero literals
   (`+0`, `-0`) normalise to `0`. The canonical form is used by
   writer-conforming implementations (§ 5.9).
-- **Float** — a numeric scalar carrying a value in the implementation's
-  **declared Float domain**. That declaration MUST include the finite
+- **Float** — an abstract numeric scalar carrier. A programmatic Value MAY
+  carry a finite or non-finite IEEE-style value; the carrier MUST
+  distinguish NaN, +Infinity, and -Infinity so writer-conformance tests
+  can supply the § 5.9.0 fixture for each sentinel. These sentinels are
+  outside the parseable and canonical Float domains. A Float produced by
+  parsing MUST be finite and belong to the implementation's **declared
+  Float domain**. That declaration MUST include the finite
   values admitted as Ktav Floats, the decimal-conversion and rounding
   semantics used to parse and render them, and a deterministic conversion
-  policy. Every non-zero finite Float admitted to the Ktav Value model
+  policy. Every non-zero finite Float admitted to the declared Ktav Float domain
   MUST have at least one finite decimal candidate `(s, D, k)` whose exact
   decimal value reparses under those declared semantics to exactly that
   Float (§ 5.9.8). Positive and negative zero are admitted separately by
@@ -1670,8 +1675,11 @@ kind:
   segment (the parse-side counterpart is the `EmptyKey` error,
   § 6.5).
 - **Array:** every item of V is node-representable.
-- **Float:** V is finite — neither NaN nor ±Infinity — and belongs to
-  the declared Ktav Float domain of § 5. Consequently, if V is non-zero,
+- **Float:** The abstract programmatic Float carrier may carry NaN,
+  +Infinity, and -Infinity as distinct sentinels, but those sentinels are
+  not node-representable. A Float V is node-representable only when it is
+  finite — neither NaN nor ±Infinity — and belongs to the declared Ktav
+  Float domain of § 5. Consequently, if V is non-zero,
   it has at least one finite decimal candidate that round-trips exactly
   under the domain's declared conversion semantics (§ 5.9.8). Positive
   and negative zero are admitted separately by § 5.9.8's zero rule. A
@@ -1743,6 +1751,10 @@ encodes a non-finite Float MUST use the sentinel object with exactly one
 field, `{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
 `{"$float": "-Infinity"}`; no other shape is a valid sentinel. This
 fixture-encoding sentinel is permitted only in `unrepresentable/`. The
+sentinel denotes a programmatic value in the abstract Float carrier,
+not a parsed Float, a canonical Float, or a node-representable Float. The
+three spellings MUST remain distinct so a writer-conformance implementation
+can supply and reject each one. The
 rule does not reserve the key name: a parser-produced Object MAY contain
 a literal `$float` key like any other key, and its `value` root MUST
 be an Object or Array.
@@ -2915,7 +2927,10 @@ A writer-conforming implementation:
   `unrepresentable_reason`, and non-empty `note`, with no extra
   fields; the Value mapping and the exact `$float` sentinel shape are
   defined by § 5.9.0. The reason code MUST have a recursive witness in
-  the Value tree, rather than being inferred from the filename.
+  the Value tree, rather than being inferred from the filename. For
+  NonFiniteFloat, the $float sentinel is supplied through the abstract
+  programmatic Float carrier, is outside the parser and canonical domains,
+  and MUST preserve the distinction between NaN, +Infinity, and -Infinity.
 - For each fixture under
   `versions/0.7/tests/parseable-unrepresentable/`, when given
   `name.json["value"]`, rejects that Value with the reason code
@@ -3135,8 +3150,12 @@ to them (compact inline, explicit multi-line, comments, mixed
 bases) while machines exchange a deterministic byte sequence.
 Byte-deterministic output also makes Ktav useful as a target for
 generated configuration: any two writer-conforming implementations
-operating on the same Value produce the same bytes, so diffs over
-generated files are stable.
+with the same declared Value domain, Integer/Float domains, and Float
+decimal-conversion and rounding semantics MUST produce the same bytes for
+the same Value, so diffs over generated files are stable. Implementations
+with different declarations MAY differ where those declarations produce
+different Values or canonical candidates; each implementation MUST apply
+its own declared conversion policy deterministically.
 
 The conformance suite tests both directions: input variety via
 `name.ktav` fixtures (reader-side), output determinism via
@@ -3311,10 +3330,10 @@ shorter output (§ 10.4).
   changes. New fixtures `float/positive_zero` and
   `float/negative_zero` lock it in.
 - **Changed:** § 8.1 (with § 5's Integer definition) — fixture
-  equivalence is defined at the minimum-required numeric domain
-  (i64 Integer, binary64 Float). An implementation supporting a
-  wider domain MAY diverge from a fixture oracle exactly where that
-  fixture probes the minimum-domain boundary (e.g.
+  ordinary numeric-token equivalence is evaluated in the tested
+  implementation's declared Integer/Float domain, not against a universal
+  minimum-domain Value. A wider implementation MAY diverge from a fixture
+  oracle only where a named boundary leaf is crossed (e.g.
   `i64_overflow_to_string.json`), without forfeiting
   parser-conformance. Previously an arbitrary-precision
   implementation — explicitly permitted by § 5 — failed § 8.1 on

@@ -23,11 +23,16 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   the literal \`0\`); a leading \`+\` is dropped; signed-zero literals
   (\`+0\`, \`-0\`) normalise to \`0\`. The canonical form is used by
   writer-conforming implementations (§ 5.9).
-- **Float** — a numeric scalar carrying a value in the implementation's
-  **declared Float domain**. That declaration MUST include the finite
+- **Float** — an abstract numeric scalar carrier. A programmatic Value MAY
+  carry a finite or non-finite IEEE-style value; the carrier MUST
+  distinguish NaN, +Infinity, and -Infinity so writer-conformance tests
+  can supply the § 5.9.0 fixture for each sentinel. These sentinels are
+  outside the parseable and canonical Float domains. A Float produced by
+  parsing MUST be finite and belong to the implementation's **declared
+  Float domain**. That declaration MUST include the finite
   values admitted as Ktav Floats, the decimal-conversion and rounding
   semantics used to parse and render them, and a deterministic conversion
-  policy. Every non-zero finite Float admitted to the Ktav Value model
+  policy. Every non-zero finite Float admitted to the declared Ktav Float domain
   MUST have at least one finite decimal candidate \`(s, D, k)\` whose exact
   decimal value reparses under those declared semantics to exactly that
   Float (§ 5.9.8). Positive and negative zero are admitted separately by
@@ -82,14 +87,20 @@ Value — одно из: **Null**, **Bool**, **Integer**, **Float**, **String**,
   ведущих нулей (кроме литерала \`0\`); ведущий \`+\` отбрасывается;
   знаковые нули (\`+0\`, \`-0\`) нормализуются к \`0\`. Каноническая
   форма используется реализациями-эмиттерами (§ 5.9).
-- **Float** — числовой скаляр, несущий числовое значение.
+- **Float** — абстрактный числовой скалярный носитель. Программно
+  сконструированное Value MAY нести конечное или неконечное значение в
+  стиле IEEE; этот носитель MUST различать NaN, +Infinity и -Infinity,
+  чтобы writer-conformance мог подать фикстуру § 5.9.0 для каждого
+  sentinel. Эти sentinel находятся вне парсируемого и канонического
+  домена Float. Float, порождённый парсингом, MUST быть конечным и
+  принадлежать **заявленному домену Ktav Float** реализации.
 Реализация MUST поддерживать как минимум диапазон и точность
   IEEE 754 binary64 и MAY поддерживать более широкое представление
   (например, decimal произвольной точности). Её **заявленный домен Float**
   MUST включать конечные значения, допускаемые как Ktav Float, семантику
   decimal-преобразования и округления, используемую при разборе и выводе,
   а также детерминированную политику преобразования. Каждый ненулевой
-  конечный Float, допускаемый в модель Ktav Value, MUST иметь хотя бы один
+  конечный Float, допускаемый в заявленный домен Ktav Float, MUST иметь хотя бы один
   конечный десятичный кандидат \`(s, D, k)\`, точное decimal-значение
   которого при повторном разборе с этой семантикой даёт в точности тот же
   Float (§ 5.9.8). Положительный и отрицательный ноль допускаются отдельно
@@ -138,8 +149,12 @@ Value — одно из: **Null**, **Bool**, **Integer**, **Float**, **String**,
   十进制串,无下划线、无前导零
   (\`0\` 除外);前导 \`+\` 舍弃;有符号零 (\`+0\`, \`-0\`) 归一化为
   \`0\`。规范形式由 writer-conforming 实现使用(§ 5.9)。
-- **Float** —— 数值标量,携带实现**声明的 Float 域**中的值。该声明
-  MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
+- **Float** —— 抽象的数值标量载体。以编程方式构造的 Value MAY
+  携带有限或非有限的 IEEE 风格值;该载体 MUST 区分 NaN、+Infinity
+  与 -Infinity,以便 writer-conformance 能提供 § 5.9.0 中针对每个
+  sentinel 的 fixture。这些 sentinel 位于可解析 Float 域与规范 Float
+  域之外。解析产生的 Float MUST 是有限值,并属于实现**声明的
+  Ktav Float 域**。该声明 MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
   转换与舍入语义,以及确定性的转换策略。每个被接纳进 Ktav Value
   模型的非零有限 Float MUST 至少有一个有限十进制候选 \`(s, D, k)\`,其
   精确十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。

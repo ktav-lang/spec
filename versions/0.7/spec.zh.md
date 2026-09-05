@@ -600,8 +600,12 @@ decoded escape 产生的码点的处理。
   十进制串,无下划线、无前导零
   (`0` 除外);前导 `+` 舍弃;有符号零 (`+0`, `-0`) 归一化为
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
-- **Float** —— 数值标量,携带实现**声明的 Float 域**中的值。该声明
-  MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
+- **Float** —— 抽象的数值标量载体。以编程方式构造的 Value MAY
+  携带有限或非有限的 IEEE 风格值;该载体 MUST 区分 NaN、+Infinity
+  与 -Infinity,以便 writer-conformance 能提供 § 5.9.0 中针对每个
+  sentinel 的 fixture。这些 sentinel 位于可解析 Float 域与规范 Float
+  域之外。解析产生的 Float MUST 是有限值,并属于实现**声明的
+  Ktav Float 域**。该声明 MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
   转换与舍入语义,以及确定性的转换策略。每个被接纳进 Ktav Value
   模型的非零有限 Float MUST 至少有一个有限十进制候选 `(s, D, k)`,其
   精确十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。
@@ -760,8 +764,8 @@ raw-marker 体对这种分发是不透明的:在 `::` 之后,§ 5.8 的
 12. 体恰为 `false` → Bool `false`。
 13. 若体匹配**整数字面量**语法(§ 3.6)且数值至少落在 i64 范围内
     (-2^63 .. 2^63 - 1,即 -9_223_372_036_854_775_808 ..
-    9_223_372_036_854_775_807):Integer(Value 文本 = 规范十进制
-    归一化)。实现 MAY 支持更宽范围(例如 bignum / 任意精度);
+    9_223_372_036_854_775_807):Integer,携带该数值。其规范文本是
+    § 5 所述的十进制归一化。实现 MAY 支持更宽范围(例如 bignum / 任意精度);
     超出实现支持范围的值回退到规则 15(String)。为保证互操作,
     可移植文档 SHOULD NOT 依赖于 i64 范围之外的 Integer 类型化;
     运行于严格 i64 后端的 0.7.0 兼容解析器 MUST 将这类溢出体归入
@@ -1351,8 +1355,11 @@ Value,而不是将其序列化 —— 该要求统一适用于 § 5.9.0 的每�
   无论如何,任何文档都不能产生带有空键段的对(解析侧对应
   `EmptyKey` 错误,§ 6.5)。
 - **Array:** V 的每一项都节点可表示。
-- **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity —— 且属于
-  § 5 声明的 Ktav Float 域。因此对于非零 V,它至少有一个按该域
+- **Float:** 抽象的程序化 Float 载体可以携带 NaN、+Infinity 与
+  -Infinity 这三个彼此不同的 sentinel,但这些 sentinel 不具备节点可
+  表示性。Float V 只有在有限(既非 NaN 也非 ±Infinity)且属于 § 5
+  声明的 Ktav Float 域时才节点可表示。因此对于非零 V,它至少有一个
+  按该域
   声明的转换语义精确 round-trip 的有限十进制候选(§ 5.9.8)。正零
   与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示可能含有
   没有这种候选的非零有限精确值(例如精确有理数 `1/3`);该值在 Ktav
@@ -1409,7 +1416,10 @@ MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 编码非有限 Float 的不可表示 fixture MUST 使用恰好含一个字段的
 sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
 或 `{"$float": "-Infinity"}`;其他形状都不是有效 sentinel。这个
-fixture 编码 sentinel 仅允许用于 `unrepresentable/`。该规则不保留
+fixture 编码 sentinel 表示抽象 Float 载体中的程序化值,而不是解析所得
+的 Float、规范 Float 或节点可表示的 Float。三种写法 MUST 保持彼此
+不同,以便 writer-conformance 实现能够提供并拒绝每一种。该 fixture
+编码 sentinel 仅允许用于 `unrepresentable/`。该规则不保留
 键名:parser 产生的 Object MAY 像使用其他键一样包含字面键
 `$float`,且其 `value` 根 MUST 是 Object 或 Array。
 只有当该原因情形出现在 Value 树中的某处时,
@@ -2339,7 +2349,9 @@ Writer-conforming 实现:
   机制。每个 JSON Object MUST 恰好包含 `value`,
   `unrepresentable_reason` 与非空 `note`,不得有额外字段;
   Value 映射与 `$float` sentinel 的精确形状见 § 5.9.0。原因代码
-  MUST 在 Value 树中有递归见证,而不得从文件名推导。
+  MUST 在 Value 树中有递归见证,而不得从文件名推导。对于 NonFiniteFloat,
+  $float sentinel 通过抽象程序化 Float 载体提供,位于解析器与规范域
+  之外,且 MUST 保持 NaN、+Infinity 与 -Infinity 三者的区别。
 - 对 `versions/0.7/tests/parseable-unrepresentable/` 下每个
   fixture,在给定 `name.json["value"]` 时,以
   `name.json["unrepresentable_reason"]` 指明的原因代码拒绝该
@@ -2509,8 +2521,11 @@ a
 
 这种分离让人以最自然的形式书写 Ktav(紧凑 inline、显式多行、注释、混合基数),而
 机器交换确定性的字节序列。字节确定性输出也使 Ktav 适合作为生成配置的目标:任何
-两个 writer-conforming 实现对同一 Value 产生相同字节,因此生成文件之上的 diff
-保持稳定。
+两个 writer-conforming 实现只有在声明了相同的 Value 域、Integer/Float
+域以及 Float 十进制转换与舍入语义时,MUST 对同一 Value 产生相同字节,
+因此生成文件之上的 diff 保持稳定。声明不同的实现 MAY 在这些声明
+产生不同 Value 或规范候选时给出不同结果;每个实现 MUST 确定性地
+应用自己的声明转换策略。
 
 合规语料双向测试:输入多样性经 `name.ktav` fixture(读取侧),输出确定性经
 `name.canonical.ktav` fixture(写入侧),以及与 `name.json` oracle 的等价性
@@ -2648,9 +2663,10 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
   一致;改变的只是规范文本。新 fixture `float/positive_zero` 与
   `float/negative_zero` 将其锁定。
 - **变更:** § 8.1(连同 § 5 的 Integer 定义)—— fixture 等价性
-  定义在最小必需数值域上(i64 Integer、binary64 Float)。支持
-  更宽域的实现 MAY 恰好在 fixture 探测最小域边界之处偏离 fixture
-  oracle(如 `i64_overflow_to_string.json`),而不丧失
+  普通数值 token 的等价性在被测实现声明的 Integer/Float 域中评估,
+  而不是相对于一个普遍适用的最小域 Value。支持更宽域的实现 MAY
+  仅在越过已命名的边界叶时偏离 fixture oracle(如
+  `i64_overflow_to_string.json`),而不丧失
   parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
   在该 fixture 上不满足 § 8.1。
 - **变更:** § 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节

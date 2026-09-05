@@ -119,12 +119,14 @@ CORPUS_LAYOUT_PROFILES = {
     "0.6.4": {
         "directories": frozenset({"valid", "invalid"}),
         "files": frozenset(),
+        "error_categories": ERROR_CATEGORIES_V0_6,
     },
     "0.7.0": {
         "directories": frozenset({
             "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
         }),
         "files": frozenset({"boundary-fixtures.json"}),
+        "error_categories": ERROR_CATEGORIES_V0_7,
     },
 }
 IGNORED_CORPUS_TOP_LEVEL_NAMES = frozenset({
@@ -152,19 +154,26 @@ SENTINEL_POLICIES = frozenset({"allow", "ordinary"})
 
 def rel(path, tests_dir):
     """Path relative to tests_dir with forward slashes, for deterministic output."""
-    return os.path.relpath(path, tests_dir).replace(os.sep, "/")
+    try:
+        return os.path.relpath(path, tests_dir).replace(os.sep, "/")
+    except (OSError, ValueError, UnicodeError):
+        # Diagnostics must remain printable even for hostile path strings.
+        return _ascii_safe_text(path)
 
 
 def _is_regular_directory(path):
     """Use lstat semantics so the traversal root cannot be redirected."""
     try:
         info = os.lstat(path)
-    except OSError:
+    except (OSError, ValueError, UnicodeError):
         return False
     if stat.S_ISLNK(info.st_mode):
         return False
     isjunction = getattr(os.path, "isjunction", None)
-    if isjunction is not None and isjunction(path):
+    try:
+        if isjunction is not None and isjunction(path):
+            return False
+    except (OSError, ValueError, UnicodeError):
         return False
     if os.name == "nt":
         reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
@@ -177,7 +186,7 @@ def _is_regular_file(path):
     """True only for a regular, non-link, non-reparse-point file."""
     try:
         info = os.lstat(path)
-    except OSError:
+    except (OSError, ValueError, UnicodeError):
         return False
     if stat.S_ISLNK(info.st_mode):
         return False
@@ -192,7 +201,7 @@ def _path_entry_exists(path):
     """Use lstat so a dangling link is still considered an existing entry."""
     try:
         os.lstat(path)
-    except OSError:
+    except (OSError, ValueError, UnicodeError):
         return False
     return True
 
@@ -201,13 +210,16 @@ def _directory_rejection_reason(path):
     """Return a deterministic reason for a directory that must not be walked."""
     try:
         info = os.lstat(path)
-    except OSError as error:
+    except (OSError, ValueError, UnicodeError) as error:
         return "directory cannot be inspected: %s" % _ascii_safe_text(error)
     if stat.S_ISLNK(info.st_mode):
         return "symlink directory is not allowed"
     isjunction = getattr(os.path, "isjunction", None)
-    if isjunction is not None and isjunction(path):
-        return "junction directory is not allowed"
+    try:
+        if isjunction is not None and isjunction(path):
+            return "junction directory is not allowed"
+    except (OSError, ValueError, UnicodeError) as error:
+        return "directory cannot be inspected: %s" % _ascii_safe_text(error)
     if os.name == "nt":
         reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
         if getattr(info, "st_file_attributes", 0) & reparse:
@@ -663,6 +675,38 @@ def _lone_surrogate(value):
     return None
 
 
+def _manifest_string_issue(value):
+    """Return a deterministic reason when a manifest string is unsafe."""
+    if "\x00" in value:
+        return "contains NUL"
+    surrogate = _lone_surrogate(value)
+    if surrogate is not None:
+        return "contains lone surrogate U+%04X" % surrogate
+    for char in value:
+        codepoint = ord(char)
+        if codepoint < 0x20 or codepoint == 0x7F:
+            return "contains ASCII control U+%04X" % codepoint
+    return None
+
+
+def _fixture_path_issue(fixture):
+    """Validate a manifest fixture path before it reaches filesystem APIs."""
+    issue = _manifest_string_issue(fixture)
+    if issue is not None:
+        return issue
+    if not fixture:
+        return "must be a non-empty string"
+    if ":" in fixture:
+        return ("resolves outside <tests_dir>/valid/ (drive syntax is not "
+                "allowed)")
+    if ("\\" in fixture
+            or any(part in ("", ".", "..") for part in fixture.split("/"))):
+        return ("must be a '/'-separated path of plain name segments under "
+                "valid/ (no '..', '.', empty segments, backslashes, or drive "
+                "syntax)")
+    return None
+
+
 def _oracle_path(path, key):
     escaped = json.dumps(key, ensure_ascii=True)[1:-1]
     return "%s/%s" % (path, escaped.replace("~", "~0").replace("/", "~1"))
@@ -927,12 +971,12 @@ def resolve_pointer(doc, pointer):
 
 def _is_within(child, parent):
     """True if realpath(child) is parent itself or lies under realpath(parent)."""
-    child = os.path.realpath(child)
-    parent = os.path.realpath(parent)
     try:
+        child = os.path.realpath(child)
+        parent = os.path.realpath(parent)
         rel = os.path.relpath(child, parent)
-    except ValueError:
-        # Windows cross-drive paths can never be within the tree.
+    except (OSError, ValueError, UnicodeError):
+        # Invalid or cross-drive paths can never be within the tree.
         return False
     return rel == os.curdir or not (rel == os.pardir or rel.startswith(os.pardir + os.sep))
 
@@ -945,9 +989,11 @@ def _boundary_record_shape(entry):
         return False
     if any(not isinstance(entry[field], str) for field in BOUNDARY_RECORD_FIELDS):
         return False
+    if any(_manifest_string_issue(entry[field]) is not None
+           for field in BOUNDARY_RECORD_FIELDS):
+        return False
     fixture = entry["fixture"]
-    if (not fixture or "\\" in fixture
-            or any(part in ("", ".", "..") for part in fixture.split("/"))):
+    if _fixture_path_issue(fixture) is not None:
         return False
     _tokens, pointer_error = json_pointer_tokens(entry["path"])
     return (entry["boundary_class"] in BOUNDARY_CLASSES
@@ -976,22 +1022,23 @@ def _report_boundary_record_shape(results, category, label, entry):
             results.fail(category, "%s: %r must be a string"
                          % (label, field))
             valid = False
+        else:
+            issue = _manifest_string_issue(entry[field])
+            if issue is not None:
+                results.fail(category, "%s: %r %s"
+                             % (label, field, issue))
+                valid = False
     if valid and entry["boundary_class"] not in BOUNDARY_CLASSES:
         results.fail(category, "%s: unknown boundary_class %r (must be one of: %s)"
                      % (label, entry["boundary_class"],
                         ", ".join(sorted(BOUNDARY_CLASSES))))
         valid = False
-    if valid and entry["fixture"] == "":
-        results.fail(category, "%s: 'fixture' must be a non-empty string" % label)
-        valid = False
-    if valid and ("\\" in entry["fixture"]
-                  or any(part in ("", ".", "..")
-                         for part in entry["fixture"].split("/"))):
-        results.fail(category, "%s: 'fixture' must be a '/'-separated path "
-                     "of plain name segments under valid/ (no '..', '.', "
-                     "empty segments, or backslashes): %r"
-                     % (label, entry["fixture"]))
-        valid = False
+    if valid:
+        issue = _fixture_path_issue(entry["fixture"])
+        if issue is not None:
+            results.fail(category, "%s: 'fixture' %s: %r"
+                         % (label, issue, entry["fixture"]))
+            valid = False
     if valid:
         _tokens, pointer_error = json_pointer_tokens(entry["path"])
         if pointer_error:
@@ -1457,30 +1504,34 @@ def _validate_hash_mapping(value, results, rpath, locked_dirs, locked_files):
     return valid
 
 
-def check_corpus_inventory_lock(tests_dir, results, lock_path):
-    """Match every locked corpus file's canonical path and SHA-256 digest."""
+def load_corpus_inventory_lock(lock_path, results):
+    """Load one inventory lock and return (data, layout profile).
+
+    The caller uses the profile for semantic checks and passes the parsed data
+    to the inventory checker, so malformed locks produce one diagnostic only.
+    """
     category = "corpus inventory lock"
     try:
         with open(lock_path, "r", encoding="utf-8") as f:
             lock_text = f.read()
-    except OSError as e:
+    except (OSError, ValueError, UnicodeError) as e:
         results.fail(category, "--corpus-inventory-lock %s: unreadable: %s"
                      % (lock_path, e))
-        return
+        return None, None
     try:
         lock_data = loads_strict(lock_text)
     except (json.JSONDecodeError, ValueError) as e:
         results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
                      % (lock_path, _ascii_safe_text(e)))
-        return
+        return None, None
     except RecursionError:
         results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
                      % (lock_path, JSON_RECURSION_ERROR))
-        return
+        return None, None
     if not isinstance(lock_data, dict):
         results.fail(category, "--corpus-inventory-lock %s: root must be a JSON "
                      "object" % lock_path)
-        return
+        return None, None
     missing = sorted(CORPUS_INVENTORY_FIELDS - set(lock_data))
     extra = sorted(set(lock_data) - CORPUS_INVENTORY_FIELDS)
     if missing:
@@ -1490,7 +1541,7 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
         results.fail(category, "%s: unexpected field(s): %s"
                      % (lock_path, ", ".join(repr(field) for field in extra)))
     if "version" not in lock_data:
-        return
+        return lock_data, None
     version = lock_data["version"]
     profile = (CORPUS_LAYOUT_PROFILES.get(version)
                if isinstance(version, str) else None)
@@ -1498,7 +1549,19 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
         supported = ", ".join(repr(item) for item in sorted(CORPUS_LAYOUT_PROFILES))
         results.fail(category, "%s: unsupported corpus inventory version %r "
                      "(supported: %s)" % (lock_path, version, supported))
+        return lock_data, None
+    return lock_data, profile
+
+
+def check_corpus_inventory_lock(tests_dir, results, lock_path,
+                                lock_data=None, profile=None):
+    """Match every locked corpus file's canonical path and SHA-256 digest."""
+    category = "corpus inventory lock"
+    if lock_data is None and profile is None:
+        lock_data, profile = load_corpus_inventory_lock(lock_path, results)
+    if lock_data is None or profile is None:
         return
+
     locked_dirs = profile["directories"]
     locked_files = profile["files"]
     expected = _validate_hash_mapping(
@@ -1548,9 +1611,18 @@ def main(argv):
         return 2
 
     results = Results()
+    inventory_lock = None
+    inventory_profile = None
+    if args.corpus_inventory_lock is not None:
+        inventory_lock, inventory_profile = load_corpus_inventory_lock(
+            args.corpus_inventory_lock, results
+        )
     parsed = check_utf8_json(tests_dir, results)
     check_valid(tests_dir, results, parsed)
-    check_invalid(tests_dir, results, parsed, select_error_categories(tests_dir))
+    error_categories = (inventory_profile["error_categories"]
+                        if inventory_profile is not None
+                        else select_error_categories(tests_dir))
+    check_invalid(tests_dir, results, parsed, error_categories)
     check_invalid_utf8_oracle(tests_dir, results, parsed)
     has_unrep = check_unrepresentable(tests_dir, results, parsed,
                                       require=args.require_unrepresentable)
@@ -1559,8 +1631,12 @@ def main(argv):
     has_boundary = check_boundary_fixtures(tests_dir, results, parsed,
                                            require=args.require_boundary,
                                            lock_path=args.boundary_manifest_lock)
-    if args.corpus_inventory_lock is not None:
-        check_corpus_inventory_lock(tests_dir, results, args.corpus_inventory_lock)
+    if (args.corpus_inventory_lock is not None
+            and inventory_lock is not None and inventory_profile is not None):
+        check_corpus_inventory_lock(
+            tests_dir, results, args.corpus_inventory_lock,
+            lock_data=inventory_lock, profile=inventory_profile
+        )
 
     failures = {}
     for category, message in results.problems:

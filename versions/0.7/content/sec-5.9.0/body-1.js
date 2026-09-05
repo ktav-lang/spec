@@ -27,8 +27,11 @@ kind:
   segment (the parse-side counterpart is the \`EmptyKey\` error,
   § 6.5).
 - **Array:** every item of V is node-representable.
-- **Float:** V is finite — neither NaN nor ±Infinity — and belongs to
-  the declared Ktav Float domain of § 5. Consequently, if V is non-zero,
+- **Float:** The abstract programmatic Float carrier may carry NaN,
+  +Infinity, and -Infinity as distinct sentinels, but those sentinels are
+  not node-representable. A Float V is node-representable only when it is
+  finite — neither NaN nor ±Infinity — and belongs to the declared Ktav
+  Float domain of § 5. Consequently, if V is non-zero,
   it has at least one finite decimal candidate that round-trips exactly
   under the domain's declared conversion semantics (§ 5.9.8). Positive
   and negative zero are admitted separately by § 5.9.8's zero rule. A
@@ -102,8 +105,11 @@ with exactly these three fields and no others:
   породить пару с пустым сегментом ключа (парсинг-эквивалент —
   ошибка \`EmptyKey\`, § 6.5).
 - **Array:** каждый элемент V узлово-представим.
-- **Float:** V конечен — ни NaN, ни ±Infinity — и принадлежит
-  заявленному в § 5 домену Ktav Float. Поэтому для ненулевого V он имеет
+- **Float:** Абстрактный программный Float-носитель может содержать NaN,
+  +Infinity и -Infinity как различные sentinel, но такие sentinel
+  узлово-непредставимы. Float V узлово-представим только если он конечен —
+  ни NaN, ни ±Infinity — и принадлежит заявленному в § 5 домену Ktav
+  Float. Поэтому для ненулевого V он имеет
   хотя бы один конечный десятичный кандидат, точно проходящий round-trip
   с заявленной семантикой преобразования домена (§ 5.9.8). Положительный
   и отрицательный ноль допускаются отдельно по правилу нуля § 5.9.8.
@@ -172,8 +178,11 @@ with exactly these three fields and no others:
   无论如何,任何文档都不能产生带有空键段的对(解析侧对应
   \`EmptyKey\` 错误,§ 6.5)。
 - **Array:** V 的每一项都节点可表示。
-- **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity —— 且属于
-  § 5 声明的 Ktav Float 域。因此对于非零 V,它至少有一个按该域
+- **Float:** 抽象的程序化 Float 载体可以携带 NaN、+Infinity 与
+  -Infinity 这三个彼此不同的 sentinel,但这些 sentinel 不具备节点可
+  表示性。Float V 只有在有限(既非 NaN 也非 ±Infinity)且属于 § 5
+  声明的 Ktav Float 域时才节点可表示。因此对于非零 V,它至少有一个
+  按该域
   声明的转换语义精确 round-trip 的有限十进制候选(§ 5.9.8)。正零
   与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示可能含有
   没有这种候选的非零有限精确值(例如精确有理数 \`1/3\`);该值在 Ktav

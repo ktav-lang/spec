@@ -24,6 +24,7 @@ import {
   LANGS,
   README_FILES,
   README_SOURCE_FILE,
+  validateMeta,
 } from './build_spec.mjs';
 
 function write(p, content) {
@@ -33,6 +34,20 @@ function write(p, content) {
 
 function metaJs(obj) {
   return 'export default ' + JSON.stringify(obj, null, 2) + '\n';
+}
+
+function permutations(items) {
+  if (items.length <= 1) return [items];
+  const result = [];
+  for (let i = 0; i < items.length; i++) {
+    const rest = [...items.slice(0, i), ...items.slice(i + 1)];
+    for (const tail of permutations(rest)) result.push([items[i], ...tail]);
+  }
+  return result;
+}
+
+function withKeyOrder(value, keys) {
+  return Object.fromEntries(keys.map((key) => [key, value[key]]));
 }
 
 function escTemplate(s) {
@@ -204,6 +219,60 @@ function zipLanguageBodies(en, ru, zh) {
 test('well-formed minimal fixture passes cleanly', async () => {
   const { manifest } = await validate(baseFixtures());
   assert.deepEqual(manifest, ['frontmatter', 'named-abstract', 'sec-1']);
+});
+
+test('meta.js enforces the documented top-level and nested property order', () => {
+  const cases = [
+    {
+      kind: 'frontmatter',
+      unit: 'frontmatter',
+      value: unitMeta('frontmatter'),
+      keys: ['kind', 'number', 'level', 'title', 'bodyParts'],
+    },
+    {
+      kind: 'numbered',
+      unit: 'sec-1',
+      value: unitMeta('numbered', { __num: '1' }),
+      keys: ['kind', 'number', 'sep', 'level', 'title', 'bodyParts'],
+    },
+    {
+      kind: 'named',
+      unit: 'named-order',
+      value: unitMeta('named'),
+      keys: ['kind', 'number', 'level', 'title', 'bodyParts'],
+    },
+  ];
+
+  for (const { value, unit, keys } of cases) {
+    for (const order of permutations(keys)) {
+      const candidate = withKeyOrder(value, order);
+      if (order.every((key, i) => key === keys[i])) {
+        assert.doesNotThrow(() => validateMeta(unit, candidate));
+      } else {
+        assert.throws(
+          () => validateMeta(unit, candidate),
+          /meta\.js keys must be in documented order/
+        );
+      }
+    }
+  }
+
+  for (const { value, unit } of cases.slice(1)) {
+    for (const order of permutations(['en', 'ru', 'zh'])) {
+      const candidate = {
+        ...value,
+        title: withKeyOrder(value.title, order),
+      };
+      if (order.join() === 'en,ru,zh') {
+        assert.doesNotThrow(() => validateMeta(unit, candidate));
+      } else {
+        assert.throws(
+          () => validateMeta(unit, candidate),
+          /title keys must be in documented order/
+        );
+      }
+    }
+  }
 });
 
 test('production-shaped content uses the default section inventory lock under repo/scripts', async () => {
@@ -1226,6 +1295,34 @@ test('body-1.js with invalid UTF-8 bytes is rejected instead of silently decoded
     validate(baseFixtures(), null, (c) =>
       write(path.join(c, 'sec-1', 'body-1.js'), broken)),
     (e) => /unit "sec-1": body-1\.js is not valid UTF-8/.test(e.message)
+  );
+});
+
+test('body-1.js with a simple raw CR is rejected before decoding', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), bodyJs('end.\r\n', 'konets.\r\n', 'zhong.\r\n'))),
+    (e) => /unit "sec-1": body-1\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
+  );
+});
+
+test('body-1.js with raw CR in a 120-plus-line split is rejected before splitting', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithOneInteriorBlank(130, 64).replace('paragraph-1', 'paragraph-1\r');
+  const cut = body.indexOf('\n\n') + 2;
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(splitBody(body, cut));
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "sec-1": body-1\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
+  );
+});
+
+test('README.source.js with a raw CR is rejected before decoding', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, README_SOURCE_FILE), bodyJs('# content README\r\n', '# content README\r\n', '# content README\r\n'))),
+    (e) => /README\.source\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
   );
 });
 

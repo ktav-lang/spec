@@ -122,11 +122,15 @@ motd: (
 反而保持为 String;更宽的实现 MAY 将该边界字面量分类为 Integer
 或 Float。在*被测实现的域中下溢*的小数仍然成为 Float,并在该域中
 舍入到带符号的 `0.0`,而非 String;若更宽的域中不发生下溢,则保留
-非零 Float。声明的 Float 域包括十进制转换与舍入语义,并 MUST 只接纳
+非零 Float。抽象的程序化 Float 载体 MUST 区分 NaN、+Infinity 与
+-Infinity,以便 writer-conformance 提供三个非有限 sentinel;这些
+sentinel 位于可解析域与规范域之外。解析产生的 Float 是有限值,属于
+声明的 Float 域。该域包括十进制转换与舍入语义,并 MUST 只接纳
 有限 Float。每个非零有限 Float MUST 拥有可精确 round-trip 的有限
 十进制表示;
 带符号零另行处理,保持为 `0.0` / `-0.0`;最小 binary64 转换使用
-`roundTiesToEven`。不支持的精确有理值(如 `1/3`)不属于 Ktav Float 域。
+`roundTiesToEven`。不支持的精确有理值(如 `1/3`)不属于声明的 Ktav
+Float 域,也不是可解析或规范 Float。
 
 ```text
 retries: 3
@@ -279,11 +283,14 @@ Integer;带小数点或指数 → Float;其余一切 → String。在最小数�
 会保持为 String,而不是回绕或抛出错误;更宽的域 MAY 将同一边界
 字面量分类为 Integer 或 Float。在*实现域中下溢*的小数仍然成为
 Float,并在该域中舍入到带符号的 `0.0`;若更宽的域中不发生下溢,
-则保留非零 Float。声明的 Float 域包括十进制转换与舍入语义;每个被
+则保留非零 Float。抽象的程序化 Float 载体 MUST 区分 NaN、+Infinity
+与 -Infinity,供 writer-conformance 使用;这些 sentinel 位于可解析域
+与规范域之外。解析产生的 Float 是有限值,属于声明的 Float 域,该域
+包括十进制转换与舍入语义;每个被
 接纳的非零有限 Float MUST 有一个可精确 round-trip 的有限十进制候选。
 带符号零另行处理,保持为 `0.0` / `-0.0`;最小 binary64 转换使用
 `roundTiesToEven`。主机表示中没有这种候选的有限值(例如精确有理数
-`1/3`)不是 Ktav Float。
+`1/3`)位于声明的 Ktav Float 域之外,也不是可解析或规范 Float。
 
 ```text
 port:    8080
@@ -389,7 +396,9 @@ fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
   构造的情形,每个用例只有一个 `<name>.json`,且恰好包含 `value`、
   `unrepresentable_reason` 与非空 `note`;Value 映射及 `$float`
   sentinel 的精确形状见 § 5.9.0。该 sentinel 仅限于此 fixture 编码的
-  上下文,不会把 `$float` 保留为 parser Object 的键名。原因代码 MUST
+  上下文,不会把 `$float` 保留为 parser Object 的键名。对于
+  `NonFiniteFloat`,它表示抽象程序化 Float 载体,而不是解析所得或规范
+  Float,并位于节点可表示性之外。原因代码 MUST
   在树中有递归见证,
   且只能是 `ScalarRoot`、`EmptyKeyName` 或 `NonFiniteFloat`,
   MUST NOT 从文件名推导。

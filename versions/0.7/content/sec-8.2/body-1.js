@@ -32,7 +32,10 @@ A writer-conforming implementation:
   \`unrepresentable_reason\`, and non-empty \`note\`, with no extra
   fields; the Value mapping and the exact \`$float\` sentinel shape are
   defined by § 5.9.0. The reason code MUST have a recursive witness in
-  the Value tree, rather than being inferred from the filename.
+  the Value tree, rather than being inferred from the filename. For
+  NonFiniteFloat, the $float sentinel is supplied through the abstract
+  programmatic Float carrier, is outside the parser and canonical domains,
+  and MUST preserve the distinction between NaN, +Infinity, and -Infinity.
 - For each fixture under
   \`versions/0.7/tests/parseable-unrepresentable/\`, when given
   \`name.json["value"]\`, rejects that Value with the reason code
@@ -75,7 +78,10 @@ Writer-conforming реализация:
   \`unrepresentable_reason\` и непустой \`note\`, без лишних полей;
   отображение Value и точная форма sentinel \`$float\` определены в
   § 5.9.0. Код причины MUST иметь рекурсивное свидетельство в дереве
-  Value, а не выводиться из имени файла.
+  Value, а не выводиться из имени файла. Для NonFiniteFloat sentinel
+  подаётся через абстрактный программный Float-носитель, находится вне
+  доменов парсера и canonical form, а различия NaN, +Infinity и -Infinity
+  MUST сохраняться.
 - Для каждой фикстуры из
   \`versions/0.7/tests/parseable-unrepresentable/\` при подаче
   \`name.json["value"]\` отвергает этот Value с кодом причины из
@@ -109,7 +115,9 @@ Writer-conforming 实现:
   机制。每个 JSON Object MUST 恰好包含 \`value\`,
   \`unrepresentable_reason\` 与非空 \`note\`,不得有额外字段;
   Value 映射与 \`$float\` sentinel 的精确形状见 § 5.9.0。原因代码
-  MUST 在 Value 树中有递归见证,而不得从文件名推导。
+  MUST 在 Value 树中有递归见证,而不得从文件名推导。对于 NonFiniteFloat,
+  $float sentinel 通过抽象程序化 Float 载体提供,位于解析器与规范域
+  之外,且 MUST 保持 NaN、+Infinity 与 -Infinity 三者的区别。
 - 对 \`versions/0.7/tests/parseable-unrepresentable/\` 下每个
   fixture,在给定 \`name.json["value"]\` 时,以
   \`name.json["unrepresentable_reason"]\` 指明的原因代码拒绝该

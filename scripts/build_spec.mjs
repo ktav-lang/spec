@@ -48,6 +48,13 @@ function failUnit(unit, problem) {
   fail(`unit "${unit}": ${problem}`);
 }
 
+function rejectRawCarriageReturns(buf, label) {
+  const offset = buf.indexOf(0x0d);
+  if (offset !== -1) {
+    fail(`${label} contains a raw carriage return (CR, 0x0D) at byte offset ${offset}; object sources must use LF-only line endings`);
+  }
+}
+
 // Strict UTF-8: reject malformed byte sequences instead of silently
 // substituting U+FFFD replacement characters (lenient decoding would let a
 // corrupted multi-byte sequence pass as different, valid-looking text).
@@ -105,6 +112,13 @@ export function validateMeta(unit, meta) {
     if (missing.length) bits.push(`missing key(s) ${missing.map((k) => JSON.stringify(k)).join(', ')}`);
     failUnit(unit, `meta.js keys must be exactly {${wantSet.map((k) => JSON.stringify(k)).join(', ')}}; got ${bits.join('; ')}`);
   }
+  const actualKeys = Object.keys(meta);
+  if (actualKeys.some((key, i) => key !== allowedKeys[i])) {
+    failUnit(unit,
+      `meta.js keys must be in documented order ` +
+      `[${allowedKeys.map((key) => JSON.stringify(key)).join(', ')}]; got ` +
+      `[${actualKeys.map((key) => JSON.stringify(key)).join(', ')}]`);
+  }
   if (meta.kind === 'frontmatter') {
     if (meta.number !== null || meta.level !== null || meta.title !== null) {
       failUnit(unit, 'frontmatter must have number/level/title all null');
@@ -141,6 +155,12 @@ export function validateMeta(unit, meta) {
     if (extra.length) bits.push(`unexpected key(s) ${extra.map((k) => JSON.stringify(k)).join(', ')}`);
     if (missing.length) bits.push(`missing key(s) ${missing.map((k) => JSON.stringify(k)).join(', ')}`);
     failUnit(unit, `title keys must be exactly {en, ru, zh}; got ${bits.join('; ')}`);
+  }
+  const titleKeys = Object.keys(t);
+  if (titleKeys.some((key, i) => key !== LANGS[i])) {
+    failUnit(unit,
+      `title keys must be in documented order ["en", "ru", "zh"]; got ` +
+      `[${titleKeys.map((key) => JSON.stringify(key)).join(', ')}]`);
   }
   for (const lang of LANGS) {
     if (typeof t[lang] !== 'string' || t[lang].length === 0) {
@@ -359,6 +379,7 @@ function readReadmeSource(contentDir) {
   } catch (e) {
     fail(`cannot read ${sourcePath}: ${e.message}`);
   }
+  rejectRawCarriageReturns(buf, sourcePath);
   const src = decodeUtf8Strict(buf, sourcePath);
   const source = validateBodySourceShape('content', README_SOURCE_FILE, src, README_SOURCE_FILE);
   validateBodyPart('content', README_SOURCE_FILE, source, README_SOURCE_FILE);
@@ -624,7 +645,9 @@ export async function validateContentDir(contentDir, options = {}) {
       } catch (e) {
         failUnit(unit, `cannot read body-${k}.js: ${e.message}`);
       }
-      const src = decodeUtf8Strict(buf, `unit "${unit}": body-${k}.js`);
+      const sourceLabel = `unit "${unit}": body-${k}.js`;
+      rejectRawCarriageReturns(buf, sourceLabel);
+      const src = decodeUtf8Strict(buf, sourceLabel);
       const decoded = validateBodySourceShape(unit, k, src);
 
       // The decoded values ARE the body content: no code from the file is

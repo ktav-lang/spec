@@ -91,10 +91,10 @@ export default {
   changes. New fixtures \`float/positive_zero\` and
   \`float/negative_zero\` lock it in.
 - **Changed:** § 8.1 (with § 5's Integer definition) — fixture
-  equivalence is defined at the minimum-required numeric domain
-  (i64 Integer, binary64 Float). An implementation supporting a
-  wider domain MAY diverge from a fixture oracle exactly where that
-  fixture probes the minimum-domain boundary (e.g.
+  ordinary numeric-token equivalence is evaluated in the tested
+  implementation's declared Integer/Float domain, not against a universal
+  minimum-domain Value. A wider implementation MAY diverge from a fixture
+  oracle only where a named boundary leaf is crossed (e.g.
   \`i64_overflow_to_string.json\`), without forfeiting
   parser-conformance. Previously an arbitrary-precision
   implementation — explicitly permitted by § 5 — failed § 8.1 on
@@ -328,11 +328,12 @@ export default {
   меняется только нормативный текст. Новые фикстуры
   \`float/positive_zero\` и \`float/negative_zero\` фиксируют это.
 - **Изменено:** § 8.1 (вместе с определением Integer в § 5) —
-  эквивалентность фикстур определяется на минимально требуемом
-  числовом домене (Integer i64, Float binary64). Реализация,
-  поддерживающая более широкий домен, MAY расходиться с оракулом
-  фикстуры ровно там, где фикстура проверяет границу минимального
-  домена (например, \`i64_overflow_to_string.json\`), не теряя
+  обычная эквивалентность числовых токенов оценивается в заявленном
+  Integer/Float-домене тестируемой реализации, а не относительно
+  универсального Value минимального домена. Реализация, поддерживающая
+  более широкий домен, MAY расходиться с оракулом фикстуры только там,
+  где пересечена названная граничная область (например,
+  \`i64_overflow_to_string.json\`), не теряя
   parser-conformance. Ранее реализация с произвольной точностью —
   явно разрешённая § 5 — проваливала § 8.1 на этой фикстуре в её
   буквальном виде.
@@ -545,9 +546,10 @@ export default {
   一致;改变的只是规范文本。新 fixture \`float/positive_zero\` 与
   \`float/negative_zero\` 将其锁定。
 - **变更:** § 8.1(连同 § 5 的 Integer 定义)—— fixture 等价性
-  定义在最小必需数值域上(i64 Integer、binary64 Float)。支持
-  更宽域的实现 MAY 恰好在 fixture 探测最小域边界之处偏离 fixture
-  oracle(如 \`i64_overflow_to_string.json\`),而不丧失
+  普通数值 token 的等价性在被测实现声明的 Integer/Float 域中评估,
+  而不是相对于一个普遍适用的最小域 Value。支持更宽域的实现 MAY
+  仅在越过已命名的边界叶时偏离 fixture oracle(如
+  \`i64_overflow_to_string.json\`),而不丧失
   parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
   在该 fixture 上不满足 § 8.1。
 - **变更:** § 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节
