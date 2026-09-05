@@ -238,6 +238,11 @@ TABLE_ROW_RE = re.compile(r'^\s*\|')
 # Only whitespace is allowed before the '<' so a mid-sentence "<foo> ::="
 # fragment inside prose is not mistaken for an actual production line.
 GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
+# § 3.6 uses ordinary lowercase identifiers as BNF nonterminals rather than
+# the angle-bracket form used by § 4. Keep this extractor separate: the two
+# notations have different continuation and malformed-production rules.
+BARE_GRAMMAR_LHS_RE = re.compile(
+    r'^\s*([a-z][a-z0-9]*(?:[_-][a-z0-9]+)*)\s*::=')
 
 # Recognized BNF syntax atoms used by § 4's semi-formal notation: a quoted
 # terminal (with \" / \\ as the only in-terminal escapes, per § 4's own
@@ -839,6 +844,82 @@ def extract_grammar_lhs_occurrences(lines, start, end, excluded):
     return counts
 
 
+def extract_bare_grammar_lhs(lines, start, end, excluded):
+    """Return the set of lowercase bare BNF declaration names in fences."""
+    return set(extract_bare_grammar_lhs_occurrences(
+        lines, start, end, excluded))
+
+
+def extract_bare_grammar_lhs_occurrences(lines, start, end, excluded):
+    """Return bare BNF declaration counts before any signature map is built.
+
+    A declaration is recognized only inside a fenced section and only when
+    its LHS is a lowercase bare identifier. This deliberately does not scan
+    prose outside fences or infer grammar from an arbitrary lowercase word.
+    """
+    counts = {}
+    for idx in range(start, end):
+        if not excluded[idx]:
+            continue
+        match = BARE_GRAMMAR_LHS_RE.match(lines[idx])
+        if match:
+            lhs = match.group(1)
+            counts[lhs] = counts.get(lhs, 0) + 1
+    return counts
+
+
+def extract_bare_grammar_productions(lines, start, end, excluded):
+    """Return ``(signatures, malformed)`` for bare BNF in fenced sections.
+
+    Each signature contains the complete RHS declaration plus immediately
+    following ``|`` alternatives. Whitespace is the only normalization:
+    grammar punctuation, identifiers, literals, and character classes remain
+    byte-for-byte significant. ``malformed`` contains declarations or
+    alternatives with an empty RHS. Duplicate declarations are intentionally
+    reported separately by extract_bare_grammar_lhs_occurrences before these
+    maps are used for parity comparisons.
+    """
+    productions = {}
+    malformed = []
+    idx = start
+    while idx < end:
+        if not excluded[idx]:
+            idx += 1
+            continue
+        match = BARE_GRAMMAR_LHS_RE.match(lines[idx])
+        if not match:
+            idx += 1
+            continue
+
+        lhs = match.group(1)
+        parts = []
+        rhs = ' '.join(lines[idx][match.end():].split())
+        if rhs:
+            parts.append(rhs)
+        else:
+            malformed.append((lhs, rhs))
+
+        j = idx + 1
+        while j < end and excluded[j]:
+            continuation = lines[j].strip()
+            if not continuation.startswith('|'):
+                break
+            rhs = ' '.join(continuation[1:].split())
+            if rhs:
+                parts.append('| ' + rhs)
+            else:
+                malformed.append((lhs, '|'))
+            j += 1
+
+        # Keep the first value if a caller uses this helper without first
+        # rejecting duplicates; the normal parity path rejects them from the
+        # occurrence count before comparing signatures.
+        if parts and lhs not in productions:
+            productions[lhs] = ' '.join(parts)
+        idx = j
+    return productions, malformed
+
+
 def _rhs_fragment(text):
     """Cut a raw RHS fragment at its first ';' (this grammar's own comment
     lead-in convention, e.g. "; object open") and collapse whitespace runs
@@ -1348,6 +1429,52 @@ def check_translation(en_lines, en_sections, en_code_counts,
                         problems.append(
                             "tab codepoint in production %s (%s): expected "
                             "0x09, found %s" % (lhs, lang, hexval))
+        # § 3.6's grammar uses bare identifiers (integer, float, dec_digit,
+        # ...), so it is invisible to the angle-bracket grammar gate above.
+        # Compare its complete whitespace-normalized signatures separately.
+        en_bare_occurrences = extract_bare_grammar_lhs_occurrences(
+            en_lines, en_start, en_end, en_excluded)
+        if en_bare_occurrences:
+            t_bare_occurrences = extract_bare_grammar_lhs_occurrences(
+                t_lines, t_start, t_end, t_excluded)
+            en_bare, _ = extract_bare_grammar_productions(
+                en_lines, en_start, en_end, en_excluded)
+            t_bare, t_bare_malformed = extract_bare_grammar_productions(
+                t_lines, t_start, t_end, t_excluded)
+            en_names = set(en_bare_occurrences)
+            t_names = set(t_bare_occurrences)
+            missing = sorted(en_names - t_names)
+            extra = sorted(t_names - en_names)
+            if missing or extra:
+                detail = []
+                if missing:
+                    detail.append("missing from translation: %s"
+                                  % ", ".join(missing))
+                if extra:
+                    detail.append("extra in translation: %s"
+                                  % ", ".join(extra))
+                problems.append(
+                    "bare grammar production LHS set mismatch (EN has %d "
+                    "production(s), translation has %d; %s)"
+                    % (len(en_names), len(t_names), "; ".join(detail)))
+            for lhs in sorted(t_bare_occurrences):
+                count = t_bare_occurrences[lhs]
+                if count > 1:
+                    problems.append(
+                        "duplicate bare grammar production LHS %s "
+                        "(%d declarations in translation)" % (lhs, count))
+            if not any(count > 1 for count in t_bare_occurrences.values()):
+                for lhs in sorted(en_names & t_names):
+                    if en_bare.get(lhs) != t_bare.get(lhs):
+                        problems.append(
+                            "bare grammar production RHS mismatch for %s "
+                            "(EN=%r, translation=%r)"
+                            % (lhs, en_bare.get(lhs), t_bare.get(lhs)))
+            for lhs, fragment in t_bare_malformed:
+                problems.append(
+                    "bare grammar production %s failed to parse in "
+                    "translation (empty RHS fragment: %r)"
+                    % (lhs, fragment))
         en_para, en_list, en_table = count_content(
             en_lines, en_start, en_end, en_excluded)
         t_para, t_list, t_table = count_content(
@@ -1528,6 +1655,25 @@ def main(argv):
               "compared" % args.en_path, file=sys.stderr)
         print("OVERALL: FAIL")
         return 1
+    en_bare_grammar_duplicates = []
+    for num in en_numbers_sorted:
+        start, end = en_sections[num]
+        occurrences = extract_bare_grammar_lhs_occurrences(
+            en_lines, start, end, en_excluded)
+        for lhs in sorted(occurrences):
+            if occurrences[lhs] > 1:
+                en_bare_grammar_duplicates.append(
+                    (num, lhs, occurrences[lhs]))
+    if en_bare_grammar_duplicates:
+        for num, lhs, count in en_bare_grammar_duplicates:
+            print("[FAIL] %s Sec %s: duplicate bare grammar production "
+                  "LHS %s (%d declarations)" %
+                  (args.en_path, num, lhs, count))
+        print("error: EN file %s contains duplicate bare grammar "
+              "production declaration(s); EN is canonical, so translations "
+              "are not compared" % args.en_path, file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
     en_grammar_malformed = []
     for num in en_numbers_sorted:
         start, end = en_sections[num]
@@ -1546,6 +1692,25 @@ def main(argv):
         print("error: EN file %s has %d malformed grammar production(s); "
               "EN is canonical, so translations are not compared"
               % (args.en_path, len(en_grammar_malformed)), file=sys.stderr)
+        print("OVERALL: FAIL")
+        return 1
+    en_bare_grammar_malformed = []
+    for num in en_numbers_sorted:
+        start, end = en_sections[num]
+        if extract_bare_grammar_lhs(en_lines, start, end, en_excluded):
+            _, malformed = extract_bare_grammar_productions(
+                en_lines, start, end, en_excluded)
+            for lhs, fragment in malformed:
+                en_bare_grammar_malformed.append((num, lhs, fragment))
+    if en_bare_grammar_malformed:
+        for num, lhs, fragment in en_bare_grammar_malformed:
+            print("[FAIL] %s Sec %s: bare grammar production %s failed to "
+                  "parse (empty RHS fragment: %r)" %
+                  (args.en_path, num, lhs, fragment))
+        print("error: EN file %s has %d malformed bare grammar production(s); "
+              "EN is canonical, so translations are not compared"
+              % (args.en_path, len(en_bare_grammar_malformed)),
+              file=sys.stderr)
         print("OVERALL: FAIL")
         return 1
 

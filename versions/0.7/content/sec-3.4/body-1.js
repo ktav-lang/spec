@@ -1,9 +1,10 @@
 export default {
   en: `
 A **comment** is a line whose first non-whitespace code points are \`##\`
-(two ASCII \`#\` bytes). The rest of the line, up to and including the
-line terminator, is the comment body. Comments produce no Value and
-are ignored.
+(two ASCII \`#\` bytes). The rest of the line is the comment line. The
+comment body ends immediately before the line terminator and excludes it:
+CRLF, LF, and CR are never comment-body bytes. Comments produce no Value
+and are ignored.
 
 A single \`#\` byte has no special meaning: \`#-prefixed\` text on a line
 without a leading \`##\` is an ordinary scalar / key character.
@@ -17,9 +18,10 @@ and needs no escape — there is no \`\\#\` escape sequence in 0.7.0.
 `,
   ru: `
 **Комментарий** — это строка, первые непробельные кодовые точки
-которой — \`##\` (два ASCII \`#\`-байта). Остаток строки до завершителя строки
-включительно — тело комментария. Комментарии не порождают Value и
-игнорируются.
+которой — \`##\` (два ASCII \`#\`-байта). Остаток строки образует строку
+комментария. Тело комментария заканчивается непосредственно перед
+завершителем строки и не включает его: CRLF, LF и CR никогда не являются
+байтами тела комментария. Комментарии не порождают Value и игнорируются.
 
 Одиночный байт \`#\` не имеет специального значения: \`#-начинающийся\`
 текст в строке без ведущего \`##\` — это обычный символ скаляра / ключа.
@@ -33,8 +35,9 @@ and needs no escape — there is no \`\\#\` escape sequence in 0.7.0.
 
 `,
   zh: `
-**注释**是其首个非空白码点为 \`##\`(两个 ASCII \`#\` 字节)的行。直到
-并包括行终止符的其余部分为注释体。注释不产生 Value,被忽略。
+**注释**是其首个非空白码点为 \`##\`(两个 ASCII \`#\` 字节)的行。其余部分
+构成注释行;注释体在行终止符之前立即结束且不包含行终止符:
+CRLF、LF 与 CR 永远不是注释体字节。注释不产生 Value,被忽略。
 
 单个 \`#\` 字节没有特殊含义:不以 \`##\` 开头的行中,\`#-prefixed\` 文本
 是普通的标量 / 键字符。

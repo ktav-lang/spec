@@ -25,6 +25,12 @@
 `sec-3.1`, `sec-5.3.3`, `sec-10.7`) и 5 именованных `named-<slug>/`
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Плюс:
 
+- `scripts/locks/section-inventory.0.7.lock.json` — независимый
+  версионированный упорядоченный inventory. Builder требует его при обычном
+  CLI-запуске и отвергает расхождение состава или порядка с manifest.
+- `README.source.js` — единый source object `{ en, ru, zh }` для трёх README
+  этой директории. Builder статически проверяет его и генерирует
+  `README.md`, `README.ru.md` и `README.zh.md`.
 - `manifest.js` — упорядоченный список юнитов (см. ниже).
 - `package.json` — `{"type":"module"}`. Исторически: был нужен, пока
   `build_spec.mjs` динамически импортировал `meta.js`/`body-*.js` как
@@ -219,11 +225,7 @@ lock `scripts/locks/section-inventory.0.7.lock.json` хранит тот же
 упорядоченный список; при намеренном добавлении или удалении секции оба файла
 MUST обновляться вместе. Изменение только манифеста отвергается проверкой lock.
 
-### Единый источник README и inventory lock
-
-`scripts/locks/section-inventory.0.7.lock.json` — независимый
-версионированный упорядоченный inventory. Builder требует его в обычном
-CLI-запуске и отвергает расхождение состава или порядка с `manifest.js`.
+## README source object
 
 `README.source.js` — единый source object `{ en, ru, zh }` для трёх README в
 этой директории. Builder статически проверяет его и генерирует из него

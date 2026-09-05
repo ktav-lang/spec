@@ -12,6 +12,11 @@ Array (or the top-level Array, § 5.0.1). The forms are:
    required separator-end is absent, as in \`::x\`, the result is
    \`MissingSeparatorSpace\`; the line MUST NOT fall through to scalar
    classification.
+   The syntactic \`<raw-line>\` may include trailing § 3.3 whitespace,
+   but after \`<sep-end>\` consumes the maximal leading run, trailing § 3.3
+   whitespace immediately before EOL or EOF is trimmed from the semantic
+   String body. Use a verbatim multi-line String (\`((\` ... \`))\`) to
+   preserve edge whitespace.
 2. **Closed-inline-object item** — \`{ key: value, … }\` on one line.
 3. **Closed-inline-array item** — \`[ v, v, … ]\` on one line.
 4. **Empty-inline-object item** — \`{}\`.
@@ -41,6 +46,12 @@ Array (или top-level Array, § 5.0.1). Формы:
    окончания разделителя нет, как в \`::x\`, результат —
    \`MissingSeparatorSpace\`; строка MUST NOT проваливаться в
    классификацию скаляра.
+   Синтаксический \`<raw-line>\` может включать замыкающие пробельные кодовые
+   точки § 3.3, но после поглощения \`<sep-end>\` максимальной ведущей
+   последовательности замыкающие пробельные кодовые точки § 3.3 перед EOL
+   или EOF удаляются из семантического тела String. Для сохранения пробелов
+   на границах используется verbatim-многострочный String
+   (\`((\` ... \`))\`).
 2. **Замкнутый inline-объектный элемент** — \`{ key: value, … }\`.
 3. **Замкнутый inline-массивный элемент** — \`[ v, v, … ]\`.
 4. **Пустой inline-объект** — \`{}\`.
@@ -66,6 +77,10 @@ array-item line 在最内层开启的 Array(或 top-level Array,
    或行末,且紧随其后的最大连续空白序列都属于 \`<sep-end>\`(因此
    \`::  x\` 的值是 \`x\`)。若缺少所需的 separator-end,如 \`::x\`,
    结果是 \`MissingSeparatorSpace\`;该行 MUST NOT 回退到标量分类。
+   语法上的 \`<raw-line>\` 可以包含结尾的 § 3.3 空白,但在
+   \`<sep-end>\` 吸收最大前导序列后,EOL 或 EOF 之前紧邻的结尾空白
+   会从语义 String 体中修剪。若要保留边缘空白,使用 verbatim 多行
+   String(\`((\` ... \`))\`)。
 2. **闭合 inline 对象项** \`{ … }\`。
 3. **闭合 inline 数组项** \`[ … ]\`。
 4. **空 inline 对象项** \`{}\`。

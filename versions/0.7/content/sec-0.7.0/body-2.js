@@ -132,12 +132,12 @@ export default {
   pin the boundary; the last documents that underflowing to \`0.0\`
   (finite) is an ordinary Float, not a String-fallback case. The declared
   Float domain now also includes its decimal-conversion and rounding
-  semantics and MUST use a deterministic conversion policy; every finite
-  Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
-  candidate that round-trips exactly under that policy. An unsupported
-  exact-rational value such as 1/3 is outside the Ktav Float domain, not a
-  new writer-error case. The minimum binary64 conversion uses
-  roundTiesToEven.
+  semantics and MUST use a deterministic conversion policy; every non-zero
+  finite Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
+  candidate that round-trips exactly under that policy. Positive and negative
+  zero (+0.0 and -0.0) are admitted separately by the zero rule. An unsupported exact-rational
+  value such as 1/3 is outside the Ktav Float domain, not a new writer-error
+  case. The minimum binary64 conversion uses roundTiesToEven.
 - **Breaking:** § 3.7 and § 5.2 — any recognised escape in an inline
   scalar now forces String before keyword or numeric classification. In
   0.6.x a body such as \`1\\.0\` could decode and classify as Float; in
@@ -371,9 +371,10 @@ export default {
   \`0.0\` (конечный) — обычный Float, а не случай отката к String.
   Заявленный домен Float теперь также включает семантику decimal-
   преобразования и округления и MUST использовать детерминированную
-  политику преобразования; каждый конечный Float, допускаемый в Ktav
-  Value, MUST иметь конечный десятичный кандидат (s, D, k), точно
-  проходящий round-trip с этой политикой. Неподдерживаемое точное
+  политику преобразования; каждый ненулевой конечный Float, допускаемый в
+  Ktav Value, MUST иметь конечный десятичный кандидат (s, D, k), точно
+  проходящий round-trip с этой политикой. Положительный и отрицательный
+  ноль (+0.0 и -0.0) допускаются отдельно по правилу нуля. Неподдерживаемое точное
   рациональное значение вроде 1/3 находится вне домена Ktav Float, а не
   создаёт новый случай ошибки writer. Минимальное binary64 использует
   roundTiesToEven.
@@ -573,10 +574,10 @@ export default {
   将边界锁定;最后一个 fixture 记录下溢到 \`0.0\`(有限)是普通
   Float,而非回退为 String 的情形。声明的 Float 域现在还包括其十进制
   转换与舍入语义,并 MUST 使用确定性的转换策略;每个被接纳进 Ktav
-  Value 的有限 Float MUST 有一个按该策略精确 round-trip 的有限
-  (s, D, k) 十进制候选。不支持的精确有理值(如 1/3)属于 Ktav Float
-  域之外,不新增 writer 错误情形。最小 binary64 转换使用
-  roundTiesToEven。
+  Value 的非零有限 Float MUST 有一个按该策略精确 round-trip 的有限
+  (s, D, k) 十进制候选。正零与负零(+0.0 与 -0.0)按零规则单独接纳。不支持的精确
+  有理值(如 1/3)属于 Ktav Float 域之外,不新增 writer 错误情形。最小
+  binary64 转换使用 roundTiesToEven。
 - **破坏性:** § 3.7 与 § 5.2 —— inline 标量中的任何已识别 escape
   现在会在关键字或数字分类之前强制为 String。在 0.6.x 中,像
   \`1\\.0\` 这样的体可以先解码再分类为 Float;在 0.7.0 中它是

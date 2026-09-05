@@ -160,6 +160,80 @@ def _is_regular_directory(path):
     return stat.S_ISDIR(info.st_mode)
 
 
+def _is_regular_file(path):
+    """True only for a regular, non-link, non-reparse-point file."""
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    if stat.S_ISLNK(info.st_mode):
+        return False
+    if os.name == "nt":
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if getattr(info, "st_file_attributes", 0) & reparse:
+            return False
+    return stat.S_ISREG(info.st_mode)
+
+
+def _path_entry_exists(path):
+    """Use lstat so a dangling link is still considered an existing entry."""
+    try:
+        os.lstat(path)
+    except OSError:
+        return False
+    return True
+
+
+def _directory_rejection_reason(path):
+    """Return a deterministic reason for a directory that must not be walked."""
+    try:
+        info = os.lstat(path)
+    except OSError as error:
+        return "directory cannot be inspected: %s" % _ascii_safe_text(error)
+    if stat.S_ISLNK(info.st_mode):
+        return "symlink directory is not allowed"
+    isjunction = getattr(os.path, "isjunction", None)
+    if isjunction is not None and isjunction(path):
+        return "junction directory is not allowed"
+    if os.name == "nt":
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        if getattr(info, "st_file_attributes", 0) & reparse:
+            return "reparse-point directory is not allowed"
+    if not stat.S_ISDIR(info.st_mode):
+        return "entry is not a directory"
+    return None
+
+
+def _walk_safe(directory, tests_dir, results, category):
+    """Walk only real directories, pruning links and reparse points first."""
+    reason = _directory_rejection_reason(directory)
+    if reason is not None:
+        results.fail(category, "%s: %s" % (rel(directory, tests_dir), reason))
+        return
+
+    def onerror(error):
+        filename = getattr(error, "filename", None) or directory
+        results.fail(category, "%s: traversal failed: %s"
+                     % (rel(filename, tests_dir), _ascii_safe_text(error)))
+
+    for root, dirs, files in os.walk(directory, topdown=True,
+                                     followlinks=False, onerror=onerror):
+        dirs.sort()
+        files.sort()
+        for dirname in list(dirs):
+            path = os.path.join(root, dirname)
+            reason = _directory_rejection_reason(path)
+            if reason is not None:
+                results.fail(category, "%s: %s" % (rel(path, tests_dir), reason))
+                dirs.remove(dirname)
+        yield root, files
+
+
+def _ascii_safe_text(value):
+    """Render diagnostics without emitting raw Unicode surrogates."""
+    return str(value).encode("ascii", "backslashreplace").decode("ascii")
+
+
 class Results:
     """Collects per-category results; each problem is a (category, message) pair."""
 
@@ -168,7 +242,7 @@ class Results:
         self.counts = {}
 
     def fail(self, category, message):
-        self.problems.append((category, message))
+        self.problems.append((category, _ascii_safe_text(message)))
 
     def set_count(self, category, **kwargs):
         self.counts[category] = kwargs
@@ -183,6 +257,8 @@ def is_deliberately_invalid_utf8(rpath):
 def _sibling_declares_invalid_utf8(path):
     """Read the sibling oracle without depending on its directory name."""
     sibling = path[:-len(".ktav")] + ".json"
+    if not _is_regular_file(sibling):
+        return False
     try:
         with open(sibling, "r", encoding="utf-8") as stream:
             value = loads_strict(stream.read())
@@ -199,7 +275,8 @@ def _reject_duplicate_keys(pairs):
     obj = {}
     for key, value in pairs:
         if key in obj:
-            raise ValueError("duplicate object key '%s' is not allowed in strict JSON" % key)
+            raise ValueError("duplicate object key %s is not allowed in strict JSON"
+                             % ascii(key))
         obj[key] = value
     return obj
 
@@ -227,10 +304,12 @@ def check_utf8_json(tests_dir, results):
     n_json = 0
     n_exempt = 0
     parsed = {}  # relpath -> parsed object, or JSON_PARSE_FAILED on failure
-    for root, _dirs, files in os.walk(tests_dir):
+    for root, files in _walk_safe(tests_dir, tests_dir, results, category):
         for fname in files:
             path = os.path.join(root, fname)
-            if os.path.islink(path) or not os.path.isfile(path):
+            if not _is_regular_file(path):
+                results.fail(category, "%s: symlink or special file is not allowed"
+                             % rel(path, tests_dir))
                 continue
             n_files += 1
             rpath = rel(path, tests_dir)
@@ -255,11 +334,11 @@ def check_utf8_json(tests_dir, results):
                     parsed[rel(path, tests_dir)] = loads_strict(text)
                 except json.JSONDecodeError as e:
                     results.fail(category, "%s: invalid JSON: %s"
-                                 % (rel(path, tests_dir), e))
+                                 % (rel(path, tests_dir), _ascii_safe_text(e)))
                     parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
                 except ValueError as e:
                     results.fail(category, "%s: invalid JSON: %s"
-                                 % (rel(path, tests_dir), e))
+                                 % (rel(path, tests_dir), _ascii_safe_text(e)))
                     parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
                 except RecursionError:
                     results.fail(category, "%s: invalid JSON: %s"
@@ -292,22 +371,11 @@ def classify_valid(files):
 
 
 def _walk_regular_category_files(directory, tests_dir, results, category):
-    if os.path.islink(directory):
-        results.fail(category, "%s: category root must not be a symlink"
-                     % rel(directory, tests_dir))
-        return
-    for root, dirs, files in os.walk(directory, topdown=True, followlinks=False):
-        dirs.sort()
-        for dirname in list(dirs):
-            path = os.path.join(root, dirname)
-            if os.path.islink(path):
-                results.fail(category, "%s: symlink directory is not allowed"
-                             % rel(path, tests_dir))
-                dirs.remove(dirname)
+    for root, files in _walk_safe(directory, tests_dir, results, category):
         regular = []
-        for filename in sorted(files):
+        for filename in files:
             path = os.path.join(root, filename)
-            if os.path.islink(path) or not os.path.isfile(path):
+            if not _is_regular_file(path):
                 results.fail(category, "%s: symlink or special file is not allowed"
                              % rel(path, tests_dir))
             else:
@@ -319,8 +387,12 @@ def check_valid(tests_dir, results, parsed):
     """Check 2: complete .ktav/.json/.canonical.ktav triples under valid/."""
     category = "valid/ triples"
     valid_dir = os.path.join(tests_dir, "valid")
-    if not os.path.isdir(valid_dir):
-        results.fail(category, "valid/ directory not present")
+    if not _is_regular_directory(valid_dir):
+        if _path_entry_exists(valid_dir):
+            results.fail(category, "%s: category root must be a real directory"
+                         % rel(valid_dir, tests_dir))
+        else:
+            results.fail(category, "valid/ directory not present")
         return
     n_fixtures = 0
     for root, files in _walk_regular_category_files(
@@ -385,8 +457,12 @@ def check_invalid(tests_dir, results, parsed, error_categories):
     """Check 3: .ktav/.json pairs under invalid/ with expected_error strings."""
     category = "invalid/ pairs"
     invalid_dir = os.path.join(tests_dir, "invalid")
-    if not os.path.isdir(invalid_dir):
-        results.fail(category, "invalid/ directory not present")
+    if not _is_regular_directory(invalid_dir):
+        if _path_entry_exists(invalid_dir):
+            results.fail(category, "%s: category root must be a real directory"
+                         % rel(invalid_dir, tests_dir))
+        else:
+            results.fail(category, "invalid/ directory not present")
         return
     n_fixtures = 0
     for root, files in _walk_regular_category_files(
@@ -446,18 +522,25 @@ def check_invalid_utf8_oracle(tests_dir, results, parsed):
     category = "invalid_utf8 oracle consistency"
     invalid_dir = os.path.join(tests_dir, "invalid")
     n_checked = 0
-    if not os.path.isdir(invalid_dir):
+    if not _is_regular_directory(invalid_dir):
+        if _path_entry_exists(invalid_dir):
+            results.fail(category, "%s: category root must be a real directory"
+                         % rel(invalid_dir, tests_dir))
         results.set_count(category, n_checked=n_checked)
         return
-    for root, _dirs, files in os.walk(invalid_dir):
+    for root, files in _walk_safe(invalid_dir, tests_dir, results, category):
         for fname in files:
             if not fname.endswith(".json"):
                 continue
+            json_path = os.path.join(root, fname)
+            if not _is_regular_file(json_path):
+                results.fail(category, "%s: symlink or special file is not allowed"
+                             % rel(json_path, tests_dir))
+                continue
             name = fname[: -len(".json")]
             ktav_path = os.path.join(root, name + ".ktav")
-            if not os.path.isfile(ktav_path):
+            if not _is_regular_file(ktav_path):
                 continue  # missing sibling already reported by check_invalid
-            json_path = os.path.join(root, fname)
             jrpath = rel(json_path, tests_dir)
             obj = parsed.get(jrpath, JSON_PARSE_FAILED)
             if obj is JSON_PARSE_FAILED:
@@ -693,7 +776,7 @@ def check_unrepresentable(tests_dir, results, parsed, require=False):
     """Check 4: programmatic-only unrepresentable Value descriptions."""
     category = "unrepresentable/"
     unrep_dir = os.path.join(tests_dir, "unrepresentable")
-    if not os.path.isdir(unrep_dir):
+    if not _is_regular_directory(unrep_dir):
         if require:
             results.fail(category, "unrepresentable/ directory not present (required)")
             return False
@@ -725,7 +808,7 @@ def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
     """Check parser-produced Values that a conforming writer must reject."""
     category = "parseable-unrepresentable/"
     fixture_dir = os.path.join(tests_dir, "parseable-unrepresentable")
-    if not os.path.isdir(fixture_dir):
+    if not _is_regular_directory(fixture_dir):
         if require:
             results.fail(category, "parseable-unrepresentable/ directory not "
                          "present (required)")
@@ -1114,7 +1197,7 @@ def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
         lock_data = loads_strict(lock_text)
     except (json.JSONDecodeError, ValueError) as e:
         results.fail(category, "--boundary-manifest-lock %s: invalid JSON: %s"
-                     % (lock_path, e))
+                     % (lock_path, _ascii_safe_text(e)))
         return
     except RecursionError:
         results.fail(category, "--boundary-manifest-lock %s: invalid JSON: %s"
@@ -1177,7 +1260,7 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     check_boundary_manifest_lock)."""
     category = "boundary-fixtures.json"
     manifest_path = os.path.join(tests_dir, "boundary-fixtures.json")
-    if not os.path.isfile(manifest_path):
+    if not _is_regular_file(manifest_path):
         if require or lock_path is not None:
             results.fail(category, "boundary-fixtures.json not present (required)")
             return False
@@ -1213,12 +1296,14 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
             base = os.path.join(tests_dir, "valid", *fixture.split("/"))
             valid_root = os.path.join(tests_dir, "valid")
             triples = [base + ".ktav", base + ".json", base + ".canonical.ktav"]
-            if not all(_is_within(p, valid_root) for p in triples):
+            if (not _is_regular_directory(valid_root)
+                    or not all(_is_within(p, valid_root) for p in triples)):
                 results.fail(category, "%s: entry %d: fixture %r resolves outside "
                              "<tests_dir>/valid/" % (rpath, i, fixture))
                 fixture = None
         if fixture is not None:
-            missing = [rel(p, tests_dir) for p in triples if not os.path.isfile(p)]
+            missing = [rel(p, tests_dir) for p in triples
+                       if not _is_regular_file(p)]
             if missing:
                 results.fail(category, "%s: entry %d: fixture %r missing file(s): %s"
                              % (rpath, i, fixture, ", ".join(missing)))
@@ -1265,10 +1350,10 @@ def _check_locked_top_level(tests_dir, results):
     for name in sorted(expected & set(entries)):
         entry = entries[name]
         if name in LOCKED_CORPUS_DIRS:
-            valid = entry.is_dir(follow_symlinks=False)
+            valid = _is_regular_directory(entry.path)
             kind = "directory"
         else:
-            valid = entry.is_file(follow_symlinks=False)
+            valid = _is_regular_file(entry.path)
             kind = "regular file"
         if entry.is_symlink() or not valid:
             results.fail(category, "top-level entry %r must be a %s, not a "
@@ -1290,22 +1375,13 @@ def _corpus_file_hashes(tests_dir, results):
     hashes = {}
     for dirname in sorted(LOCKED_CORPUS_DIRS):
         directory = os.path.join(tests_dir, dirname)
-        if not os.path.isdir(directory) or os.path.islink(directory):
+        if not _is_regular_directory(directory):
             continue
-        for root, dirs, files in os.walk(directory, topdown=True,
-                                         followlinks=False):
-            dirs.sort()
-            files.sort()
-            for child in list(dirs):
-                path = os.path.join(root, child)
-                if os.path.islink(path):
-                    results.fail(category, "%s: symlink directory is not a "
-                                 "corpus file" % rel(path, tests_dir))
-                    dirs.remove(child)
+        for root, files in _walk_safe(directory, tests_dir, results, category):
             for filename in files:
                 path = os.path.join(root, filename)
                 rpath = rel(path, tests_dir)
-                if os.path.islink(path) or not os.path.isfile(path):
+                if not _is_regular_file(path):
                     results.fail(category, "%s: symlink or special entry is not "
                                  "a corpus file" % rpath)
                     continue
@@ -1315,7 +1391,7 @@ def _corpus_file_hashes(tests_dir, results):
                     results.fail(category, "%s: unreadable while hashing: %s"
                                  % (rpath, e))
     boundary_path = os.path.join(tests_dir, "boundary-fixtures.json")
-    if os.path.isfile(boundary_path) and not os.path.islink(boundary_path):
+    if _is_regular_file(boundary_path):
         try:
             hashes["boundary-fixtures.json"] = _sha256_file(boundary_path)
         except OSError as e:
@@ -1371,7 +1447,7 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
         lock_data = loads_strict(lock_text)
     except (json.JSONDecodeError, ValueError) as e:
         results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
-                     % (lock_path, e))
+                     % (lock_path, _ascii_safe_text(e)))
         return
     except RecursionError:
         results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"

@@ -49,6 +49,11 @@ where:
   (§ 3.7) are NOT processed in a multi-line pair body (a body that
   is the whole rest of the line); they ARE processed in an inline
   pair body (§ 5.8).
+  After \`<sep-end>\` consumes the maximal leading separator whitespace,
+  trailing § 3.3 whitespace immediately before EOL or EOF is trimmed from
+  the semantic raw String body. \`<raw-line>\` may still match those source
+  bytes syntactically. A verbatim multi-line String (\`((\` ... \`))\`) is
+  the form for preserving leading or trailing edge whitespace.
 - \`<sep-end>\` requires at least one whitespace code point or end-of-line
   after the separator. Writing \`key:value\` / \`key::value\` (no
   whitespace, body continues on the same line) is a
@@ -123,6 +128,12 @@ key:: literal-string-value
   (§ 3.7) НЕ обрабатываются в теле многострочной пары (тело —
   весь остаток строки); они ОБРАБАТЫВАЮТСЯ в теле inline-пары
   (§ 5.8).
+  После того как \`<sep-end>\` поглощает максимальную ведущую пробельную
+  последовательность-разделитель, замыкающие пробельные кодовые точки § 3.3
+  непосредственно перед EOL или EOF удаляются из семантического raw String.
+  \`<raw-line>\` всё же может синтаксически совпасть с этими исходными
+  байтами. Для сохранения ведущих или замыкающих пробелов используется
+  verbatim-многострочный String (\`((\` ... \`))\`).
 - \`<sep-end>\` требует как минимум одну пробельную кодовую точку
   или конец строки после разделителя. Запись \`key:value\` / \`key::value\` (без
   пробела, тело продолжается на той же строке) — ошибка
@@ -185,6 +196,10 @@ key:: literal-string-value
 - 原始标记 \`::\` 将体解释为字面 String —— 无类型推断,不递归
   进入复合值。escape 序列(§ 3.7)在多行 pair 体中(体为该行剩余
   的全部内容)不被处理;它们在 inline pair 体中(§ 5.8)被处理。
+  \`<sep-end>\` 吸收最大前导分隔符空白后,EOL 或 EOF 之前紧邻的
+  § 3.3 结尾空白会从语义 raw String 体中修剪。语法上的 \`<raw-line>\`
+  仍可匹配这些源字节。若要保留前导或结尾空白,应使用 verbatim 多行
+  String(\`((\` ... \`))\`)。
 - \`<sep-end>\` 要求分隔符之后至少一个空白码点或行末。书写
   \`key:value\` / \`key::value\`(无空白,体在同一行继续)是
   \`MissingSeparatorSpace\` 错误(§ 6.10)。\`<sep-end>\` 规则**不**

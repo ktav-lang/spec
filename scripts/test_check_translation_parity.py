@@ -219,6 +219,34 @@ def semi_doc(fence_lines):
     )
 
 
+BARE_GRAMMAR_LINES_EN = [
+    "integer        ::= sign? ( hex | oct | bin | dec )",
+    'sign           ::= "+" | "-"',
+    'hex            ::= "0x" hex_digit (("_")? hex_digit)*',
+    'oct            ::= "0o" oct_digit (("_")? oct_digit)*',
+    'bin            ::= "0b" bin_digit (("_")? bin_digit)*',
+    'dec            ::= dec_digit (("_")? dec_digit)*',
+    "hex_digit      ::= [0-9a-fA-F]",
+    "oct_digit      ::= [0-7]",
+    "bin_digit      ::= [0-1]",
+    "dec_digit      ::= [0-9]",
+    "float          ::= sign? dec_part \".\" dec_part exponent?",
+    "                 | sign? dec_part exponent",
+    "dec_part       ::= dec_digit ((\"_\")? dec_digit)*",
+    'exponent       ::= ("e" | "E") sign? dec_part',
+]
+
+
+def bare_doc(fence_lines):
+    return (
+        "# Spec\n\n**Version:** 0.7.0\n"
+        "**Date:** (unreleased - draft)\n\n"
+        "## 3.6 Number Literals\n\nGrammar productions.\n\n```\n"
+        + "\n".join(fence_lines) + "\n```\n\n"
+        "## 5. Semantics\n\nSome text with a MUST.\n"
+    )
+
+
 BODY_SOURCE_RE = re.compile(
     r'\Aexport default \{\n'
     r'  en: `(?P<en>(?:\\.|[^`])*)`,\n'
@@ -749,6 +777,84 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn("duplicate grammar production LHS <document>", out)
         self.assertNotIn("spec.ru.md", out)
 
+    # -- bare-identifier grammar signatures -------------------------------
+
+    def test_bare_grammar_character_class_drift_fails_without_line_count(self):
+        mutated = list(BARE_GRAMMAR_LINES_EN)
+        mutated[mutated.index("hex_digit      ::= [0-9a-fA-F]")] = (
+            "hex_digit      ::= [0-8a-fA-F]")
+        en = self.write("spec.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", bare_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("bare grammar production RHS mismatch for hex_digit", out)
+        self.assertNotIn("non-blank line count mismatch", out)
+
+    def test_bare_grammar_rhs_token_drift_fails_without_line_count(self):
+        mutated = list(BARE_GRAMMAR_LINES_EN)
+        mutated[0] = mutated[0].replace("sign?", "sign*")
+        en = self.write("spec.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", bare_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("bare grammar production RHS mismatch for integer", out)
+        self.assertNotIn("non-blank line count mismatch", out)
+
+    def test_bare_grammar_deleted_production_fails_by_signature(self):
+        mutated = [line for line in BARE_GRAMMAR_LINES_EN
+                   if not line.startswith("dec_digit")]
+        en = self.write("spec.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", bare_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("bare grammar production LHS set mismatch", out)
+        self.assertIn("dec_digit", out)
+
+    def test_duplicate_bare_grammar_lhs_in_translation_fails_before_map_overwrite(self):
+        mutated = list(BARE_GRAMMAR_LINES_EN)
+        mutated[mutated.index('sign           ::= "+" | "-"')] = (
+            "integer        ::= sign? ( hex | oct | bin | dec )")
+        en = self.write("spec.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", bare_doc(mutated))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "duplicate bare grammar production LHS integer", out)
+        self.assertIn("2 declarations in translation", out)
+        self.assertNotIn("non-blank line count mismatch", out)
+
+    def test_malformed_bare_grammar_in_en_is_fatal_before_translation_compare(self):
+        malformed = list(BARE_GRAMMAR_LINES_EN)
+        malformed[0] = "integer        ::= "
+        en = self.write("spec.md", bare_doc(malformed))
+        ru = self.write("spec.ru.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("bare grammar production integer failed to parse", out)
+        self.assertNotIn("spec.ru.md", out)
+
+    def test_duplicate_bare_grammar_lhs_in_en_is_fatal_before_translation_compare(self):
+        duplicate = list(BARE_GRAMMAR_LINES_EN)
+        duplicate[duplicate.index('sign           ::= "+" | "-"')] = (
+            "integer        ::= sign? ( hex | oct | bin | dec )")
+        en = self.write("spec.md", bare_doc(duplicate))
+        ru = self.write("spec.ru.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("duplicate bare grammar production LHS integer", out)
+        self.assertNotIn("spec.ru.md", out)
+
+    def test_malformed_bare_grammar_in_translation_is_reported(self):
+        malformed = list(BARE_GRAMMAR_LINES_EN)
+        malformed[0] = "integer        ::= "
+        en = self.write("spec.md", bare_doc(BARE_GRAMMAR_LINES_EN))
+        ru = self.write("spec.ru.md", bare_doc(malformed))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "bare grammar production integer failed to parse in translation",
+            out)
+
     def test_grammar_production_terminal_swap_fails_despite_matching_lhs(self):
         # Reproduces round-15's adversarial case: a translation swaps one
         # terminal inside an existing production (":" -> ";" in
@@ -822,6 +928,27 @@ class TranslationParityTestCase(unittest.TestCase):
         code, out = self.run_main(en, ru)
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
+
+    def test_repository_content_pin_bare_grammar_signature_matches_all_languages(self):
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        per_language = {}
+        for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            path = os.path.join(repo_root, "versions", "0.7", name)
+            lines = ctp.read_lines(path)
+            sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
+            start, end = sections["3.6"]
+            productions, malformed = ctp.extract_bare_grammar_productions(
+                lines, start, end, excluded)
+            self.assertEqual(malformed, [], name)
+            per_language[name] = productions
+
+        self.assertEqual(per_language["spec.ru.md"], per_language["spec.md"])
+        self.assertEqual(per_language["spec.zh.md"], per_language["spec.md"])
+        self.assertEqual(
+            set(per_language["spec.md"]),
+            {"integer", "sign", "hex", "oct", "bin", "dec",
+             "hex_digit", "oct_digit", "bin_digit", "dec_digit",
+             "float", "dec_part", "exponent"})
 
     def test_line_end_atom_lookalikes_remain_malformed(self):
         # Accepting any of these would weaken the generic malformed-

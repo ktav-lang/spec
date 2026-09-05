@@ -150,15 +150,22 @@ export default {
   zh: `
 - **Integer**:基 10 十进制。前导 \`+\` 舍弃。\`-0\` 与 \`+0\` 输出
   为 \`0\`。无下划线。无前导零(\`0\` 字面除外)。负值保留减号。
-- **Float**:选取的文本形式匹配 § 3.6 的两个候选之一:
+- **Float**:声明的 Float 域包括解析和写入所用的十进制转换与舍入
+  语义,其转换策略 MUST 是确定性的。每个被接纳进 Ktav Value 模型的
+  非零有限 Float MUST 至少有一个按该语义精确 round-trip 的有限十进制
+  候选 \`(s, D, k)\`。正零与负零按下面的零规则单独接纳。主机表示中
+  没有这种候选的非零有限值(例如精确有理数 \`1/3\`)属于声明的 Ktav
+  Float 域之外,而不是额外的 writer 错误情形。对最小 binary64 域,
+  声明的舍入语义 MUST 是 IEEE 754 \`roundTiesToEven\`。选取的文本
+  形式匹配 § 3.6 的两个候选之一:
   - \`sign? digits "." digits ("e" sign? digits)?\`
   - \`sign? digits "e" sign? digits\`
 
-  对每个非零有限 Float V,一个**规范化十进制候选**是元组
-  \`(s, D, k)\`:\`s\` 为 \`+1\` 或 \`-1\` 且与 V 的符号相同;\`D\` 是
-  非空 ASCII 十进制数字序列,首位与末位数字均非零;\`k\` 是整数十进制
+  对每个非零有限 Float V,定义**规范化十进制候选**为元组
+  \`(s, D, k)\`: \`s\` 为 \`+1\` 或 \`-1\` 且与 V 的符号相同; \`D\` 是
+  非空 ASCII 十进制数字序列,首位与末位数字均非零; \`k\` 是整数十进制
   指数。其精确十进制值为 \`s × integer(D) × 10^k\`。若用实现声明的
-  Float 域及该域必需的舍入规则解析此精确值后恰好得到 V,候选即合格。
+  Float 域及其必需的舍入规则解析此精确值后恰好得到 V,候选即合格。
 
   选择 D 中数字数目最少的合格候选。对于 IEEE 754 binary64,这是在
   roundTiesToEven 下能 round-trip 到同一 binary64 的最短十进制。若有
@@ -189,16 +196,10 @@ export default {
   \`-1e-3\`、\`9999999.0\`、\`1e7\`,以及
   \`120000000.0\` → \`1.2e8\`。
 
-  声明相同的 Float 域、解析与写入所用的十进制转换和舍入语义的
-  两个 writer-conforming 实现 MUST 使用确定性的转换策略,并 MUST 对同一
-  Value 产生相同输出。每个被接纳进 Ktav Value 模型的非零有限 Float
-  MUST 至少有一个按该语义精确 round-trip 的有限十进制候选
-  \`(s, D, k)\`;正零与负零按下面的零规则单独接纳。主机表示中没有
-  这种候选的非零有限值(例如精确有理数 \`1/3\`)不属于声明的 Ktav Float
-  域,也不是额外的 writer 错误情形。对最小 binary64 域,声明的舍入语义 MUST 是 IEEE 754
-  \`roundTiesToEven\`。fixture \`*.canonical.ktav\` 假定 binary64 语义。声明不同域或不同
-  语义的实现 MAY 产生不同输出,但仅限于这些声明导致不同 Value 或候选
-  的地方。
+  声明相同 Value 域、相同 Float 表示以及相同十进制转换和舍入语义的
+  两个 writer-conforming 实现 MUST 产生相同输出。fixture
+  \`*.canonical.ktav\` 假定 binary64 语义。声明不同域或不同转换语义的
+  实现 MAY 产生不同输出,但仅限于这些声明导致不同 Value 或候选的地方。
 
 `,
 };

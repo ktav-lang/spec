@@ -244,7 +244,7 @@ server: {
 - 起初扁平、根据需要再长出嵌套段落的文件。
 
 解码后内容以 `##` 开头的键可以使用 bare 输入
-`\u0023#a:b: 1`;其中 `\u0023` escape 是可接受的输入。但规范 writer
+`\u0023#a\:b: 1`;其中 `\u0023` escape 是可接受的输入。但规范 writer
 MUST 改用引号包围该键,例如 `"##a:b": 1`,这样输出不会被误读为注释。
 
 ### 字符串，直给
@@ -354,10 +354,12 @@ timeout: null
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.6/tests/)，分为四个 fixture 类别外加
-一个顶层元数据文件。一致性 runner MUST 遍历目标版本中存在的
-每个 fixture 类别——静默跳过
-不认识的类别会得到假绿色结果，比该类别完全没有 fixture 还糟。
+[`versions/<v>/tests/`](versions/0.6/tests/)。尚未发布的 0.7.0 草案有四个
+fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
+`parseable-unrepresentable/`)外加一个顶层元数据文件。稳定的 0.6.4
+语料库只有 `valid/` 与 `invalid/`。一致性 runner MUST 遍历目标版本中
+存在的每个 fixture 类别——静默跳过不认识的类别会得到假绿色结果,比该
+类别完全没有 fixture 还糟。
 
 - **`boundary-fixtures.json`**（*0.7 起,并非 fixture 类别*）——一份
   叶级清单,列出本属正常 `valid/` fixture 内、已知会探测数值域边界的

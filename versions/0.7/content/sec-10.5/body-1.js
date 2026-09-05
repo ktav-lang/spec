@@ -1,6 +1,5 @@
 export default {
   en: `
-
 The two cases look symmetric — an empty inline value, either as
 the value of a key in an Object or as an item in an Array — but
 are treated differently (§ 5.8.2 and § 5.8.3): \`{a:}\` yields a
@@ -34,7 +33,6 @@ parse time.
 
 `,
   ru: `
-
 Эти два случая выглядят симметрично — пустое inline-значение, будь
 то значение ключа в Object или элемент в Array, — но трактуются
 по-разному (§ 5.8.2 и § 5.8.3): \`{a:}\` даёт ключ \`a\`, отображённый
@@ -68,7 +66,6 @@ a
 
 `,
   zh: `
-
 两种情形看似对称 —— 一个空的 inline 值,或作为 Object 中某键的值,或作为 Array
 中的项 —— 但处理方式不同(§ 5.8.2 与 § 5.8.3): \`{a:}\` 产生映射到空 String 的键
 \`a\`,而 \`[,a]\` 是 \`MalformedInlineCompound\` 错误。

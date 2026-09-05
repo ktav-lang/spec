@@ -23,6 +23,12 @@
 `named-<slug>/`(`named-abstract`、`named-appendix-a` ..
 `named-appendix-d`)。另有:
 
+- `scripts/locks/section-inventory.0.7.lock.json` —— 独立的、有版本的有序
+  inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝与 manifest 的成员
+  或顺序发生漂移。
+- `README.source.js` —— 本目录三个 README 共用的 `{ en, ru, zh }` source
+  object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+  `README.zh.md`。
 - `manifest.js` —— 单元的有序列表(见下文)。
 - `package.json` —— `{"type":"module"}`。历史遗留:曾用于
   `build_spec.mjs` 把 `meta.js`/`body-*.js` 当作 ES 模块动态导入的阶段。
@@ -190,11 +196,7 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
 仅修改 manifest 会被 lock 检查拒绝。
 
-### README 的统一源对象与 inventory lock
-
-`scripts/locks/section-inventory.0.7.lock.json` 是独立的、有版本的有序
-inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝 `manifest.js` 的
-成员或顺序发生漂移。
+## README source object
 
 `README.source.js` 是本目录三个 README 共用的 `{ en, ru, zh }` source
 object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和

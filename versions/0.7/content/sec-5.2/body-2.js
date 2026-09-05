@@ -21,7 +21,8 @@ never \`Integer\` or \`Bool\`. This closes an ambiguity § 3.7's provenance
 rule alone left open: that rule's enumeration of "structural" bytes
 (the delimiters \`.\`, \`:\`, \`,\`, \`{\`, \`}\`, \`[\`, \`]\`) does not by itself
 say whether an *escaped* digit, letter, or parenthesis is likewise
-exempt from rules 10–14's number/keyword/paren-shortcut detection —
+exempt from rule 5's parenthesis shortcuts and rules 10–14's
+keyword/numeric detection —
 this sentence makes that exemption explicit and total: the presence of
 any recognised escape sequence anywhere in the body is sufficient to
 force String, full stop.
@@ -70,8 +71,8 @@ boundary.
 происхождения из § 3.7: перечень «структурных» байтов в этом правиле
 (разделители \`.\`, \`:\`, \`,\`, \`{\`, \`}\`, \`[\`, \`]\`) сам по себе не говорит,
 освобождена ли *экранированная* цифра, буква или круглая скобка от
-обнаружения по правилам 10–14 (числа/ключевого слова/скобочного
-сокращения) — это предложение делает это освобождение явным и
+обнаружения по правилу 5 (скобочные shortcut'ы) и правилам 10–14
+(ключевое слово/числа) — это предложение делает это освобождение явным и
 тотальным: присутствие любой распознанной escape-последовательности в
 любом месте тела достаточно, чтобы тело было String, точка. Две
 реализации-парсера, конформные спецификации
@@ -108,7 +109,8 @@ Value kind для одного и того же тела. Это общее пр
 \`String("true")\`,绝不是 Integer 或 Bool。这补上了 § 3.7 的来源规则
 单独所未能消除的歧义:该规则对「结构性」字节的枚举(分隔符 \`.\`、
 \`:\`、\`,\`、\`{\`、\`}\`、\`[\`、\`]\`)本身并未说明*被转义*的数字、字母或
-括号是否同样豁免于规则 10–14 的数字/关键词/括号 shortcut 检测 ——
+括号是否同样豁免于规则 5 的括号 shortcut 以及规则 10–14 的数字/关键词
+检测 ——
 本句使该豁免明确且彻底:体中任何位置出现任一已识别 escape 序列,
 即足以强制分类为 String,仅此而已。数值域相同的两个
 parser-conforming 实现 MUST 对同一体产生相同的 Value kind。这是一条

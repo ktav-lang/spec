@@ -32,7 +32,9 @@ export default {
                                        of bare-with-escape, same result
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
-<raw-line>      ::= any-chars-until-line-end       ; zero or more bytes before line end
+<raw-line>      ::= any-chars-until-line-end       ; source bytes before line end
+                    ; semantic raw String body: trim trailing § 3.3 whitespace;
+                    ; the maximal leading run was already consumed by <sep-end>
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
@@ -100,7 +102,9 @@ export default {
                                        экранированием, но результат тот же
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
-<raw-line>      ::= any-chars-until-line-end       ; ноль или более байтов до конца строки
+<raw-line>      ::= any-chars-until-line-end       ; исходные байты до конца строки
+                    ; семантическое тело raw String: убрать замыкающие пробелы § 3.3;
+                    ; максимальная ведущая последовательность уже поглощена <sep-end>
 <value-part-opt> ::= <value-start> | ""             ; value-часть опциональна; "" ⇒ пустая String
 <value-start>   ::= "{" (ws) "}" (ws)                ; пустой inline-объект
                   | "[" (ws) "]" (ws)                ; пустой inline-массив
@@ -164,7 +168,9 @@ export default {
                                        中间段是 quoted 而非 bare-with-escape,但结果相同
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
-<raw-line>      ::= any-chars-until-line-end       ; 行末之前零个或多个字节
+<raw-line>      ::= any-chars-until-line-end       ; 行末之前的源字节
+                    ; raw String 的语义体:修剪结尾的 § 3.3 空白;
+                    ; 最大前导序列已由 <sep-end> 吸收
 <value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
 <value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
                   | "[" (ws) "]" (ws)                ; 空 inline 数组

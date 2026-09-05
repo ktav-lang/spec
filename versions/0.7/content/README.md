@@ -30,7 +30,6 @@ This directory is the **per-section source of truth** for
 - `README.source.js` is the single `{ en, ru, zh }` source object for the
   three README files in this directory. The builder statically validates it
   and generates `README.md`, `README.ru.md`, and `README.zh.md` from it.
-
 - `manifest.js` — the ordered list of units (see below).
 - `package.json` — `{"type":"module"}`. Historical: it was required back when
   `build_spec.mjs` dynamically imported `meta.js`/`body-*.js` as ES modules.
@@ -215,7 +214,7 @@ document positions. The independent lock at
 both files MUST be updated together when a section is intentionally added or
 removed. A manifest-only change is rejected by the lock check.
 
-### README source object
+## README source object
 
 `README.source.js` has the same narrow static template-object shape as a body
 part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings

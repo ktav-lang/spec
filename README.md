@@ -261,7 +261,7 @@ tree either way. Useful for:
 - Flat-first files that grow nested sections as needed.
 
 A key whose decoded text begins with `##` may use the bare input form
-`\u0023#a:b: 1`; the `\u0023` escape is accepted input. A canonical writer
+`\u0023#a\:b: 1`; the `\u0023` escape is accepted input. A canonical writer
 MUST quote that key instead, for example `"##a:b": 1`, so the output cannot
 be mistaken for a comment.
 
@@ -383,11 +383,13 @@ timeout: null
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.6/tests/), split into four fixture
-categories plus one top-level metadata file. A conformance
-runner MUST walk every fixture category present in the version it
-targets — silently skipping one it doesn't recognise reports
-false-green, which is worse than having no fixtures for it at all.
+[`versions/<v>/tests/`](versions/0.6/tests/). The unreleased 0.7.0 draft
+has four fixture categories (`valid/`, `invalid/`, `unrepresentable/`, and
+`parseable-unrepresentable/`) plus one top-level metadata file. The stable
+0.6.4 corpus has only `valid/` and `invalid/`. A conformance runner MUST
+walk every fixture category present in the version it targets — silently
+skipping one it doesn't recognise reports false-green, which is worse than
+having no fixtures for it at all.
 
 - **`boundary-fixtures.json`** *(0.7+, not a fixture category)* — a
   leaf-level list of individual Object fields, inside otherwise-normal

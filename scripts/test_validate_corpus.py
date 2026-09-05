@@ -16,6 +16,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -123,6 +124,44 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("OVERALL: FAIL", out)
         self.assertIn("duplicate object key 'x'", out)
+
+    def assert_ascii_diagnostic(self, out):
+        self.assertNotIn("Traceback", out)
+        self.assertNotIn("UnicodeEncodeError", out)
+        self.assertNotIn("\ud800", out)
+        self.assertIn("\\ud800", out)
+        out.encode("utf-8")
+
+    def test_duplicate_lone_surrogate_key_in_corpus_is_ascii_safe(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json",
+                   '{"\\ud800": 1, "\\ud800": 2}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assert_ascii_diagnostic(out)
+        self.assertIn("duplicate object key '\\ud800'", out)
+
+    def test_duplicate_lone_surrogate_key_in_both_lock_parsers_is_ascii_safe(self):
+        tests = self.build_full()
+        boundary_lock = self.write(
+            "lock/boundary.json",
+            '[{"fixture": "boundary", "\\ud800": 1, "\\ud800": 2, '
+            '"path": "/overflow", "boundary_class": "integer_range"}]',
+        )
+        code, out = self.run_main(tests, "--boundary-manifest-lock", boundary_lock)
+        self.assertEqual(code, 1)
+        self.assert_ascii_diagnostic(out)
+        self.assertIn("--boundary-manifest-lock", out)
+
+        inventory_lock = self.write(
+            "lock/inventory.json",
+            '{"version": "0.7.0", "files": {}, "\\ud800": 1, '
+            '"\\ud800": 2}',
+        )
+        code, out = self.run_main(tests, "--corpus-inventory-lock", inventory_lock)
+        self.assertEqual(code, 1)
+        self.assert_ascii_diagnostic(out)
+        self.assertIn("--corpus-inventory-lock", out)
 
     def test_successful_null_oracles_are_not_treated_as_parse_failures(self):
         tests = self.build_minimal()
@@ -835,6 +874,44 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(link)
         self.assertEqual(code, 2)
         self.assertIn("symlink/junction", out)
+
+    @unittest.skipUnless(os.name == "posix", "symlinks require POSIX")
+    def test_descendant_symlink_is_pruned_from_semantic_and_inventory_scans(self):
+        tests = self.build_full()
+        outside = os.path.join(self.tmp, "outside")
+        os.mkdir(outside)
+        with open(os.path.join(outside, "outside.json"), "w", encoding="utf-8") as f:
+            f.write('{"x": 1, "x": 2}')
+        lock_path = self.write_corpus_lock(tests)
+        os.symlink(outside, os.path.join(tests, "valid", "escape"),
+                   target_is_directory=True)
+
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("valid/escape: symlink directory is not allowed", out)
+        self.assertNotIn("valid/escape/outside.json", out)
+
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("valid/escape: symlink directory is not allowed", out)
+        self.assertNotIn("valid/escape/outside.json", out)
+
+    @unittest.skipUnless(os.name == "nt", "junctions require Windows")
+    def test_descendant_junction_is_pruned_before_walk(self):
+        tests = self.build_full()
+        outside = os.path.join(self.tmp, "outside")
+        os.mkdir(outside)
+        link = os.path.join(tests, "valid", "junction")
+        completed = subprocess.run(
+            ["cmd", "/c", "mklink", "/J", link, outside],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            self.skipTest("could not create a junction: %s" % completed.stderr)
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertRegex(out, r"valid/junction: (junction|reparse-point) directory")
 
     def test_boundary_record_schema_is_closed_before_lock_comparison(self):
         tests = self.build_full()

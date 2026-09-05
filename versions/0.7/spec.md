@@ -19,31 +19,31 @@ version 0.7.0. Implementations in any programming language may claim
 "Ktav 0.7.0 compliance" iff they satisfy every normative statement
 below.
 
-0.7.0: § 3.3 whitespace changes from an implementation-defined `MAY`
-to a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3);
-§ 4's key-segment trimming widens from ASCII-only to the same fixed
-set, resolving a standing internal contradiction; adds the `\uXXXX`
-escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters `"` / `'` /
-`` ` ``); the `(…)` multi-line string form now also strips
-trailing whitespace from every content line — `(…)` already removed
-each line's shared leading indent (§ 5.6). Five independently-scoped
-breaking changes: value/key-edge trimming now covers 21 additional
-code points beyond space/tab — VT and FF (§ 3.3's remaining two ASCII
-whitespace members) plus the 19 non-ASCII code points in the § 3.3
-set — non-breaking
-in practice against every 0.6.x Rust-core release, which already
-trimmed the full set there; the `(…)` trailing-edge strip is
-breaking even for the Rust core, which previously preserved
-trailing whitespace (including plain ASCII space/tab) on every line
-of a stripped-form block; a line whose first content begins with
-an unescaped `"`, `'`, or `` ` `` no longer necessarily parses as
-before — the quote character now opens a quoted segment there instead
-of being ordinary content, so e.g. an Object pair `"port": 1` now
-names the key `port`, not `"port"` (§ 5.3.3, § 10.7, Appendix D);
-a recognised escape in an inline scalar now forces String before keyword
-or numeric classification (so `1\.0` is String, not Float); and a float
-literal that is non-finite in the declared Float domain now falls back to
-String rather than producing a non-finite Float (§ 5.2 rule 14).
+0.7.0: § 3.3 whitespace changes from an implementation-defined `MAY` to
+a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3); § 4's
+key-segment trimming widens from ASCII-only to the same fixed set, resolving
+a standing internal contradiction; the `\uXXXX` escape (§ 3.7.1) and
+quoted keys (§ 5.3.3, delimiters `"` / `'` / `` ` ``) are added; and
+the `(…)` multi-line string form now also strips trailing whitespace from
+every content line — `(…)` already removed each line's shared leading
+indent (§ 5.6). The five universal breaking changes are: a leading U+FEFF
+is stripped from the document; `(…)` no longer preserves trailing
+whitespace on content lines; a leading unescaped `"`, `'`, or `` ` ``
+in a key segment opens a quoted segment instead of being ordinary key
+content (so an Object pair `"port": 1` names `port`, not `"port"`);
+a recognised escape in an inline scalar forces String before keyword or
+numeric classification (so `1\.0` is String, not Float); and a float
+literal that is non-finite in the declared Float domain falls back to String
+instead of producing a non-finite Float (§ 5.2 rule 14). Separately, an
+implementation that literally followed old § 3.3 / § 4 wording and trimmed
+only the specified ASCII whitespace has a conditional migration review for
+the other members of the 25-code-point set at structural, blank-line,
+comment, root-dispatch, separator, scalar/key-edge, and stripped-block
+content positions; this is not one of the five universal changes. Also,
+the 0.7.0 binary64 minimum and `roundTiesToEven` can change values for a
+previously conforming narrower-domain implementation (for example, binary32
+rounds `16777217.0` to `16777216.0`); this is an implementation-dependent
+numeric migration hazard, not a universal sixth change.
 
 ## 1. Introduction
 
@@ -166,9 +166,10 @@ separate, narrower "structural" whitespace concept.
 ### 3.4 Comments
 
 A **comment** is a line whose first non-whitespace code points are `##`
-(two ASCII `#` bytes). The rest of the line, up to and including the
-line terminator, is the comment body. Comments produce no Value and
-are ignored.
+(two ASCII `#` bytes). The rest of the line is the comment line. The
+comment body ends immediately before the line terminator and excludes it:
+CRLF, LF, and CR are never comment-body bytes. Comments produce no Value
+and are ignored.
 
 A single `#` byte has no special meaning: `#-prefixed` text on a line
 without a leading `##` is an ordinary scalar / key character.
@@ -543,7 +544,9 @@ by decoded escapes.
                                        of bare-with-escape, same result
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
-<raw-line>      ::= any-chars-until-line-end       ; zero or more bytes before line end
+<raw-line>      ::= any-chars-until-line-end       ; source bytes before line end
+                    ; semantic raw String body: trim trailing § 3.3 whitespace;
+                    ; the maximal leading run was already consumed by <sep-end>
 <value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
 <value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
                   | "[" (ws) "]" (ws)                ; empty inline array
@@ -962,7 +965,8 @@ never `Integer` or `Bool`. This closes an ambiguity § 3.7's provenance
 rule alone left open: that rule's enumeration of "structural" bytes
 (the delimiters `.`, `:`, `,`, `{`, `}`, `[`, `]`) does not by itself
 say whether an *escaped* digit, letter, or parenthesis is likewise
-exempt from rules 10–14's number/keyword/paren-shortcut detection —
+exempt from rule 5's parenthesis shortcuts and rules 10–14's
+keyword/numeric detection —
 this sentence makes that exemption explicit and total: the presence of
 any recognised escape sequence anywhere in the body is sufficient to
 force String, full stop.
@@ -1036,6 +1040,11 @@ where:
   (§ 3.7) are NOT processed in a multi-line pair body (a body that
   is the whole rest of the line); they ARE processed in an inline
   pair body (§ 5.8).
+  After `<sep-end>` consumes the maximal leading separator whitespace,
+  trailing § 3.3 whitespace immediately before EOL or EOF is trimmed from
+  the semantic raw String body. `<raw-line>` may still match those source
+  bytes syntactically. A verbatim multi-line String (`((` ... `))`) is
+  the form for preserving leading or trailing edge whitespace.
 - `<sep-end>` requires at least one whitespace code point or end-of-line
   after the separator. Writing `key:value` / `key::value` (no
   whitespace, body continues on the same line) is a
@@ -1350,6 +1359,11 @@ Array (or the top-level Array, § 5.0.1). The forms are:
    required separator-end is absent, as in `::x`, the result is
    `MissingSeparatorSpace`; the line MUST NOT fall through to scalar
    classification.
+   The syntactic `<raw-line>` may include trailing § 3.3 whitespace,
+   but after `<sep-end>` consumes the maximal leading run, trailing § 3.3
+   whitespace immediately before EOL or EOF is trimmed from the semantic
+   String body. Use a verbatim multi-line String (`((` ... `))`) to
+   preserve edge whitespace.
 2. **Closed-inline-object item** — `{ key: value, … }` on one line.
 3. **Closed-inline-array item** — `[ v, v, … ]` on one line.
 4. **Empty-inline-object item** — `{}`.
@@ -2874,27 +2888,24 @@ A writer-conforming implementation:
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
 - For each fixture under `versions/0.7/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
-  output equal to `name.canonical.ktav`, UNLESS the implementation
-  supports a domain wider than the minimum along the `boundary_class`
-  of one or more leaves
+  output equal to `name.canonical.ktav`, except for the contribution
+  of a leaf that
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
-  lists for that fixture — per § 8.1, such an implementation may hold
-  a different Value at that leaf's path than the minimum-domain
-  `.json` oracle describes there (e.g. `i64_overflow_to_string`'s
-  `/overflow` field held as an Integer, not a String), while every
-  other field of the same fixture still holds its minimum-domain
-  Value and MUST still appear in the output exactly as the
-  minimum-domain writer would render it. For such a fixture, this
-  corpus does not pin the exact byte sequence for the exempt leaf's
-  own contribution to the output: it MUST be the correct canonical
-  form (§ 5.9) for the Value the implementation actually holds there
-  (e.g. an Integer value is canonically written bare, without the raw
-  marker, § 5.9.5), internally consistent and deterministic for its
-  own domain — but which exact bytes that is for a domain other than
-  the minimum is not something this shared, language-agnostic corpus
-  verifies. An implementation supporting only the minimum domain MUST
-  match every `valid/` fixture's `.canonical.ktav` exactly, in full,
-  including every field `boundary-fixtures.json` lists a leaf for.
+  lists for that fixture. Under § 8.1,
+  every ordinary, non-exempt field MUST match its JSON oracle in the
+  tested implementation's declared domain; an ordinary numeric field
+  is not required to hold a universal minimum-domain Value. A listed
+  boundary leaf MAY hold a different Value only when the tested source
+  literal crosses that leaf's named boundary and the implementation
+  supports a wider domain along that boundary class. Every other field
+  MUST match normally, and its contribution MUST remain byte-exactly
+  the same as the canonical output. For an exempt leaf, this corpus
+  does not pin the exact bytes of its own contribution: they MUST be
+  the correct canonical form (§ 5.9) for the Value the implementation
+  actually holds there, internally consistent and deterministic for
+  its domain. An implementation supporting only the minimum domain
+  MUST match every `valid/` fixture's `.canonical.ktav` exactly,
+  in full, including every listed boundary leaf.
 - For each fixture under `versions/0.7/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
@@ -3080,7 +3091,6 @@ at all — the lexical layout makes escape unnecessary in those
 contexts. (Keys gained escape processing in 0.6.0; see § 3.7.)
 
 ### 10.5 Why is `{a:}` valid but `[,a]` an error?
-
 
 The two cases look symmetric — an empty inline value, either as
 the value of a key in an Object or as an item in an Array — but
@@ -3342,12 +3352,12 @@ shorter output (§ 10.4).
   pin the boundary; the last documents that underflowing to `0.0`
   (finite) is an ordinary Float, not a String-fallback case. The declared
   Float domain now also includes its decimal-conversion and rounding
-  semantics and MUST use a deterministic conversion policy; every finite
-  Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
-  candidate that round-trips exactly under that policy. An unsupported
-  exact-rational value such as 1/3 is outside the Ktav Float domain, not a
-  new writer-error case. The minimum binary64 conversion uses
-  roundTiesToEven.
+  semantics and MUST use a deterministic conversion policy; every non-zero
+  finite Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
+  candidate that round-trips exactly under that policy. Positive and negative
+  zero (+0.0 and -0.0) are admitted separately by the zero rule. An unsupported exact-rational
+  value such as 1/3 is outside the Ktav Float domain, not a new writer-error
+  case. The minimum binary64 conversion uses roundTiesToEven.
 - **Breaking:** § 3.7 and § 5.2 — any recognised escape in an inline
   scalar now forces String before keyword or numeric classification. In
   0.6.x a body such as `1\.0` could decode and classify as Float; in
@@ -3586,8 +3596,9 @@ The Rust reference implementation already trimmed the full
 25-code-point set at key-segment edges in every 0.6.x release. For Rust,
 and for implementations whose 0.6.x behaviour already matched that
 trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
-that rely on any of the five breaking forms below, previously
-round-tripping documents retain their meaning under 0.7.0.
+that rely on any of the five breaking forms below, and apart from the
+implementation-dependent numeric migration hazard described below,
+previously round-tripping documents retain their meaning under 0.7.0.
 
 An implementation that followed the old § 3.3 / § 4 wording literally and
 trimmed only its specified ASCII whitespace has an additional
@@ -3602,6 +3613,16 @@ Five breaking changes apply to every implementation, Rust included.
 The value/key-edge trimming clarification above remains separately
 scoped: it changes documents only for implementations that did not
 already implement the 0.6.x Rust-compatible trim.
+
+There is also an implementation-dependent numeric migration hazard. The
+0.7.0 minimum Float domain requires binary64 range and precision and
+`roundTiesToEven`. An implementation that was conforming under 0.6.x with
+a narrower domain, such as binary32, may therefore parse an old literal
+differently when it adopts 0.7.0; for example, binary32 cannot represent
+`16777217.0` exactly and rounds it to `16777216.0`. This is not a sixth
+universal breaking change: it applies only to a previously conforming
+narrower-domain implementation, not to one that already used binary64 or
+wider semantics.
 
 1. **A leading byte-order mark (U+FEFF) is now stripped from the document.**
    A 0.7.0-conforming parser MUST skip exactly one U+FEFF when it is the
