@@ -112,17 +112,18 @@ readability). Note how the values map:
 
 ### Numbers are typed by lexical form
 
-The format types a scalar from the *shape* of its body: a bare
-integer becomes an Integer, a bare decimal becomes a Float, and
-everything else stays a String. No marker is needed. Nothing that
-merely *looks* number-ish but isn't a bare number (a version, a
-label) is coerced — and `::` forces a genuine bare number to stay a
-literal string when you need that. Two boundary exceptions: a bare
-integer outside the guaranteed i64 range, or a bare decimal that
-overflows to non-finite on binary64, is kept as a String instead —
-shape alone doesn't make it a number if the value can't fit. A
-decimal that instead *underflows* (too close to zero to represent)
-still becomes a Float, rounded to signed `0.0`, not a String.
+On the minimum required domain, the format types a scalar from the
+*shape* of its body: a bare integer becomes an Integer, a bare decimal
+becomes a Float, and everything else stays a String. No marker is
+needed. Nothing that merely *looks* number-ish but isn't a bare number
+(a version, a label) is coerced — and `::` forces a genuine bare number
+to stay a literal string when you need that. On this minimum domain, a
+bare integer outside i64, or a bare decimal that overflows to non-finite
+on binary64, is kept as a String; a wider implementation MAY retain the
+literal as Integer or Float. A decimal that *underflows in the tested
+implementation's domain* still becomes a Float, rounded to signed
+`0.0` in that domain, not a String; a wider domain in which it does
+not underflow retains a non-zero Float.
 
 ```text
 retries: 3
@@ -247,19 +248,24 @@ tree either way. Useful for:
 
 ### Strings, straight
 
-A value is a string by default. Whatever follows the `:` (after one
-space of padding) is the string, verbatim, up to the end of the line.
-No quoting means no quoting rules — paths, URLs, regexes, tokens with
-punctuation all just work.
+A non-compound scalar body is trimmed at both edges before it is
+classified. A non-empty body that is not a keyword or numeric literal
+is a String, so internal whitespace and punctuation remain part of the
+value. No quoting means no quoting rules — paths, URLs, regexes, tokens
+with punctuation all just work.
 
 ```text
 pattern: .*\.onion:\d+
 url: https://example.com:8080/path?x=1
 key: s3cret/with:colons and-dashes
+padded:   hello
 ```
 
-When a string would collide with grammar (starts with `{`, `[`, `(`,
-or equals a keyword like `true`), prefix the separator with `::`:
+Here `padded` has the String value `hello`: separator padding and body
+edge whitespace are trimmed before classification. When a string would
+collide with grammar (starts with `{` or `[`, equals a keyword like
+`true`, or is exactly one of `(`, `((`, `()`, `(())`), prefix the
+separator with `::`:
 
 ```text
 literal_bracket:: [
@@ -268,15 +274,16 @@ keyword_as_string:: true
 
 ### Numbers, typed by form
 
-A bare number is typed directly — `port: 8080` gives you an Integer,
-`ratio: 0.5` a Float. The body's shape decides: digits only →
-Integer; digits with a decimal point or exponent → Float; anything
-else → String — with two exceptions at the numeric edges: an integer
-outside the guaranteed i64 range, or a decimal that overflows to
-non-finite on binary64, is kept as a String instead of wrapping or
-raising an error. A decimal that *underflows* (too close to zero to
-represent) still becomes a Float, rounded to signed `0.0` — it does
-not fall back to a String.
+A bare number is typed directly on the minimum required domain —
+`port: 8080` gives you an Integer, `ratio: 0.5` a Float. The body's
+shape decides: digits only → Integer; digits with a decimal point or
+exponent → Float; anything else → String. At the minimum numeric
+boundaries, an integer outside i64 or a decimal that overflows to
+non-finite on binary64 is kept as a String instead of wrapping or
+raising an error; a wider domain MAY classify that same boundary literal
+as Integer or Float. A decimal that *underflows in the implementation's
+domain* still becomes a Float, rounded to signed `0.0` in that domain;
+a wider domain in which it does not underflow retains a non-zero Float.
 
 ```text
 port:    8080
@@ -291,11 +298,11 @@ section 5.9.8), so `0.50` comes back as `0.5` and `1e2` as `100.0`
 (the decimal point stays even for a whole-number Float, so a
 re-parse doesn't turn it into an Integer). A bare integer within the
 guaranteed i64 range round-trips exactly as an Integer; i64 (Integer)
-and binary64 (Float) are the portable floor every implementation
+and binary64 (Float) are the portable minimum every implementation
 guarantees — an implementation may support wider domains (arbitrary
-precision / decimal), and an overflowing literal beyond what it
-supports falls back to a String. To keep a numeric-looking value as
-text regardless of size, force it with `::`
+precision / decimal), and a literal overflowing its own supported
+domain falls back to a String. To keep a numeric-looking value as text
+regardless of size, force it with `::`
 (`zip:: 01007`).
 
 ### Multi-line strings

@@ -154,7 +154,7 @@ ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
 
     # -- embedded grammar terminals in semi-formal prose productions ---------
     #
-    # The 10 SEMI_FORMAL_PROSE_LHS productions mix real language-
+    # The 12 SEMI_FORMAL_PROSE_LHS productions mix real language-
     # independent syntax into translatable prose. Before this check was
     # added, a translation could silently corrupt an embedded normative
     # terminal (e.g. swap "." for ":" inside <unescaped-dot>'s prose RHS)
@@ -188,6 +188,19 @@ SEMI_GRAMMAR_LINES_EN = [
     '                    (its own delimiter) instead of "\\""',
     "<scalar-body>   ::= (ws) any-chars-until-eol",
     "                    ; trimmed; interpreted per the value rules",
+    '<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)',
+    '                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)',
+    '<plain-inline-separator> ::= ":" not immediately followed by ":"',
+    "",
+    "<inline-raw-scalar> ::= sequence of bytes after the raw marker,",
+    '                        terminated by the first unescaped "," / "}" /',
+    '                        "]" or by <line-end> (which is an error per',
+    "                        section 6.11); surrounding whitespace is trimmed",
+    "                        from this sequence before escape processing,",
+    "                        and the resulting bytes are the literal String",
+    "                        body. This production does NOT dispatch through",
+    '                        <inline-value> or <inline-scalar>; an initial',
+    '                        "{" or "[" is literal data.',
     "<inline-scalar>    ::= sequence of bytes terminated by an unescaped",
     '                       "," / "}" / "]" or by end-of-line',
     "<multiline-content-line> ::= any line within an open <multiline>;",
@@ -972,8 +985,8 @@ class TranslationParityTestCase(unittest.TestCase):
         productions, malformed = ctp.extract_grammar_productions(
             lines, start, end, excluded)
         self.assertEqual(malformed, [])
-        self.assertEqual(len(lhs_set), 41)
-        self.assertEqual(len(productions), 33)
+        self.assertEqual(len(lhs_set), 44)
+        self.assertEqual(len(productions), 34)
         newly_pure = {"<comment>", "<scalar-body>"}
         self.assertEqual(
             lhs_set - set(productions),
@@ -1101,6 +1114,41 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertNotIn("grammar production RHS mismatch", out)
         self.assertNotIn("grammar production LHS set mismatch", out)
 
+    def run_semi_triplet_mutation(self, mutated_lines, lhs):
+        """Apply one semi-formal mutation to EN, RU, and ZH in turn.
+
+        The production is intentionally prose-shaped, so every language's
+        embedded grammar tokens must be protected independently. Keeping all
+        three files in each run also guards the canonical EN path, not just
+        the two translation paths.
+        """
+        for target in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            paths = {}
+            for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+                lines = mutated_lines if name == target else SEMI_GRAMMAR_LINES_EN
+                paths[name] = self.write(name, semi_doc(lines))
+            code, out = self.run_main(
+                paths["spec.md"], paths["spec.ru.md"], paths["spec.zh.md"])
+            self.assertEqual(code, 1, "%s: %s" % (target, out))
+            self.assertIn("OVERALL: FAIL", out)
+            self.assertIn(
+                "embedded grammar terminal mismatch in semi-formal "
+                "production %s" % lhs, out)
+
+    def run_grammar_triplet_mutation(self, mutated_lines, lhs):
+        """Apply one strict-BNF mutation to each member of EN/RU/ZH."""
+        for target in ("spec.md", "spec.ru.md", "spec.zh.md"):
+            paths = {}
+            for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
+                lines = mutated_lines if name == target else SEMI_GRAMMAR_LINES_EN
+                paths[name] = self.write(name, semi_doc(lines))
+            code, out = self.run_main(
+                paths["spec.md"], paths["spec.ru.md"], paths["spec.zh.md"])
+            self.assertEqual(code, 1, "%s: %s" % (target, out))
+            self.assertIn("OVERALL: FAIL", out)
+            self.assertIn(
+                "grammar production RHS mismatch for %s" % lhs, out)
+
     def test_semi_formal_comment_terminal_swap_fails(self):
         mutated = self._replace_semi_line(
             SEMI_GRAMMAR_LINES_EN, "<comment>",
@@ -1156,6 +1204,43 @@ class TranslationParityTestCase(unittest.TestCase):
             mutated, '                       ","',
             '                       ";" / "}" / "]" or by end-of-line')
         self.run_semi_mutation(mutated, "<inline-scalar>")
+
+    def test_plain_inline_separator_colon_mutation_fails_in_en_ru_zh(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<plain-inline-separator>",
+            '<plain-inline-separator> ::= ";" not immediately followed by ":"')
+        self.run_semi_triplet_mutation(mutated, "<plain-inline-separator>")
+
+    def test_plain_inline_separator_double_colon_mutation_fails_in_en_ru_zh(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<plain-inline-separator>",
+            '<plain-inline-separator> ::= ":" not immediately followed by "::"')
+        self.run_semi_triplet_mutation(mutated, "<plain-inline-separator>")
+
+    def test_inline_pair_raw_double_colon_mutation_fails_in_en_ru_zh(self):
+        mutated = self._replace_semi_line(
+            SEMI_GRAMMAR_LINES_EN, "<inline-pair>",
+            '<inline-pair>      ::= <key> (ws) ":" (ws) '
+            '<inline-raw-scalar> (ws)')
+        self.run_grammar_triplet_mutation(mutated, "<inline-pair>")
+
+    def test_inline_raw_scalar_delimiter_mutations_fail_in_en_ru_zh(self):
+        mutations = [
+            (
+                '                        terminated by the first unescaped "," / "}" /',
+                '                        terminated by the first unescaped ";" / "}" /'),
+            (
+                '                        "]" or by <line-end> (which is an error per',
+                '                        ")" or by <line-end> (which is an error per'),
+            (
+                '                        "]" or by <line-end> (which is an error per',
+                '                        "]" or by end-of-line (which is an error per'),
+        ]
+        for old, new in mutations:
+            with self.subTest(new=new):
+                mutated = self._replace_semi_line(
+                    SEMI_GRAMMAR_LINES_EN, old, new)
+                self.run_semi_triplet_mutation(mutated, "<inline-raw-scalar>")
 
     def test_semi_formal_multiline_content_line_verbatim_terminator_lost(self):
         mutated = self._replace_semi_line(
@@ -1560,6 +1645,14 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn('"\\""', en["<dq-char>"])
         for t in ('","', '"}"', '"]"'):
             self.assertIn(t, en["<inline-scalar>"])
+        self.assertEqual(
+            sorted(en["<plain-inline-separator>"]), ['":"', '":"'])
+        self.assertEqual(
+            sorted(en["<inline-raw-scalar>"]),
+            sorted([
+                '","', '"}"', '"]"', '"{"', '"["',
+                '<line-end>', '<inline-value>', '<inline-scalar>',
+            ]))
         for t in ('")"', '"))"', "<multiline>"):
             self.assertIn(t, en["<multiline-content-line>"])
 

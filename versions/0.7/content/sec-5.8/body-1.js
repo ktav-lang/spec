@@ -7,10 +7,13 @@ bytes. A trailing comma is permitted before the closing delimiter:
 
 \`\`\`
 {a: 1, b: 2}
-{a: 1, b: 2,}        ; trailing comma OK
+{a: 1, b: 2,}
 [1, 2, 3]
 [1, 2, 3,]
 \`\`\`
+
+The second Object and the fourth Array show the permitted single
+trailing comma; the comma is syntax, not an inline comment.
 
 `,
   ru: `
@@ -21,10 +24,13 @@ bytes. A trailing comma is permitted before the closing delimiter:
 
 \`\`\`
 {a: 1, b: 2}
-{a: 1, b: 2,}        ; замыкающая запятая OK
+{a: 1, b: 2,}
 [1, 2, 3]
 [1, 2, 3,]
 \`\`\`
+
+Во втором Object и четвёртом Array показана допустимая одна
+замыкающая запятая; запятая является синтаксисом, а не inline-комментарием.
 
 `,
   zh: `
@@ -34,10 +40,13 @@ bytes. A trailing comma is permitted before the closing delimiter:
 
 \`\`\`
 {a: 1, b: 2}
-{a: 1, b: 2,}        ; 尾部逗号 OK
+{a: 1, b: 2,}
 [1, 2, 3]
 [1, 2, 3,]
 \`\`\`
+
+第二个 Object 与第四个 Array 展示允许的单个尾部逗号;该逗号是语法,
+不是 inline 注释。
 
 `,
 };

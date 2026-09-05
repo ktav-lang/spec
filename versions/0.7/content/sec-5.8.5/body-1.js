@@ -9,6 +9,12 @@ export default {
   the same line; a \`{\` / \`[\` not followed by a matching closer is a
   \`UnterminatedInlineCompound\` error.
 
+The raw \`::\` branch of an inline pair is not an inline value: it uses
+the dedicated raw-scalar production of § 4, consumes to the containing
+unescaped delimiter, processes escapes, and treats a leading \`{\` or
+\`[\` as literal content. The dispatch rules below apply only after a
+plain \`:\` separator.
+
 When an inline scalar begins with \`(\` or \`((\`, these leading parentheses
 remain ordinary content inside inline compounds, not multi-line string
 openers. The raw body runs until the first unescaped inline terminator (\`,\`,
@@ -59,6 +65,12 @@ first byte of the inline value.
   следует соответствующая закрывающая скобка, вызывают ошибку
   \`UnterminatedInlineCompound\`.
 
+Raw-ветка \`::\` inline-пары не является inline-значением: она использует
+специальную raw-scalar-продукцию § 4, идёт до содержащего
+неэкранированного разделителя, обрабатывает escape и считает начальные
+\`{\` или \`[\` литеральными данными. Следующие правила диспетчеризации
+применяются только после обычного разделителя \`:\`.
+
 Если inline-скаляр начинается с \`(\` или \`((\`, эти ведущие скобки остаются
 обычным содержимым внутри inline-составных, а не многострочными строковыми
 опенерами. Raw body продолжается до первого неэкранированного
@@ -108,6 +120,11 @@ inline-значения.
 - 多行作用域变更。\`{\` / \`[\` 字节位于 inline 值开头时开启
   *嵌套 inline 复合值*,其 MUST 在同行闭合;若 \`{\` / \`[\` 后没有
   匹配的闭合符,则为 \`UnterminatedInlineCompound\` 错误。
+
+inline pair 的 raw \`::\` 分支不是 inline value:它使用 § 4 的专用
+raw-scalar 产生式,延伸到包含它的第一个未转义分隔符,处理 escape,
+并将初始 \`{\` 或 \`[\` 视为字面内容。下列分发规则仅在普通
+\`:\` 分隔符之后适用。
 
 当 inline 标量以 \`(\` 或 \`((\` 开始时,这些前导括号在 inline 复合值内
 仍是普通内容,而不是多行字符串开启符。raw body 延续到第一个未转义的

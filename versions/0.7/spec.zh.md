@@ -471,8 +471,7 @@ decoded escape 产生的码点的处理。
                     - `a."b.c".d: v` → 路径 ["a", "b.c", "d"],值
                                        "v"({"a": {"b.c": {"d": "v"}}})
                                        —— 与上面 `x.y\.z: v` 相比:
-                                       中间段是 quoted 而非
-                                       bare-with-escape,但结果相同
+                                       中间段是 quoted 而非 bare-with-escape,但结果相同
 
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
 <value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
@@ -500,19 +499,32 @@ decoded escape 产生的码点的处理。
 <item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
-<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
-                     | <key> (ws) "::" (ws) <inline-value> (ws)
+<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
+                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
+<plain-inline-separator> ::= ":" not immediately followed by ":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
-<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或 <line-end> 终止的
-                       字节序列(行末情况按 § 6.11 为错误);
-                       § 3.7 的 escape 序列被处理;周围空白在分发到
+<inline-raw-scalar> ::= raw 标记之后的字节序列,
+                        在第一个未 escape 的 "," / "}" /
+                        "]" 或 <line-end> 处终止(后者按
+                        § 6.11 为错误);该序列的周围空白
+                        在 § 3.7 escape 处理之前修剪,
+                        所得字节就是字面 String 体。此产生式
+                        不经过 <inline-value> 或
+                        <inline-scalar> 分发;初始 "{" 或
+                        "[" 是字面数据。
+<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或
+                       <line-end> 终止的字节序列(后者按
+                       § 6.11 为错误);§ 3.7 的 escape
+                       序列被处理;周围空白在分发到
                        § 5.2 前被修剪
 
 <multiline-content-line> ::= 打开的 <multiline> 内的任意行,
@@ -525,7 +537,11 @@ decoded escape 产生的码点的处理。
 - `(ws)` 表示零个或多个上文定义的行边界内 `ws` 码点;LF 和 CR
   不包括在内。
 - `1*ws` 表示**一个或多个**同样的行边界内码点。
-- `<sep-end>` 表示「至少一个行边界内空白码点,或行末」。它用在多行
+- `<sep-end>` 表示「至少一个行边界内空白码点,或行末」。分隔符之后
+  MUST 吸收所有紧接着的、连续的此类空白码点(即 maximal contiguous
+  run),剩余字节才构成体;这同样适用于 raw-marker array-item。因此
+  在 `::  x` 中两个空格都属于 `<sep-end>`,值是 `x`,而不是
+  ` x`。它用在多行
   pair 分隔符(`:`、`::`)之后。写 `key:value`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 `:` / `::` 之后有空白。
@@ -537,6 +553,13 @@ decoded escape 产生的码点的处理。
 - `any-chars-until-line-end` 表示零个或多个源字节,在 `<line-end>`
   之前停止且不消耗它;由外层行产生式消耗该终止符。零长度情形允许
   空 `<comment-body>` 和空 raw-marker `<item-literal>`。
+- 在 inline pair 位置,parser MUST 先识别两字节 raw 标记 `::`,再识别
+  单字节普通分隔符 `:`。等价地,若下一个字节是 `:`,则
+  `<plain-inline-separator>` 不适用;`::` 绝不能解析为普通 `:`
+  加后续值。`::` 之后使用专用 `<inline-raw-scalar>` 产生式,而非
+  `<inline-value>` 或 `<inline-scalar>`:它延伸到第一个未 escape 的
+  分隔符,处理 escape,并将初始 `{` 或 `[` 视为字面内容。因此
+  `::` 不能开启或递归解析复合值。
 - `<inline-value>` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 `{`,值是嵌套 inline 对象(匹配前两条
   `{`-规则之一)且 MUST 在同一行以 `}` 关闭;若该字节为 `[`,
@@ -1038,8 +1061,9 @@ array-item line 在最内层开启的 Array(或 top-level Array,
 § 5.0.1)内引入一个 Value。形式:
 
 1. **原始标记项** `:: literal` —— `::` 之后的体是字面 String
-   (无类型推断)。`<sep-end>` 规则适用(要求 `::` 之后为空白或
-   行末;粘连形式是 `MissingSeparatorSpace` 错误)。
+   (无类型推断)。适用 `<sep-end>` 规则:要求 `::` 之后为空白或
+   行末,且紧随其后的最大连续空白序列都属于 `<sep-end>`(因此
+   `::  x` 的值是 `x`)。粘连形式是 `MissingSeparatorSpace` 错误。
 2. **闭合 inline 对象项** `{ … }`。
 3. **闭合 inline 数组项** `[ … ]`。
 4. **空 inline 对象项** `{}`。
@@ -1123,20 +1147,26 @@ MUST 在该行关闭块;若 verbatim 块内某内容行 trim 后恰为 `))`,
 
 ```
 {a: 1, b: 2}
-{a: 1, b: 2,}        ; 尾部逗号 OK
+{a: 1, b: 2,}
 [1, 2, 3]
 [1, 2, 3,]
 ```
+
+第二个 Object 与第四个 Array 展示允许的单个尾部逗号;该逗号是语法,
+不是 inline 注释。
 
 #### 5.8.1 空白
 
 inline 复合值内空白处处可选:
 
 ```
-{a: 1, b: 2}         ; 规范
-{ a : 1 , b : 2 }    ; 同一 Value
-{a:1,b:2}            ; 同一 Value
+{a: 1, b: 2}
+{ a : 1 , b : 2 }
+{a:1,b:2}
 ```
+
+三种形式都解析为同一个 Value。它们都不是规范 writer 输出;writer
+会按多行形式输出非空复合值(§ 5.9.3)。
 
 inline 标量值在按 § 5.2 分类前两侧空白被**修剪**:`{a:   hello  ,b:x}`
 得到 `{a: "hello", b: "x"}`。修剪规则在 `:` 分隔符与 `::` raw 标记
@@ -1199,6 +1229,11 @@ inline 值可以自身是 inline 复合值:
 - 多行作用域变更。`{` / `[` 字节位于 inline 值开头时开启
   *嵌套 inline 复合值*,其 MUST 在同行闭合;若 `{` / `[` 后没有
   匹配的闭合符,则为 `UnterminatedInlineCompound` 错误。
+
+inline pair 的 raw `::` 分支不是 inline value:它使用 § 4 的专用
+raw-scalar 产生式,延伸到包含它的第一个未转义分隔符,处理 escape,
+并将初始 `{` 或 `[` 视为字面内容。下列分发规则仅在普通
+`:` 分隔符之后适用。
 
 当 inline 标量以 `(` 或 `((` 开始时,这些前导括号在 inline 复合值内
 仍是普通内容,而不是多行字符串开启符。raw body 延续到第一个未转义的
@@ -1323,12 +1358,12 @@ MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 
 `value` 映射 MUST 递归检查。Object 的空键是 `EmptyKeyName` 情形的
 见证。String 或 Object 键 MUST NOT 含 lone surrogate。
-`unrepresentable/` 中非有限 Float 的唯一表示是恰好含一个字段的
+编码非有限 Float 的不可表示 fixture MUST 使用恰好含一个字段的
 sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
-或 `{"$float": "-Infinity"}`;任何其他 Object 形状中的
-`$float` 字段都无效。此 sentinel 仅允许用于 `unrepresentable/`;
-parser 产生的 Value MUST NOT 含 `$float` Object 字段,且其
-`value` 根 MUST 是 Object 或 Array。
+或 `{"$float": "-Infinity"}`;其他形状都不是有效 sentinel。这个
+fixture 编码 sentinel 仅允许用于 `unrepresentable/`。该规则不保留
+键名:parser 产生的 Object MAY 像使用其他键一样包含字面键
+`$float`,且其 `value` 根 MUST 是 Object 或 Array。
 只有当该原因情形出现在 Value 树中的某处时,
 原因代码才对该 fixture 有效;`ScalarRoot` 例外,它要求根本身是
 标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
@@ -1488,7 +1523,9 @@ Array 根的第一项,若其裸形式本身会被识别为 pair line(§ 5.0.1
 Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的项
 都直接按数组项行分发,与其形状无关(§ 5.1 规则 7–8),因此这些排除
 条件在那里都不适用。
-- **原始标记项:** `:: <bytes>` —— 当体本应被 § 5.2 重解释为数字、
+- **原始标记项:** `:: <bytes>` —— `::` 之后的 `<sep-end>` 吸收
+  体之前最大连续的行边界内空白序列;因此 `::  x` 的体是 `x`,而
+  不是 ` x`。当体本应被 § 5.2 重解释为数字、
   关键词、inline 复合值、多行字符串开启符(体恰好为 `(` 或
   `((`),或(通过 § 5.7 的 shortcut)空 String,或本会与行级别的
   结构性 token 冲突(体恰好为 `}` 或 `]`,或以 `##` 或两字节
@@ -1599,26 +1636,40 @@ SHOULD NOT 在同时需要修剪后恰为 `))` 的段的多行 String 内容中
   - `sign? digits "." digits ("e" sign? digits)?`
   - `sign? digits "e" sign? digits`
 
-  仅小写 `e`。下划线去除。尾数前导 `+` 舍弃。指数前导 `+` 舍弃
-  (正指数无符号)。
+  对每个非零有限 Float V,一个**规范化十进制候选**是元组
+  `(s, D, k)`:`s` 为 `+1` 或 `-1` 且与 V 的符号相同;`D` 是
+  非空 ASCII 十进制数字序列,首位与末位数字均非零;`k` 是整数十进制
+  指数。其精确十进制值为 `s × integer(D) × 10^k`。若用实现声明的
+  Float 域及该域必需的舍入规则解析此精确值后恰好得到 V,候选即合格。
 
-  首先使用 Ryu / Grisu / Steele-White 类算法计算能唯一确定 Value
-  的最短十进制展开。对于 IEEE 754 binary64,这是能 round-trip 到同一
-  binary64 的最短十进制。然后按以下确定性策略选择表示形式,其中
-  `abs` 是数值的绝对值:
+  选择 D 中数字数目最少的合格候选。对于 IEEE 754 binary64,这是在
+  roundTiesToEven 下能 round-trip 到同一 binary64 的最短十进制。若有
+  多个候选拥有该最小数字数,选择精确十进制值最接近 V 的候选;若距离
+  相同,优先选择 D 末位为偶数的候选;若仍相同,选择较小的 `(D, k)`
+  对,先按字节比较 D,再把 k 作为有符号整数比较。该选择是规范且确定的。
+  MAY 使用 Ryu / Grisu / Steele-White 类算法寻找候选。
 
-  - 若 `0 < abs < 1e-2` 或 `abs >= 1e7`,使用指数形式;
-  - 否则使用 `digits "." digits` 形式。
+  零独立于候选规则处理:正零输出为 `0.0`,负零输出为 `-0.0`。与
+  归一化为 `0` 的 Integer `-0` 不同,Float 保留零的符号。
 
-  阈值条件永不被 `abs == 0` 满足,因此零恒用十进制形式:正零的
-  规范形式为 `0.0`,负零为 `-0.0` —— 十进制,绝非科学形式,符号
-  保留。与 Integer 的 `-0` 归一化为 `0` 不同(见 § 5 的 Integer
-  条目),Float 保留 IEEE 754 在 `0.0` 与 `-0.0` 之间的符号区分。
+  对非零 V,选定 `(s, D, k)` 后,令 `n` 为 D 的数字数,`abs` 为 V
+  的绝对数值。若 `0 < abs < 1e-2` 或 `abs >= 1e7`,使用科学形式;
+  否则使用十进制形式。
 
-  边界是精确的:`0.01` 与 `9999999.0` 使用十进制形式,而 `0.001`、
-  `0.0015`、`-0.001` 与 `10000000.0` 使用指数形式。科学形式使用小写
-  `e`,省略正指数的加号,并去掉尾数末尾的 `.0`;因此输出为 `0.01`、
-  `1e-3`、`1.5e-3`、`-1e-3`、`9999999.0` 与 `1e7`。
+  科学形式的调整后指数为 `E = k + n - 1`。先输出 D 的首位;仅当
+  `n > 1` 时再输出 `.` 和其余数字;然后输出小写 `e` 与基-10 的 E。
+  E 仅在为负时带减号,不带加号且无前导零。若 `s = -1`,添加前缀
+  `-`。因此小数点前恰好一位数字,尾数与指数均无多余零。
+
+  十进制形式令 `p = n + k`,并按如下规则放置小数点:若 `p <= 0`,
+  输出 `0.`,再输出 `-p` 个零和 D;若 `0 < p < n`,在 D 的前 p
+  位后插入 `.`;若 `p >= n`,输出 D、`p - n` 个零及 `.0`。若
+  `s = -1`,添加前缀 `-`。因此每个十进制形式的 Float 都含小数点,
+  包括值为整数的 Float。
+
+  阈值是精确的。对应规范示例为 `0.01`、`1e-3`、`1.5e-3`、
+  `-1e-3`、`9999999.0`、`1e7`,以及
+  `120000000.0` → `1.2e8`。
 
   使用相同 Float 表示(binary64)的两个 writer-conforming 实现
   对同一 Value MUST 产生相同输出。fixture `*.canonical.ktav`
@@ -2026,8 +2077,9 @@ literal_hex:: 0xFF
 `permissions` 是 `Integer(493)`(0o755 的十进制),
 `mask` 是 `Integer(240)`(0b11110000 的十进制),
 `million` 是 `Integer(1000000)`,`ratio` 是 `Float(0.5)`,
-`sci` 是 `Float(1.5e-3)`,`big` 是
-`String("99999999999999999999")`(溢出 i64),
+`sci` 是 `Float(1.5e-3)`,`big` 在最小 i64 域中是
+`String("99999999999999999999")`(该字面量溢出 i64;更宽的整数域
+MAY 在此产生 Integer),
 `literal_hex` 是 `String("0xFF")`(raw 标记)。
 
 规范写入器(§ 5.9.8)将每个 Integer 以基-10 十进制输出
@@ -2168,10 +2220,15 @@ Parser-conforming 实现:
 
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
 - 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与对应
-  `name.json` 等价的 Value。该等价性定义在 § 5 的最小必需数值域上
-  (i64 Integer、binary64 Float)。
-  在每个 JSON Value oracle 中,不含 `.`、`e` 或 `E` 的普通数字
-  token 表示 Integer;含其中任一项的 token 表示 Float,包括 `-0.0`。
+  `name.json` 等价的 Value。在每个 JSON Value oracle 中,数字 token
+  的词法形状固定 Value kind:不含 `.`、`e` 或 `E` 的 token 表示
+  Integer;含其中任一项的 token 表示 Float,包括 `-0.0`。对于普通
+  数值叶,oracle token 在被测实现声明的 Integer 或 Float 域中解释,
+  或转换到该域后比较,且等价性在该域中检验。因此普通 Float token
+  (例如 `3.14`)不要求更宽的 decimal 实现伪造 binary64 的舍入值。
+  只有当源 Ktav 字面量在被测实现声明的域中解释后,因越过该叶指明的
+  边界而在值或 kind 上不同于最小域 oracle token 时,manifest 豁免才
+  适用。若没有这种差异,列出的叶 MUST 正常匹配;豁免绝不扩展到其他叶。
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如
@@ -2370,14 +2427,27 @@ escape 并无必要。裸的 `CR` 字节是另一回事,上述两种机制都覆
 
 ### 10.5 为什么 `{a:}` 合法而 `[,a]` 是错误?
 
+
 两种情形看似对称 —— 一个空的 inline 值,或作为 Object 中某键的值,或作为 Array
 中的项 —— 但处理方式不同(§ 5.8.2 与 § 5.8.3): `{a:}` 产生映射到空 String 的键
 `a`,而 `[,a]` 是 `MalformedInlineCompound` 错误。
+文本 `["", a]` 不表示空 String 项:两个引号字节是普通 inline 标量内容,
+因此该项是正文由两个引号字节组成的 String,而不是空 String。
+
+有效的 inline 写法 `[(), a]` 不同:`()` 是收集 inline 标量后由 § 5.2
+规则 5 分派的精确空 String shortcut。但它不是 writer 的规范形式。对于
+根 Value [空 String, "a"],§ 5.9.3 以缩进 0 直接输出 Array 根的各项:
+首个 raw-marker 项能安全建立 Array 根,因此不需要方括号包裹。规范输出为:
+
+```text
+::
+a
+```
 
 这种不对称是有意的。空的 pair 值有显式键作锚,故「键 X 的空值」意图明确;该形式
 简洁,适合表示例如被设为空字符串的环境变量。空数组项没有这样的锚,故 `[,a]` 更
 可能是笔误(前导或重复的逗号)而非有意的空 String 项。强制写入器为有意的空 String
-使用 `["", a]` 使意图显式,并在解析时捕获常见笔误。
+使用规范的 raw-marker 形式使意图显式,并在解析时捕获常见笔误。
 
 ### 10.6 为什么要规范形式?
 
@@ -2648,7 +2718,9 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
 - **Breaking:** 键段修剪前后 ASCII 空白(§ 4)。
 - **新增:** Inline 复合值(§ 5.8)。
 - **新增:** 八个 escape 序列(§ 3.7)。
-- **新增:** 数字字面量语法(§ 3.6)。
+- **新增:** 数字字面量语法(§ 3.6)。在最小 i64 域上,大整数溢出回退为
+  String;更宽的整数域 MAY 将该字面量保留为 Integer,但须遵守 §§ 5.2
+  与 8.1。
 - **新增:** **规范形式(§ 5.9)** —— 每个 Value 的规范 writer
   输出,由 writer-conforming 实现使用,由 `*.canonical.ktav`
   fixture 验证。
@@ -2716,11 +2788,15 @@ root-Array 形式的文档:
 
 ## 附录 D. 从 0.6.x 迁移
 
-Rust 参考实现的实际解析行为**不受** § 3.3 / § 4 空白变更影响 ——
-它在每一个 0.6.x 版本中就已经修剪完整的 25 码点集合,因此在 0.6.x
-下能正确往返的文档,在 0.7.0 下往返结果完全相同。只有那些字面遵循
-旧 § 4 文本(仅 ASCII 键修剪)、而非匹配 Rust 核心实际行为的实现,
-才需要修改。
+Rust 参考实现在每个 0.6.x 版本中就已在键段边缘修剪完整的 25 码点
+集合。对 Rust 以及 0.6.x 行为已匹配这种修剪的实现而言,§ 3.3 / § 4
+澄清不是破坏性变更:除依赖下面两种破坏性形式之一的文档外,原先能
+round-trip 的文档在 0.7.0 中保持其含义。
+
+字面遵循旧 § 4、仅修剪其中指定 ASCII 空白的实现还有额外的**文档
+行为**变更。若文档的键段前缘或后缘含有旧规则未修剪的 § 3.3 空白,
+它在 0.7.0 中可能产生不同的键/路径或错误。这类文档需要迁移审查;
+这并非仅仅更新实现代码。
 
 有两项破坏性变更适用于包括 Rust 在内的每一个实现:
 

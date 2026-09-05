@@ -16,7 +16,8 @@ literal_hex:: 0xFF
 \`mask\` is \`Integer(240)\` (0b11110000 decimal),
 \`million\` is \`Integer(1000000)\`, \`ratio\` is \`Float(0.5)\`,
 \`sci\` is \`Float(1.5e-3)\`, \`big\` is
-\`String("99999999999999999999")\` (overflows i64),
+\`String("99999999999999999999")\` on the minimum i64 domain
+(it overflows i64; a wider integer domain MAY produce Integer here),
 \`literal_hex\` is \`String("0xFF")\` (raw marker).
 
 The canonical writer (§ 5.9.8) emits each Integer in base-10
@@ -43,7 +44,9 @@ literal_hex:: 0xFF
 \`mask\` — \`Integer(240)\` (0b11110000 в десятичной записи),
 \`million\` — \`Integer(1000000)\`, \`ratio\` — \`Float(0.5)\`,
 \`sci\` — \`Float(1.5e-3)\`, \`big\` —
-\`String("99999999999999999999")\` (превышает диапазон i64),
+\`String("99999999999999999999")\` в минимальном i64-домене
+(литерал превышает i64; более широкий целочисленный домен MAY дать
+здесь Integer),
 \`literal_hex\` — \`String("0xFF")\` (raw-маркер).
 
 Канонический писатель (§ 5.9.8) выводит каждое Integer в десятичной
@@ -70,8 +73,9 @@ literal_hex:: 0xFF
 \`permissions\` 是 \`Integer(493)\`(0o755 的十进制),
 \`mask\` 是 \`Integer(240)\`(0b11110000 的十进制),
 \`million\` 是 \`Integer(1000000)\`,\`ratio\` 是 \`Float(0.5)\`,
-\`sci\` 是 \`Float(1.5e-3)\`,\`big\` 是
-\`String("99999999999999999999")\`(溢出 i64),
+\`sci\` 是 \`Float(1.5e-3)\`,\`big\` 在最小 i64 域中是
+\`String("99999999999999999999")\`(该字面量溢出 i64;更宽的整数域
+MAY 在此产生 Integer),
 \`literal_hex\` 是 \`String("0xFF")\`(raw 标记)。
 
 规范写入器(§ 5.9.8)将每个 Integer 以基-10 十进制输出

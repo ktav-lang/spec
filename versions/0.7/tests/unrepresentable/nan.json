@@ -1,1 +1,1 @@
-{"value": {"f": {"$float": "NaN"}}, "unrepresentable_reason": "NonFiniteFloat", "note": "The nested Float is NaN; the $float object is the reserved non-finite Float sentinel defined by Sec 5.9.0."}
+{"value": {"f": {"$float": "NaN"}}, "unrepresentable_reason": "NonFiniteFloat", "note": "The nested Float is NaN. In this unrepresentable-fixture JSON encoding only, the exact one-field $float object records that non-finite value; it is not a restriction on parsed Object keys."}

@@ -3,10 +3,13 @@ export default {
 Whitespace is optional everywhere inside an inline compound:
 
 \`\`\`
-{a: 1, b: 2}         ; canonical
-{ a : 1 , b : 2 }    ; same Value
-{a:1,b:2}            ; same Value
+{a: 1, b: 2}
+{ a : 1 , b : 2 }
+{a:1,b:2}
 \`\`\`
+
+All three forms parse to the same Value. None is canonical writer
+output: a writer emits a non-empty compound in multi-line form (§ 5.9.3).
 
 Whitespace is **trimmed** from both ends of each inline scalar value
 before classification under § 5.2: \`{a:   hello  ,b:x}\` yields
@@ -33,10 +36,14 @@ alternative for values needing more than edge preservation.
 Пробелы опциональны везде внутри inline-составного:
 
 \`\`\`
-{a: 1, b: 2}         ; канонично
-{ a : 1 , b : 2 }    ; то же Value
-{a:1,b:2}            ; то же Value
+{a: 1, b: 2}
+{ a : 1 , b : 2 }
+{a:1,b:2}
 \`\`\`
+
+Все три формы разбираются в одно и то же Value. Ни одна не является
+каноническим выводом writer'а: непустое составное writer выводит в
+многострочной форме (§ 5.9.3).
 
 Пробелы **обрезаются** с обоих концов каждого inline-скалярного
 значения перед классификацией по § 5.2: \`{a:   hello  ,b:x}\` даёт
@@ -64,10 +71,13 @@ raw-маркера \`::\`.
 inline 复合值内空白处处可选:
 
 \`\`\`
-{a: 1, b: 2}         ; 规范
-{ a : 1 , b : 2 }    ; 同一 Value
-{a:1,b:2}            ; 同一 Value
+{a: 1, b: 2}
+{ a : 1 , b : 2 }
+{a:1,b:2}
 \`\`\`
+
+三种形式都解析为同一个 Value。它们都不是规范 writer 输出;writer
+会按多行形式输出非空复合值(§ 5.9.3)。
 
 inline 标量值在按 § 5.2 分类前两侧空白被**修剪**:\`{a:   hello  ,b:x}\`
 得到 \`{a: "hello", b: "x"}\`。修剪规则在 \`:\` 分隔符与 \`::\` raw 标记

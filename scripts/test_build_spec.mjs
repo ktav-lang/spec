@@ -141,6 +141,40 @@ function symlinksSupported() {
   return symlinksSupportedCache;
 }
 
+function bodyWithInteriorBlanks(lineCount, blankIndexes) {
+  const lines = Array.from({ length: lineCount }, (_, i) =>
+    `paragraph-${i + 1} carries content`);
+  for (const blankIndex of blankIndexes) lines[blankIndex] = '';
+  return lines.join('\n') + '\n';
+}
+
+function bodyWithOneInteriorBlank(lineCount, blankIndex) {
+  return bodyWithInteriorBlanks(lineCount, [blankIndex]);
+}
+
+function interiorBlankCutOffsets(body) {
+  const lines = body.split('\n');
+  const cuts = [];
+  let offset = 0;
+  for (const line of lines.slice(0, -1)) {
+    offset += line.length + 1;
+    if (line === '' && offset < body.length) cuts.push(offset);
+  }
+  return cuts;
+}
+
+function splitBody(body, cut) {
+  return [body.slice(0, cut), body.slice(cut)];
+}
+
+function sameLanguageBodies(parts) {
+  return parts.map((part) => [part, part, part]);
+}
+
+function zipLanguageBodies(en, ru, zh) {
+  return en.map((_, i) => [en[i], ru[i], zh[i]]);
+}
+
 test('well-formed minimal fixture passes cleanly', async () => {
   const { manifest } = await validate(baseFixtures());
   assert.deepEqual(manifest, ['frontmatter', 'named-abstract', 'sec-1']);
@@ -250,6 +284,82 @@ test('meta.bodyParts=2 but body-2.js missing', async () => {
   await assert.rejects(
     validate(fx),
     (e) => /unit "sec-1": missing body-2\.js \(meta\.bodyParts is 2\)/.test(e.message)
+  );
+});
+
+test('bodyParts rejects needless splitting of a unit with at most 120 lines', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithOneInteriorBlank(120, 59);
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(splitBody(body, body.indexOf('\n\n') + 2));
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "sec-1": bodyParts 2 does not match the mandated split count 1/.test(e.message)
+  );
+});
+
+test('body parts accept the mandated two-way blank-line split', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithOneInteriorBlank(130, 64);
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(splitBody(body, body.indexOf('\n\n') + 2));
+  const result = await validate(fx);
+  assert.equal(result.units.get('sec-1').parts.length, 2);
+});
+
+test('all languages use the maximum body line count for proportional cut targets', async () => {
+  const fx = baseFixtures();
+  const en = bodyWithOneInteriorBlank(130, 64);
+  const ru = bodyWithInteriorBlanks(80, [29, 59]);
+  const zh = bodyWithOneInteriorBlank(130, 64);
+  const enParts = splitBody(en, interiorBlankCutOffsets(en)[0]);
+  const ruParts = splitBody(ru, interiorBlankCutOffsets(ru)[1]);
+  const zhParts = splitBody(zh, interiorBlankCutOffsets(zh)[0]);
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = zipLanguageBodies(enParts, ruParts, zhParts);
+
+  const result = await validate(fx);
+  assert.equal(result.units.get('sec-1').parts[0].ru, ruParts[0]);
+});
+
+test('cut selection reserves enough later blanks to preserve the mandated part count', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithInteriorBlanks(210, [59, 74]);
+  const [firstCut, secondCut] = interiorBlankCutOffsets(body);
+  const parts = [
+    body.slice(0, firstCut),
+    body.slice(firstCut, secondCut),
+    body.slice(secondCut),
+  ];
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 3 });
+  fx[2].bodies = sameLanguageBodies(parts);
+
+  const result = await validate(fx);
+  assert.equal(result.units.get('sec-1').parts.length, 3);
+});
+
+test('body parts reject a mid-paragraph cut even when the body has a valid blank boundary', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithOneInteriorBlank(130, 64);
+  const firstLineCuts = [...body.matchAll(/\n/g)][19].index + 1;
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(splitBody(body, firstLineCuts));
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "sec-1": en: body parts must use the mandated blank-line cut points/.test(e.message)
+  );
+});
+
+test('body parts reject a mid-word cut even when the body has a valid blank boundary', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithOneInteriorBlank(130, 64);
+  const word = body.indexOf('paragraph-20');
+  const midWordCut = word + 'paragraph-2'.length;
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(splitBody(body, midWordCut));
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "sec-1": en: body parts must use the mandated blank-line cut points/.test(e.message)
   );
 });
 
@@ -472,6 +582,67 @@ test('write build restores missing generated content READMEs from README.source.
         expected[lang]
       );
     }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build rejects a specification destination symlink without touching its target', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-symlink-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const outside = path.join(temp, 'outside-spec.md');
+    write(outside, 'must remain unchanged\n');
+    fs.symlinkSync(outside, path.join(versionDir, 'spec.md'), 'file');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /output destination .*spec\.md.*not a regular file \(symlink/.test(e.message)
+    );
+    assert.equal(fs.readFileSync(outside, 'utf8'), 'must remain unchanged\n');
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.ru.md')), false);
+
+    // The generated content README goes through the same writer and must
+    // receive the same lstat protection as the specification outputs.
+    fs.unlinkSync(path.join(versionDir, 'spec.md'));
+    const outsideReadme = path.join(temp, 'outside-readme.md');
+    write(outsideReadme, 'README target must remain unchanged\n');
+    fs.rmSync(path.join(contentDir, 'README.md'));
+    fs.symlinkSync(outsideReadme, path.join(contentDir, 'README.md'), 'file');
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /output destination .*README\.md.*not a regular file \(symlink/.test(e.message)
+    );
+    assert.equal(fs.readFileSync(outsideReadme, 'utf8'), 'README target must remain unchanged\n');
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build rejects a generated README directory before creating temporary outputs', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-special-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    fs.rmSync(path.join(contentDir, 'README.md'));
+    fs.mkdirSync(path.join(contentDir, 'README.md'));
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /output destination .*README\.md.*not a regular file \(special file/.test(e.message)
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+    const leftovers = fs.readdirSync(contentDir).filter((name) => name.endsWith('.tmp'));
+    assert.deepEqual(leftovers, []);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

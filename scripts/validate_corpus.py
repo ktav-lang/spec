@@ -48,6 +48,7 @@ import math
 import os
 import re
 import sys
+from decimal import Decimal, InvalidOperation
 
 PROGRAMMATIC_UNREPRESENTABLE_REASONS = frozenset({
     "ScalarRoot",
@@ -116,6 +117,19 @@ LOCKED_CORPUS_DIRS = frozenset({
 })
 LOCKED_CORPUS_FILES = frozenset({"boundary-fixtures.json"})
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+ARRAY_INDEX_RE = re.compile(r"^(0|[1-9][0-9]*)$")
+DECIMAL_PART = r"[0-9](?:_?[0-9])*"
+INTEGER_LITERAL_RE = re.compile(
+    r"^[+-]?(?:0|[1-9](?:_?[0-9])*|0[bB][01](?:_?[01])*|"
+    r"0[oO][0-7](?:_?[0-7])*|0[xX][0-9a-fA-F](?:_?[0-9a-fA-F])*)$"
+)
+FLOAT_LITERAL_RE = re.compile(
+    rf"^[+-]?(?:{DECIMAL_PART}\.{DECIMAL_PART}(?:[eE][+-]?{DECIMAL_PART})?|"
+    rf"{DECIMAL_PART}[eE][+-]?{DECIMAL_PART})$"
+)
+BOUNDARY_RECORD_FIELDS = frozenset({"fixture", "path", "boundary_class"})
+I64_MIN = -(1 << 63)
+I64_MAX = (1 << 63) - 1
 
 
 def rel(path, tests_dir):
@@ -138,12 +152,20 @@ class Results:
 
 
 def is_deliberately_invalid_utf8(rpath):
-    """True for the one fixture class allowed to fail the UTF-8 check: a
-    .ktav input under invalid/invalid_utf8/ whose whole point is to be
-    invalid UTF-8 (Sec 6.15). Its sibling .json is NOT exempt."""
+    """True for an invalid/ .ktav input whose sibling oracle says InvalidUtf8."""
     parts = rpath.split("/")
-    return (len(parts) >= 2 and parts[0] == "invalid" and parts[1] == "invalid_utf8"
-            and rpath.endswith(".ktav"))
+    return len(parts) >= 2 and parts[0] == "invalid" and rpath.endswith(".ktav")
+
+
+def _sibling_declares_invalid_utf8(path):
+    """Read the sibling oracle without depending on its directory name."""
+    sibling = path[:-len(".ktav")] + ".json"
+    try:
+        with open(sibling, "r", encoding="utf-8") as stream:
+            value = loads_strict(stream.read())
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+        return False
+    return isinstance(value, dict) and value.get("expected_error") == "InvalidUtf8"
 
 
 def _reject_json_constant(name):
@@ -175,8 +197,8 @@ def loads_strict(text):
 
 def check_utf8_json(tests_dir, results):
     """Check 1: strict UTF-8 decode for every file; json.loads for every .json.
-    Exception: invalid/invalid_utf8/*.ktav is deliberately not valid UTF-8
-    (see is_deliberately_invalid_utf8)."""
+    Exception: an invalid/ .ktav fixture whose sibling oracle declares
+    InvalidUtf8 is deliberately not valid UTF-8."""
     category = "UTF-8/JSON validity"
     n_files = 0
     n_json = 0
@@ -194,7 +216,8 @@ def check_utf8_json(tests_dir, results):
                     raw = f.read()
                 text = raw.decode("utf-8", errors="strict")
             except UnicodeDecodeError as e:
-                if is_deliberately_invalid_utf8(rpath):
+                if (is_deliberately_invalid_utf8(rpath)
+                        and _sibling_declares_invalid_utf8(path)):
                     n_exempt += 1
                     continue
                 results.fail(category, "%s: invalid UTF-8 at byte offset %d: %s"
@@ -299,7 +322,7 @@ def check_valid(tests_dir, results, parsed):
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
             if rpath in parsed and parsed[rpath] is not None:
                 errors, _witnesses, root_kind = _inspect_unrepresentable_value(
-                    parsed[rpath], sentinel_policy="forbid"
+                    parsed[rpath], sentinel_policy="ordinary"
                 )
                 for message in errors:
                     results.fail(category, "%s: %s" % (rpath, message))
@@ -455,6 +478,7 @@ def _semantic_kind(value, decode_float_sentinel=True):
     if isinstance(value, dict):
         if (decode_float_sentinel
                 and set(value) == {FLOAT_SENTINEL_KEY}
+                and isinstance(value[FLOAT_SENTINEL_KEY], str)
                 and value[FLOAT_SENTINEL_KEY] in FLOAT_SENTINEL_VALUES):
             return "Float"
         return "Object"
@@ -484,16 +508,21 @@ def _multiline_collision_witness(text):
     non_blank = [line for line in lines if _strip_ktav_whitespace(line) != ""]
     leading = False
     if non_blank:
-        leading_runs = []
+        common_prefix = None
         for line in non_blank:
             run = 0
             while run < len(line) and line[run] in KTAV_WHITESPACE:
                 run += 1
-            leading_runs.append(run)
-        common = min(leading_runs)
-        leading = common > 0 and all(
-            line[:common] == non_blank[0][:common] for line in non_blank
-        )
+            prefix = line[:run]
+            if common_prefix is None:
+                common_prefix = prefix
+                continue
+            common_length = min(len(common_prefix), len(prefix))
+            while (common_length > 0
+                   and common_prefix[:common_length] != prefix[:common_length]):
+                common_length -= 1
+            common_prefix = common_prefix[:common_length]
+        leading = bool(common_prefix)
 
     return (
         has_double_closer and has_single_closer,
@@ -531,7 +560,7 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                 if surrogate is not None:
                     errors.append("%s: Object key contains lone surrogate U+%04X"
                                   % (path, surrogate))
-            if FLOAT_SENTINEL_KEY in node:
+            if FLOAT_SENTINEL_KEY in node and sentinel_policy != "ordinary":
                 if sentinel_policy == "forbid":
                     errors.append("%s: '$float' sentinel is not allowed in a "
                                   "parser-produced Value oracle" % path)
@@ -539,6 +568,7 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                         walk(child, _oracle_path(path, key))
                     return
                 if (set(node) != {FLOAT_SENTINEL_KEY}
+                        or not isinstance(node[FLOAT_SENTINEL_KEY], str)
                         or node[FLOAT_SENTINEL_KEY] not in FLOAT_SENTINEL_VALUES):
                     errors.append(
                         "%s: '$float' must be the only field of a sentinel "
@@ -566,6 +596,12 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
             witnesses["LeadingWhitespaceCollision"] |= leading
         elif isinstance(node, float) and not math.isfinite(node):
             errors.append("%s: ordinary JSON number must be finite" % path)
+        elif (isinstance(node, int) and not isinstance(node, bool)
+              and sentinel_policy in ("ordinary", "forbid")
+              and not I64_MIN <= node <= I64_MAX):
+            errors.append("%s: parser-produced JSON Integer %d is outside "
+                          "the mandatory i64 range [%d, %d]"
+                          % (path, node, I64_MIN, I64_MAX))
 
     walk(value, "/value")
     return errors, witnesses, _semantic_kind(
@@ -605,7 +641,7 @@ def _check_unrepresentable_object(obj, rpath, results, category,
         return
 
     value_errors, witnesses, root_kind = _inspect_unrepresentable_value(
-        obj["value"], sentinel_policy="forbid" if parser_produced else "allow"
+        obj["value"], sentinel_policy="allow" if not parser_produced else "ordinary"
     )
     for message in value_errors:
         results.fail(category, "%s: %s" % (rpath, message))
@@ -707,6 +743,8 @@ def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
 def json_pointer_tokens(pointer):
     """Validate an RFC 6901 pointer; return (tokens, error_message). tokens use
     the raw (still-escaped) segments; None on syntax error."""
+    if not isinstance(pointer, str):
+        return None, "JSON Pointer must be a string"
     if not pointer.startswith("/"):
         return None, "JSON Pointer must start with '/'"
     raw = pointer[1:].split("/") if pointer[1:] != "" else [""]
@@ -741,10 +779,14 @@ def resolve_pointer(doc, pointer):
                 return None, "at token %d (%r): key not found in object" % (depth, token)
             node = node[token]
         elif isinstance(node, list):
-            if not token.isdigit() or (len(token) > 1 and token[0] == "0"):
+            if ARRAY_INDEX_RE.fullmatch(token) is None:
                 return None, ("at token %d (%r): expected a canonical non-negative "
                               "array index" % (depth, token))
-            idx = int(token)
+            try:
+                idx = int(token, 10)
+            except ValueError:
+                return None, ("at token %d (%r): array index is too large"
+                              % (depth, token))
             if idx >= len(node):
                 return None, ("at token %d (%r): array index %d out of range "
                               "(length %d)" % (depth, token, idx, len(node)))
@@ -765,6 +807,217 @@ def _is_within(child, parent):
         # Windows cross-drive paths can never be within the tree.
         return False
     return rel == os.curdir or not (rel == os.pardir or rel.startswith(os.pardir + os.sep))
+
+
+def _boundary_record_shape(entry):
+    """Return whether a record is safe to use as a hash/multiset key."""
+    if not isinstance(entry, dict):
+        return False
+    if set(entry) != BOUNDARY_RECORD_FIELDS:
+        return False
+    if any(not isinstance(entry[field], str) for field in BOUNDARY_RECORD_FIELDS):
+        return False
+    fixture = entry["fixture"]
+    if (not fixture or "\\" in fixture
+            or any(part in ("", ".", "..") for part in fixture.split("/"))):
+        return False
+    _tokens, pointer_error = json_pointer_tokens(entry["path"])
+    return (entry["boundary_class"] in BOUNDARY_CLASSES
+            and pointer_error is None)
+
+
+def _report_boundary_record_shape(results, category, label, entry):
+    """Validate the closed record schema before inspecting its values."""
+    if not isinstance(entry, dict):
+        results.fail(category, "%s must be an object" % label)
+        return False
+    fields = set(entry)
+    missing = sorted(BOUNDARY_RECORD_FIELDS - fields)
+    extra = sorted(fields - BOUNDARY_RECORD_FIELDS)
+    if missing:
+        results.fail(category, "%s: missing required field(s): %s"
+                     % (label, ", ".join(repr(field) for field in missing)))
+    if extra:
+        results.fail(category, "%s: unexpected field(s): %s"
+                     % (label, ", ".join(repr(field) for field in extra)))
+    if missing or extra:
+        return False
+    valid = True
+    for field in sorted(BOUNDARY_RECORD_FIELDS):
+        if not isinstance(entry[field], str):
+            results.fail(category, "%s: %r must be a string"
+                         % (label, field))
+            valid = False
+    if valid and entry["boundary_class"] not in BOUNDARY_CLASSES:
+        results.fail(category, "%s: unknown boundary_class %r (must be one of: %s)"
+                     % (label, entry["boundary_class"],
+                        ", ".join(sorted(BOUNDARY_CLASSES))))
+        valid = False
+    if valid and entry["fixture"] == "":
+        results.fail(category, "%s: 'fixture' must be a non-empty string" % label)
+        valid = False
+    if valid and ("\\" in entry["fixture"]
+                  or any(part in ("", ".", "..")
+                         for part in entry["fixture"].split("/"))):
+        results.fail(category, "%s: 'fixture' must be a '/'-separated path "
+                     "of plain name segments under valid/ (no '..', '.', "
+                     "empty segments, or backslashes): %r"
+                     % (label, entry["fixture"]))
+        valid = False
+    if valid:
+        _tokens, pointer_error = json_pointer_tokens(entry["path"])
+        if pointer_error:
+            results.fail(category, "%s: 'path' is not a valid JSON Pointer: %s"
+                         % (label, pointer_error))
+            valid = False
+    return valid
+
+
+def _source_literals_for_pointer(text, tokens):
+    """Find an unquoted pair-line literal for a JSON object path.
+
+    Boundary fixtures use scalar pair lines. Only a complete dotted path is
+    accepted; inline, ambiguous, or context-dependent forms are rejected
+    rather than guessed.
+    """
+    if not tokens:
+        return []
+    target = ".".join(tokens)
+    matches = []
+    for line in text.split("\n"):
+        stripped = _strip_ktav_whitespace(line)
+        if not stripped or stripped.startswith("#"):
+            continue
+        match = re.match(r"^(.+?)(::|:)(.*)$", stripped)
+        if match is None:
+            continue
+        key, separator, remainder = match.groups()
+        if not remainder or remainder[0] not in KTAV_WHITESPACE:
+            continue
+        literal = _strip_ktav_whitespace(remainder)
+        if any(char in key for char in "'\"`"):
+            continue
+        if key == target:
+            matches.append((key, separator, literal))
+    return matches
+
+
+def _parse_source_numeric_literal(text, tokens):
+    matches = _source_literals_for_pointer(text, tokens)
+    if len(matches) != 1:
+        return None, ("could not identify one unquoted Ktav source literal for "
+                      "the object field")
+    _key, separator, literal = matches[0]
+    if separator != ":":
+        return None, "Ktav source field uses a raw string marker, not a numeric literal"
+    if any(char in KTAV_WHITESPACE for char in literal):
+        return None, "Ktav source field is not a single numeric literal"
+    return literal, None
+
+
+def _parse_integer_literal(literal):
+    if INTEGER_LITERAL_RE.fullmatch(literal) is None:
+        return None
+    cleaned = literal.replace("_", "")
+    sign = 1
+    if cleaned[:1] in ("+", "-"):
+        sign = -1 if cleaned[0] == "-" else 1
+        cleaned = cleaned[1:]
+    if cleaned.startswith(("0b", "0B")):
+        base = 2
+    elif cleaned.startswith(("0o", "0O")):
+        base = 8
+    elif cleaned.startswith(("0x", "0X")):
+        base = 16
+    else:
+        base = 10
+    try:
+        return sign * int(cleaned, base)
+    except ValueError:
+        # Python 3.11+ limits decimal string-to-int conversions. A literal
+        # that trips that limit is necessarily outside the i64 boundary.
+        return I64_MAX + 1 if sign > 0 else I64_MIN - 1
+
+
+def _parse_float_literal(literal):
+    if FLOAT_LITERAL_RE.fullmatch(literal) is None:
+        return None
+    try:
+        return float(literal.replace("_", ""))
+    except (OverflowError, ValueError):
+        return None
+
+
+def _check_boundary_semantics(tests_dir, results, rpath, index, entry,
+                              fixture_json, fixture_ktav):
+    """Require a real source/oracle divergence for the declared boundary."""
+    category = "boundary-fixtures.json"
+    ptr = entry["path"]
+    raw_tokens, pointer_error = json_pointer_tokens(ptr)
+    if pointer_error:
+        return
+    node, error = resolve_pointer(fixture_json, ptr)
+    if error:
+        return
+    if not raw_tokens:
+        return
+    parent_pointer = ("/" + "/".join(raw_tokens[:-1])) if len(raw_tokens) > 1 else ""
+    parent = fixture_json if not parent_pointer else resolve_pointer(
+        fixture_json, parent_pointer
+    )[0]
+    if not isinstance(parent, dict) or isinstance(node, (dict, list)):
+        results.fail(category, "%s: entry path %r must identify a scalar field "
+                     "of an Object" % (rpath, ptr))
+        return
+    try:
+        with open(fixture_ktav, "r", encoding="utf-8") as stream:
+            source_text = stream.read()
+    except (OSError, UnicodeError) as error:
+        results.fail(category, "%s: cannot read Ktav source for %r: %s"
+                     % (rpath, entry["fixture"], error))
+        return
+    literal, error = _parse_source_numeric_literal(
+        source_text, [unescape_token(token) for token in raw_tokens]
+    )
+    if error:
+        results.fail(category, "%s: entry path %r in fixture %r: %s"
+                     % (rpath, ptr, entry["fixture"], error))
+        return
+    boundary_class = entry["boundary_class"]
+    valid = False
+    if boundary_class == "integer_range":
+        parsed = _parse_integer_literal(literal)
+        valid = (parsed is not None and not I64_MIN <= parsed <= I64_MAX
+                 and isinstance(node, str) and node == literal)
+    elif boundary_class == "float_range":
+        parsed = _parse_float_literal(literal)
+        valid = (parsed is not None and not math.isfinite(parsed)
+                 and isinstance(node, str) and node == literal)
+    elif boundary_class == "float_underflow":
+        parsed = _parse_float_literal(literal)
+        valid = False if parsed is None else (
+            parsed == 0.0 and isinstance(node, float) and node == 0.0
+            and math.copysign(1.0, parsed) == math.copysign(1.0, node)
+        )
+        if parsed is not None:
+            try:
+                valid = (Decimal(literal.replace("_", "")) != 0
+                         and valid)
+            except InvalidOperation:
+                valid = False
+    elif boundary_class == "float_precision":
+        parsed = _parse_float_literal(literal)
+        if parsed is not None and math.isfinite(parsed) and isinstance(node, float):
+            try:
+                source_decimal = Decimal(literal.replace("_", ""))
+                shortest_decimal = Decimal(repr(node))
+                valid = (parsed == node and source_decimal != shortest_decimal)
+            except InvalidOperation:
+                valid = False
+    if not valid:
+        results.fail(category, "%s: entry %d does not prove boundary_class %r "
+                     "from its Ktav source literal and minimum oracle value"
+                     % (rpath, index, boundary_class))
 
 
 def _boundary_record_key(entry):
@@ -806,6 +1059,19 @@ def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
                      "JSON array" % lock_path)
         return
 
+    valid_lock_records = []
+    for index, entry in enumerate(lock_data):
+        if _report_boundary_record_shape(
+                results, category,
+                "--boundary-manifest-lock %s: entry %d" % (lock_path, index),
+                entry):
+            valid_lock_records.append(entry)
+
+    # Manifest records are validated by check_boundary_fixtures. Do not feed
+    # malformed values into a tuple/dict key even when the lock flag is used.
+    valid_manifest_records = [entry for entry in leaves
+                              if _boundary_record_shape(entry)]
+
     def counts(records):
         c = {}
         for entry in records:
@@ -813,8 +1079,8 @@ def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
             c[key] = c.get(key, 0) + 1
         return c
 
-    expected = counts(lock_data)
-    actual = counts(leaves)
+    expected = counts(valid_lock_records)
+    actual = counts(valid_manifest_records)
     missing = []
     extra = []
     for key, cnt in expected.items():
@@ -872,29 +1138,11 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     seen = {}
     n_ok = 0
     for i, entry in enumerate(leaves):
-        if not isinstance(entry, dict):
-            results.fail(category, "%s: entry %d must be an object" % (rpath, i))
+        label = "%s: entry %d" % (rpath, i)
+        if not _report_boundary_record_shape(results, category, label, entry):
             continue
         fixture = entry.get("fixture")
-        if not isinstance(fixture, str) or fixture == "":
-            results.fail(category, "%s: entry %d: 'fixture' must be a non-empty "
-                         "string" % (rpath, i))
-            fixture = None
-        elif "\\" in fixture or any(seg in ("", ".", "..") for seg in fixture.split("/")):
-            results.fail(category, "%s: entry %d: 'fixture' must be a '/'-separated "
-                         "path of plain name segments under valid/ (no '..', '.', "
-                         "empty segments, or backslashes): %r" % (rpath, i, fixture))
-            fixture = None
         ptr = entry.get("path")
-        if not isinstance(ptr, str):
-            results.fail(category, "%s: entry %d: 'path' must be a string"
-                         % (rpath, i))
-            ptr = None
-        bclass = entry.get("boundary_class")
-        if bclass not in BOUNDARY_CLASSES:
-            results.fail(category, "%s: entry %d: unknown boundary_class %r "
-                         "(must be one of: %s)"
-                         % (rpath, i, bclass, ", ".join(sorted(BOUNDARY_CLASSES))))
         if fixture is not None:
             base = os.path.join(tests_dir, "valid", *fixture.split("/"))
             valid_root = os.path.join(tests_dir, "valid")
@@ -916,6 +1164,10 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
                         results.fail(
                             category, "%s: entry %d: cannot resolve path %r in "
                             "fixture %r: %s" % (rpath, i, ptr, fixture, err))
+                    else:
+                        _check_boundary_semantics(
+                            tests_dir, results, rpath, i, entry, fixture_json,
+                            base + ".ktav")
         if fixture is not None and ptr is not None:
             key = (fixture, ptr)
             if key in seen:

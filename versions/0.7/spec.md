@@ -563,16 +563,28 @@ by decoded escapes.
 <item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
-<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
-                     | <key> (ws) "::" (ws) <inline-value> (ws)
+<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
+                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
+<plain-inline-separator> ::= ":" not immediately followed by ":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
+<inline-raw-scalar> ::= sequence of bytes after the raw marker,
+                        terminated by the first unescaped "," / "}" /
+                        "]" or by <line-end> (which is an error per
+                        § 6.11); surrounding whitespace is trimmed from
+                        this sequence before § 3.7 escape processing,
+                        and the resulting bytes are the literal String
+                        body. This production does NOT dispatch through
+                        <inline-value> or <inline-scalar>; an initial
+                        "{" or "[" is literal data.
 <inline-scalar>    ::= sequence of bytes terminated by an unescaped
                        "," / "}" / "]" or by <line-end> (which is
                        an error per § 6.11); escape sequences per
@@ -590,11 +602,15 @@ Notes on the notation:
   above; LF and CR are excluded.
 - `1*ws` stands for **one or more** of those same line-bounded code points.
 - `<sep-end>` stands for "at least one line-bounded whitespace code point,
-  or the end of the line". It is used after the multi-line pair separators (`:`,
-  `::`). Writing `key:value` (no whitespace, no EOL after the
-  separator) is a syntax error in the multi-line pair form — see
-  § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
-  after `:` / `::`.
+  or the end of the line". After a separator it MUST consume the whole
+  immediately following contiguous run of such whitespace code points (the
+  maximal run); the remaining bytes form the body. This also applies to a
+  raw-marker array item, so both spaces in `::  x` belong to `<sep-end>`
+  and the value is `x`, not ` x`. It is used after the multi-line pair
+  separators (`:`, `::`). Writing `key:value` (no whitespace, no EOL
+  after the separator) is a syntax error in the multi-line pair form — see
+  § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace after
+  `:` / `::`.
 - `&line-end` is a zero-width positive lookahead for `<line-end>`; it
   matches either eol or EOF without consuming it. Every line production
   consumes exactly one `<line-end>`, so a final line need not have a
@@ -606,6 +622,15 @@ Notes on the notation:
   before (without consuming) `<line-end>`; the enclosing line production
   consumes it. The zero-length case permits an empty `<comment-body>` and
   an empty raw-marker `<item-literal>`.
+- At an inline-pair position, the parser MUST recognise the two-byte raw
+  marker `::` before the one-byte plain separator `:`. Equivalently,
+  `<plain-inline-separator>` is inapplicable when the next byte is `:`;
+  `::` can never be parsed as a plain `:` followed by a value. After
+  `::`, the parser uses the dedicated `<inline-raw-scalar>` production,
+  not `<inline-value>` or `<inline-scalar>`: it consumes through the
+  first unescaped delimiter, processes escapes, and treats an initial
+  `{` or `[` as literal content. The `::` marker therefore cannot
+  open or recurse into a compound.
 - The `<inline-value>` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is `{`, the value is a nested inline object (matching one of
@@ -1281,9 +1306,10 @@ An array-item line introduces one Value inside the innermost open
 Array (or the top-level Array, § 5.0.1). The forms are:
 
 1. **Raw-marker item** — `:: literal` — the body after `::` is a
-   literal String (no type inference). `<sep-end>` rules apply
-   (whitespace or EOL after `::` is required; glued forms are a
-   `MissingSeparatorSpace` error).
+   literal String (no type inference). `<sep-end>` rules apply:
+   whitespace or EOL after `::` is required, and the maximal contiguous
+   run of following whitespace belongs to `<sep-end>` (so `::  x`
+   has value `x`). Glued forms are a `MissingSeparatorSpace` error.
 2. **Closed-inline-object item** — `{ key: value, … }` on one line.
 3. **Closed-inline-array item** — `[ v, v, … ]` on one line.
 4. **Empty-inline-object item** — `{}`.
@@ -1389,20 +1415,26 @@ bytes. A trailing comma is permitted before the closing delimiter:
 
 ```
 {a: 1, b: 2}
-{a: 1, b: 2,}        ; trailing comma OK
+{a: 1, b: 2,}
 [1, 2, 3]
 [1, 2, 3,]
 ```
+
+The second Object and the fourth Array show the permitted single
+trailing comma; the comma is syntax, not an inline comment.
 
 #### 5.8.1 Whitespace
 
 Whitespace is optional everywhere inside an inline compound:
 
 ```
-{a: 1, b: 2}         ; canonical
-{ a : 1 , b : 2 }    ; same Value
-{a:1,b:2}            ; same Value
+{a: 1, b: 2}
+{ a : 1 , b : 2 }
+{a:1,b:2}
 ```
+
+All three forms parse to the same Value. None is canonical writer
+output: a writer emits a non-empty compound in multi-line form (§ 5.9.3).
 
 Whitespace is **trimmed** from both ends of each inline scalar value
 before classification under § 5.2: `{a:   hello  ,b:x}` yields
@@ -1478,6 +1510,12 @@ overly-deep input.
   inline value opens a *nested inline compound* that MUST close on
   the same line; a `{` / `[` not followed by a matching closer is a
   `UnterminatedInlineCompound` error.
+
+The raw `::` branch of an inline pair is not an inline value: it uses
+the dedicated raw-scalar production of § 4, consumes to the containing
+unescaped delimiter, processes escapes, and treats a leading `{` or
+`[` as literal content. The dispatch rules below apply only after a
+plain `:` separator.
 
 When an inline scalar begins with `(` or `((`, these leading parentheses
 remain ordinary content inside inline compounds, not multi-line string
@@ -1632,14 +1670,14 @@ Only the following category-specific file sets and reason codes are allowed:
 
 The `value` mapping MUST be checked recursively. An empty Object key
 is the witness for the `EmptyKeyName` case. A String or Object key
-MUST NOT contain a lone surrogate. The sole representation of a
-non-finite Float in `unrepresentable/` is a sentinel object with
-exactly one field,
-`{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
-`{"$float": "-Infinity"}`; a `$float` field in any other
-shape is invalid. This sentinel is permitted only in `unrepresentable/`;
-a parser-produced Value MUST NOT contain a `$float` Object field, and
-its `value` root MUST be an Object or Array.
+MUST NOT contain a lone surrogate. An unrepresentable fixture that
+encodes a non-finite Float MUST use the sentinel object with exactly one
+field, `{"$float": "NaN"}`, `{"$float": "Infinity"}`, or
+`{"$float": "-Infinity"}`; no other shape is a valid sentinel. This
+fixture-encoding sentinel is permitted only in `unrepresentable/`. The
+rule does not reserve the key name: a parser-produced Object MAY contain
+a literal `$float` key like any other key, and its `value` root MUST
+be an Object or Array.
 A reason code is valid for a fixture only when
 its case occurs somewhere in the Value tree, except `ScalarRoot`,
 which requires that the root itself is a scalar. The root MUST be an
@@ -1849,7 +1887,9 @@ A pair separator is selected by the kind/content of its value:
   other item position is dispatched directly as an array-item line
   regardless of its shape (§ 5.1 rules 7–8), so neither exclusion
   applies there.
-- **Raw-marker item:** `:: <bytes>` — when the body would otherwise
+- **Raw-marker item:** `:: <bytes>` — after `::`, `<sep-end>` consumes
+  the maximal contiguous run of line-bounded whitespace before the body;
+  thus `::  x` has body `x`, not ` x`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would
@@ -2003,33 +2043,51 @@ requires a segment trimming to `))`.
   - `sign? digits "." digits ("e" sign? digits)?`
   - `sign? digits "e" sign? digits`
 
-  Lowercase `e` only. Underscores stripped. The leading `+` on the
-  mantissa is dropped. The leading `+` on the exponent is dropped
-  (a positive exponent carries no sign).
+  For each non-zero finite Float V, define a **normalised decimal
+  candidate** as a tuple `(s, D, k)`: `s` is `+1` or `-1` and
+  matches V's sign; `D` is a non-empty sequence of ASCII decimal
+  digits whose first and last digits are non-zero; and `k` is an
+  integer decimal exponent. Its exact decimal value is
+  `s × integer(D) × 10^k`. A candidate qualifies when parsing that
+  exact value with the implementation's declared Float domain and its
+  required rounding rule produces exactly V.
 
-  First compute the shortest decimal expansion that uniquely identifies
-  the Value, using a Ryu / Grisu / Steele-White-class algorithm. For an
-  IEEE 754 binary64 implementation, this is the shortest decimal that
-  round-trips to the same binary64. Then choose its notation using this
-  deterministic policy, where `abs` is the absolute numeric value:
+  Choose a qualifying candidate with the fewest digits in `D`. For
+  IEEE 754 binary64, this is the shortest decimal that round-trips to
+  the same binary64 under roundTiesToEven. If several candidates have
+  that minimum digit count, choose the one whose exact decimal value is
+  nearest to V; if the distance ties, prefer an even final digit of
+  `D`; if still tied, choose the smaller pair `(D, k)`, comparing
+  `D` bytewise first and then `k` as a signed integer. This selection
+  is normative and deterministic. A Ryu / Grisu / Steele-White-class
+  algorithm MAY be used to find it.
 
-  - if `0 < abs < 1e-2` or `abs >= 1e7`, use the exponent
-    alternative;
-  - otherwise, use the `digits "." digits` alternative.
+  Zero is handled separately from this candidate rule: positive zero
+  emits as `0.0` and negative zero as `-0.0`. Unlike Integer `-0`,
+  which normalises to `0`, Float preserves the sign of zero.
 
-  The threshold condition is never satisfied by `abs == 0`, which
-  therefore always uses the decimal alternative: the canonical form
-  of positive zero is `0.0` and of negative zero is `-0.0` —
-  decimal, never scientific, with the sign preserved. Unlike an
-  Integer's `-0`, which normalises to `0` (see the Integer bullet
-  of § 5), a Float keeps the IEEE 754 sign distinction between
-  `0.0` and `-0.0`.
+  For a non-zero V, after choosing `(s, D, k)`, let `n` be the number
+  of digits in `D` and `abs` the absolute numeric value of V. If
+  `0 < abs < 1e-2` or `abs >= 1e7`, use scientific form; otherwise
+  use decimal form.
 
-  The thresholds are exact: `0.01` and `9999999.0` use decimal form,
-  while `0.001`, `0.0015`, `-0.001`, and `10000000.0` use exponent
-  form. Scientific output uses lowercase `e`, omits a positive exponent
-  sign, and strips a trailing `.0` from the mantissa. Thus the examples
-  are `0.01`, `1e-3`, `1.5e-3`, `-1e-3`, `9999999.0`, and `1e7`.
+  In scientific form, the adjusted exponent is `E = k + n - 1`.
+  Emit the first digit of `D`, followed by `.` and the remaining
+  digits only when `n > 1`, then lowercase `e` and E in base 10.
+  E has a minus sign only when negative, no plus sign, and no leading
+  zeroes. Prefix `-` when `s = -1`. This gives exactly one digit
+  before any decimal point and no redundant mantissa or exponent zeroes.
+
+  In decimal form, let `p = n + k` and place the point as follows:
+  if `p <= 0`, emit `0.`, then `-p` zeroes, then D; if
+  `0 < p < n`, insert `.` after the first p digits of D; if
+  `p >= n`, emit D, then `p - n` zeroes, then `.0`. Prefix `-`
+  when `s = -1`. Thus every decimal-form Float contains a point,
+  including a whole-valued Float.
+
+  The thresholds are exact. The corresponding canonical examples are
+  `0.01`, `1e-3`, `1.5e-3`, `-1e-3`, `9999999.0`, `1e7`, and
+  `120000000.0` → `1.2e8`.
 
   Two writer-conforming implementations using the same Float
   representation (binary64) MUST produce identical output for the
@@ -2539,7 +2597,8 @@ literal_hex:: 0xFF
 `mask` is `Integer(240)` (0b11110000 decimal),
 `million` is `Integer(1000000)`, `ratio` is `Float(0.5)`,
 `sci` is `Float(1.5e-3)`, `big` is
-`String("99999999999999999999")` (overflows i64),
+`String("99999999999999999999")` on the minimum i64 domain
+(it overflows i64; a wider integer domain MAY produce Integer here),
 `literal_hex` is `String("0xFF")` (raw marker).
 
 The canonical writer (§ 5.9.8) emits each Integer in base-10
@@ -2691,11 +2750,20 @@ A parser-conforming implementation:
   document that pertains to parsing.
 - Accepts every fixture under `versions/0.7/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
-  oracle. That equivalence is defined at the minimum-required
-  numeric domain of § 5 (i64 Integer, binary64 Float).
-  In every JSON Value oracle, an ordinary number token containing no
-  `.`, `e`, or `E` denotes Integer; a token containing any of
-  them denotes Float, including `-0.0`.
+  oracle. In every JSON Value oracle, the number token's lexical shape
+  fixes the Value kind: a token containing none of `.`, `e`, or `E`
+  denotes Integer; a token containing any of them denotes Float,
+  including `-0.0`. At an ordinary numeric leaf, the oracle token is
+  interpreted, or comparison-coerced, in the tested implementation's
+  declared Integer or Float domain, and equivalence is tested in that
+  domain. Thus an ordinary Float token such as `3.14` does not require
+  a wider decimal implementation to manufacture binary64's rounded
+  value. A manifest exemption applies only when the source Ktav literal,
+  interpreted in the tested implementation's declared domain, diverges
+  in value or kind from the minimum-domain oracle token because it
+  crosses that leaf's named boundary. If no such divergence occurs, the
+  listed leaf MUST match normally; the exemption never extends to any
+  other leaf.
   [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
@@ -2945,11 +3013,27 @@ contexts. (Keys gained escape processing in 0.6.0; see § 3.7.)
 
 ### 10.5 Why is `{a:}` valid but `[,a]` an error?
 
+
 The two cases look symmetric — an empty inline value, either as
 the value of a key in an Object or as an item in an Array — but
 are treated differently (§ 5.8.2 and § 5.8.3): `{a:}` yields a
 key `a` mapped to the empty String, while `[,a]` is a
-`MalformedInlineCompound` error.
+`MalformedInlineCompound` error. The text `["", a]` does not
+represent an empty String item: the two quote bytes are ordinary inline
+scalar content, so that item is a String whose body is two quote bytes,
+not String("").
+
+The valid inline spelling `[(), a]` is different: `()` is the exact
+empty-String shortcut dispatched by § 5.2 rule 5 after inline-scalar
+collection. It is not the canonical writer form, however. For the
+root Value [empty String, "a"], § 5.9.3 emits Array-root items directly
+at indent 0: the first raw-marker item safely establishes an Array root,
+so no bracket wrapper is needed. The canonical output is:
+
+```text
+::
+a
+```
 
 The asymmetry is deliberate. An empty pair value is anchored by
 an explicit key, so the "explicitly empty field for key X" intent
@@ -2957,8 +3041,8 @@ is unambiguous; the form is concise and useful for representing,
 e.g., environment variables set to the empty string. An empty
 array item has no such anchor, so the form `[,a]` is more likely
 a typo (a leading or doubled comma) than a deliberate empty-string
-item. Forcing the writer to use `["", a]` for an intentional empty
-String makes the intent explicit and catches the common typo at
+item. Requiring the canonical raw-marker item form for an intentional
+empty String makes the intent explicit and catches the common typo at
 parse time.
 
 ### 10.6 Why a canonical form?
@@ -3319,7 +3403,9 @@ shorter output (§ 10.4).
   `0b` binary, decimal, with underscore separators between digits
   (§ 3.6). Integer Value carries an integer value; Float Value
   carries a numeric value; both have canonical textual forms
-  (§ 5.9.8). Big-integer overflow falls back to String.
+  (§ 5.9.8). On the minimum i64 domain, big-integer overflow falls
+  back to String; a wider integer domain MAY retain such a literal as
+  Integer, subject to §§ 5.2 and 8.1.
 - **Added:** **Canonical form (§ 5.9)** — a normative writer
   output for every Value, used by writer-conforming
   implementations and verified by `*.canonical.ktav` fixtures.
@@ -3405,13 +3491,19 @@ that were previously impossible to express.
 
 ## Appendix D. Migration from 0.6.x
 
-The Rust reference implementation's actual parsing behaviour is
-**unaffected** by the § 3.3 / § 4 whitespace change — it already
-trimmed the full 25-code-point set in every 0.6.x release, so a
-document that round-tripped correctly under 0.6.x round-trips
-identically under 0.7.0. Only implementations that followed the old
-§ 4 text literally (ASCII-only key trimming) rather than matching the
-Rust core's actual behaviour need to change.
+The Rust reference implementation already trimmed the full
+25-code-point set at key-segment edges in every 0.6.x release. For Rust,
+and for implementations whose 0.6.x behaviour already matched that
+trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
+that rely on either of the two breaking forms below, previously
+round-tripping documents retain their meaning under 0.7.0.
+
+An implementation that followed old § 4 literally and trimmed only its
+specified ASCII whitespace has an additional **document-behaviour**
+change. A document whose key segment has leading or trailing § 3.3
+whitespace that the old rule did not trim can now produce a different
+key/path or error under 0.7.0. Such documents require migration review;
+this is not merely an implementation-code update.
 
 Two breaking changes apply to every implementation, Rust included:
 

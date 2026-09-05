@@ -78,7 +78,8 @@ Purpose:
          cut at its first ';' comment lead-in) is compared verbatim.
          Fragments that mix in natural-language prose instead of strict
          terminal/nonterminal syntax (this grammar's own preamble calls
-         the notation "semi-formal" -- e.g. <inline-scalar>'s RHS is an
+         the notation "semi-formal" -- e.g. <inline-scalar> and
+         <inline-raw-scalar>'s RHS is an
          English sentence) are excluded from this comparison so a
          translator's legitimate prose rendering is never flagged; only
          fragments fully accounted for by recognized BNF tokens are held
@@ -275,7 +276,7 @@ GRAMMAR_TOKEN_RE = re.compile(
 # find_malformed_grammar_productions below): if some other production ever
 # fails to tokenize as pure BNF, that is treated as a real defect (a typo,
 # a corrupted terminal, a translation mistake) and reported as an error
-# rather than silently excluded, unlike these ten.
+# rather than silently excluded, unlike these twelve.
 SEMI_FORMAL_PROSE_LHS = frozenset([
     "<comment>",            # "(ws) \"##\" (any-chars until line-end)"
     "<unescaped-dot>",      # "\".\" that is NOT preceded by ..."
@@ -285,6 +286,8 @@ SEMI_FORMAL_PROSE_LHS = frozenset([
     "<bt-char>",            # "same exclusions as <dq-char>, but excluding ..."
     "<key-char>",           # "any UTF-8 code point except ..." (long multi-paragraph prose)
     "<scalar-body>",        # "(ws) any-chars-until-eol"
+    "<plain-inline-separator>",  # ":" not immediately followed by ":"
+    "<inline-raw-scalar>",  # raw-marker bytes through an unescaped delimiter
     "<inline-scalar>",      # "sequence of bytes terminated by an unescaped ..."
     "<multiline-content-line>",  # "any line within an open <multiline>; ..."
 ])
@@ -430,8 +433,10 @@ def significant_grammar_tokens(rhs_text):
          letters/spaces/CJK that EN does not), so letter/space-bearing
          quoted tokens are prose, not contract. All known normative
          terminals -- '"##"', '"."', '"\\\\"', '"\\."', '"#"', the quote
-         exclusions, '","', '"}"', '"]"', '")"', '"))"' -- are
-         punctuation-only and survive.
+         exclusions, '","', '"}"', '"]"', '")"', '"))"', and '":"'
+         -- are punctuation-only and survive. The new inline productions
+         also retain their raw-value delimiters and
+         <line-end>/<inline-value>/<inline-scalar> references.
 
     Language-independent atoms (see LANGUAGE_INDEPENDENT_ATOM_RE) are added
     to the token stream by extract_embedded_tokens and always survive both
@@ -549,9 +554,10 @@ def extract_semi_formal_rhs(lines, start, end, excluded):
     line after '::=' PLUS all immediately-following fence lines until the
     first blank line, the first line matching GRAMMAR_LHS_RE, or the fence
     end -- these productions' prose wraps over several continuation lines
-    that do NOT start with '|' (e.g. <inline-scalar>'s '","' / '"}"' /
-    '"]"' sit on the 2nd wrapped line; <multiline-content-line>'s '")"' /
-    '"))"' on its 2nd line). Lines are individually whitespace-collapsed
+    that do NOT start with '|' (e.g. <inline-raw-scalar>'s delimiter list
+    and <line-end> reference span wrapped lines, as do <inline-scalar>'s
+    '","' / '"}"' / '"]"' and <multiline-content-line>'s '")"' /
+    '"))"'). Lines are individually whitespace-collapsed
     then joined with single spaces. Unlike _rhs_fragment, the text is NOT
     cut at ';': in these productions semicolons are ordinary prose
     punctuation (EN <key-char> contains "path separator; use '\\\\.'" -- a

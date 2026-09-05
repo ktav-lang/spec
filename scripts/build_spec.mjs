@@ -30,6 +30,9 @@ export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.z
 export const README_SOURCE_FILE = 'README.source.js';
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
 
+const BODY_LINE_LIMIT = 120;
+const BODY_TARGET_LINES = 100;
+
 export function defaultSectionInventoryLockPath(contentDir) {
   return path.resolve(
     contentDir, '..', '..', '..', 'scripts', 'locks', SECTION_INVENTORY_LOCK_FILE);
@@ -362,6 +365,98 @@ function readReadmeSource(contentDir) {
   return source;
 }
 
+// Return the exact cut offsets prescribed by content/README.md for one
+// language body. Offsets are JavaScript string offsets, matching the offsets
+// used when the decoded body parts are concatenated below.
+function splitPlan(body, partCount, targetLineCount) {
+  const lines = body.split('\n');
+  const lineCount = lines.length - 1;
+  const offsets = [0];
+  for (const line of lines.slice(0, -1)) {
+    offsets.push(offsets[offsets.length - 1] + line.length + 1);
+  }
+
+  const blankLines = [];
+  for (let b = 0; b < lines.length - 1; b++) {
+    if (lines[b] === '' && offsets[b + 1] < body.length) blankLines.push(b);
+  }
+
+  const cuts = [];
+  let previousBlankIndex = -1;
+  const cutCount = partCount - 1;
+  for (let i = 1; i < partCount; i++) {
+    const target = i * targetLineCount / partCount;
+    const laterCutsNeeded = cutCount - i;
+    let bestBlankIndex;
+    for (let blankIndex = previousBlankIndex + 1;
+      blankIndex < blankLines.length - laterCutsNeeded;
+      blankIndex++) {
+      const blank = blankLines[blankIndex];
+      if (bestBlankIndex === undefined ||
+          Math.abs((blank + 1) - target) <
+            Math.abs((blankLines[bestBlankIndex] + 1) - target)) {
+        bestBlankIndex = blankIndex;
+      }
+    }
+    if (bestBlankIndex === undefined) break;
+    const bestBlank = blankLines[bestBlankIndex];
+    cuts.push(offsets[bestBlank + 1]);
+    previousBlankIndex = bestBlankIndex;
+  }
+  return { lineCount, blankLineCount: blankLines.length, cuts };
+}
+
+function bodySplitPlan(parts) {
+  const bodies = Object.fromEntries(
+    LANGS.map((lang) => [lang, parts.map((part) => part[lang]).join('')])
+  );
+  const layouts = Object.fromEntries(
+    LANGS.map((lang) => [lang, splitPlan(bodies[lang], 1, 0)])
+  );
+  const lineCounts = Object.fromEntries(
+    LANGS.map((lang) => [lang, layouts[lang].lineCount])
+  );
+  const maxLines = Math.max(...Object.values(lineCounts));
+  const lineCountPartCount = maxLines <= BODY_LINE_LIMIT
+    ? 1
+    : Math.ceil(maxLines / BODY_TARGET_LINES);
+  const partCount = Math.min(
+    lineCountPartCount,
+    ...LANGS.map((lang) => layouts[lang].blankLineCount + 1)
+  );
+  const plans = Object.fromEntries(
+    LANGS.map((lang) => [lang, splitPlan(bodies[lang], partCount, maxLines)])
+  );
+
+  return { lineCounts, maxLines, partCount, plans };
+}
+
+function validateBodySplitting(unit, meta, parts) {
+  const plan = bodySplitPlan(parts);
+  if (meta.bodyParts !== plan.partCount) {
+    failUnit(unit,
+      `bodyParts ${meta.bodyParts} does not match the mandated split count ` +
+      `${plan.partCount} for ${plan.maxLines} body lines (the limit is ` +
+      `${BODY_LINE_LIMIT}; target size is ${BODY_TARGET_LINES})`);
+  }
+
+  for (const lang of LANGS) {
+    const actualCuts = [];
+    let offset = 0;
+    for (let i = 0; i < parts.length - 1; i++) {
+      offset += parts[i][lang].length;
+      actualCuts.push(offset);
+    }
+    const expectedCuts = plan.plans[lang].cuts;
+    if (actualCuts.length !== expectedCuts.length ||
+        actualCuts.some((cut, i) => cut !== expectedCuts[i])) {
+      failUnit(unit,
+        `${lang}: body parts must use the mandated blank-line cut points ` +
+        `(expected ${JSON.stringify(expectedCuts)}, got ${JSON.stringify(actualCuts)})`);
+    }
+  }
+}
+
 // Closed-world validation of a content dir. Throws Error on first violation.
 // Returns { manifest, units } where units is a Map unit -> { meta, parts }.
 // Content sources are data, never code. manifest.js and meta.js are written
@@ -538,6 +633,10 @@ export async function validateContentDir(contentDir, options = {}) {
       parts.push(decoded);
     }
 
+    // bodyParts is a deterministic layout contract, not just a file count:
+    // validate both the required count and every inter-part cut.
+    validateBodySplitting(unit, meta, parts);
+
     // 6. Terminal-newline invariant (per language).
     // Non-last units must end with EXACTLY two trailing LFs ("\n\n"), i.e.
     // exactly one blank line; a run of 3+ trailing LFs is also rejected.
@@ -616,11 +715,86 @@ export async function buildBuffers(contentDir, options = {}) {
   return { bufs, totalLen, manifest, pieces, readmeBufs };
 }
 
-export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }) {
-  for (const lang of LANGS) {
-    fs.writeFileSync(path.join(specDir, OUT_FILES[lang]), bufs[lang]);
-    fs.writeFileSync(path.join(contentDir, README_FILES[lang]), readmeBufs[lang]);
+function assertRegularDestination(destination) {
+  let stat;
+  try {
+    stat = fs.lstatSync(destination);
+  } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    fail(`cannot inspect output destination ${destination}: ${e.message}`);
   }
+  if (!stat.isFile()) {
+    const kind = stat.isSymbolicLink() ? 'symlink' : 'special file';
+    fail(`output destination ${destination} is not a regular file (${kind}; write mode refuses to follow or overwrite it)`);
+  }
+  return true;
+}
+
+function createTemporaryOutput(destination) {
+  const dir = path.dirname(destination);
+  const base = path.basename(destination);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const tempPath = path.join(dir,
+      `.${base}.${process.pid}.${Date.now()}.${attempt}.tmp`);
+    try {
+      const fd = fs.openSync(tempPath, 'wx', 0o666);
+      return { fd, tempPath };
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+    }
+  }
+  fail(`could not allocate a temporary output beside ${destination}`);
+}
+
+function atomicWriteOutput(destination, data) {
+  let fd = null;
+  let tempPath = null;
+  try {
+    ({ fd, tempPath } = createTemporaryOutput(destination));
+    if (!fs.fstatSync(fd).isFile()) {
+      fail(`temporary output for ${destination} is not a regular file`);
+    }
+    fs.writeFileSync(fd, data);
+    fs.closeSync(fd);
+    fd = null;
+
+    // Recheck immediately before replacement. On POSIX rename replaces a
+    // symlink itself, never its target; the Windows fallback below also
+    // refuses to unlink anything that is no longer a regular file.
+    assertRegularDestination(destination);
+    try {
+      fs.renameSync(tempPath, destination);
+    } catch (e) {
+      // Windows does not replace an existing file with rename(). Remove an
+      // already-checked regular destination, then perform the same rename.
+      // The normal POSIX path remains a single atomic replacement operation.
+      if (process.platform !== 'win32' ||
+          !['EACCES', 'EEXIST', 'EPERM', 'ENOTEMPTY'].includes(e.code)) throw e;
+      if (assertRegularDestination(destination)) fs.unlinkSync(destination);
+      fs.renameSync(tempPath, destination);
+    }
+    tempPath = null;
+  } finally {
+    if (fd !== null) {
+      try { fs.closeSync(fd); } catch { /* preserve the original failure */ }
+    }
+    if (tempPath !== null) {
+      try { fs.unlinkSync(tempPath); } catch { /* best-effort cleanup */ }
+    }
+  }
+}
+
+export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }) {
+  const outputs = [];
+  for (const lang of LANGS) {
+    outputs.push([path.join(specDir, OUT_FILES[lang]), bufs[lang]]);
+    outputs.push([path.join(contentDir, README_FILES[lang]), readmeBufs[lang]]);
+  }
+
+  // Preflight every destination so a rejected symlink/special file cannot
+  // leave a partially regenerated set of outputs behind.
+  for (const [destination] of outputs) assertRegularDestination(destination);
+  for (const [destination, data] of outputs) atomicWriteOutput(destination, data);
 }
 
 export function firstByteDiff(existing, expected) {

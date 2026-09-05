@@ -54,6 +54,11 @@ class CorpusTestCase(unittest.TestCase):
     def build_full(self, root="tests"):
         """Minimal corpus + both writer-failure categories + boundary manifest."""
         tests = self.build_minimal(root)
+        self.write(root + "/valid/boundary.ktav", "overflow: 9223372036854775808\n")
+        self.write(root + "/valid/boundary.json",
+                   '{"overflow": "9223372036854775808"}')
+        self.write(root + "/valid/boundary.canonical.ktav",
+                   "overflow:: 9223372036854775808\n")
         self.write(root + "/unrepresentable/nan.json",
                    '{"value": {"f": {"$float": "NaN"}}, '
                    '"unrepresentable_reason": "NonFiniteFloat", '
@@ -65,7 +70,7 @@ class CorpusTestCase(unittest.TestCase):
                    '"note": "parser-produced writer failure"}')
         self.write(root + "/boundary-fixtures.json", json.dumps(
             {"boundary_dependent_leaves": [
-                {"fixture": "alpha", "path": "/host",
+                {"fixture": "boundary", "path": "/overflow",
                  "boundary_class": "integer_range"}]}))
         return tests
 
@@ -177,6 +182,35 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("does not contain a recursive witness", out)
 
+    def test_parser_produced_integer_oracles_enforce_i64_recursively(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/alpha.json",
+                   '{"nested": [{"too_big": 9223372036854775808}]}')
+        self.write("tests/parseable-unrepresentable/large.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/large.json", json.dumps({
+            "value": {"nested": [{"too_big": 9223372036854775808,
+                                     "cr": "a\rb"}]},
+            "unrepresentable_reason": "CRByte",
+            "note": "integer range regression",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertGreaterEqual(out.count("outside the mandatory i64 range"), 2)
+
+    def test_malformed_float_sentinel_values_are_diagnostics_not_type_errors(self):
+        tests = self.build_minimal()
+        for malformed in ([], {}):
+            with self.subTest(value=malformed):
+                self.write("tests/unrepresentable/bad.json", json.dumps({
+                    "value": {"f": {"$float": malformed}},
+                    "unrepresentable_reason": "NonFiniteFloat",
+                    "note": "malformed sentinel",
+                }))
+                code, out = self.run_main(tests)
+                self.assertEqual(code, 1)
+                self.assertIn("'$float' must be the only field", out)
+                self.assertNotIn("Traceback", out)
+
     def test_root_float_sentinel_uses_scalar_root_precedence(self):
         tests = self.build_minimal()
         value = {"$float": "NaN"}
@@ -208,6 +242,19 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
         self.assertIn("does not contain a recursive witness", out)
+
+    def test_multiline_collision_uses_longest_common_whitespace_prefix(self):
+        tests = self.build_minimal()
+        self.write("tests/parseable-unrepresentable/partial_prefix.ktav",
+                   "{s: value}")
+        self.write("tests/parseable-unrepresentable/partial_prefix.json",
+                   json.dumps({
+                       "value": {"s": "\t ))\n\t\t x"},
+                       "unrepresentable_reason": "LeadingWhitespaceCollision",
+                       "note": "one-character common prefix",
+                   }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
 
     def test_single_segment_trailing_collision_is_a_witness(self):
         tests = self.build_minimal()
@@ -300,9 +347,12 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("non-finite JSON number '1e400' is not allowed", out)
 
-    def test_parser_produced_value_oracle_rejects_float_sentinel(self):
+    def test_float_sentinel_is_ordinary_valid_oracle_data(self):
         tests = self.build_minimal()
         self.write("tests/valid/alpha.json", '{"f": {"$float": "NaN"}}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
         self.write("tests/parseable-unrepresentable/case.ktav", "{s: value}")
         self.write("tests/parseable-unrepresentable/case.json", json.dumps({
             "value": {"s": {"$float": "NaN"}, "cr": "a\rb"},
@@ -310,8 +360,8 @@ class CorpusTestCase(unittest.TestCase):
             "note": "sentinel is programmatic-only",
         }))
         code, out = self.run_main(tests)
-        self.assertEqual(code, 1)
-        self.assertEqual(out.count("'$float' sentinel is not allowed"), 2)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(out.count("'$float' sentinel is not allowed"), 0)
 
     def test_parseable_unrepresentable_is_a_pair_without_canonical_output(self):
         tests = self.build_minimal()
@@ -420,6 +470,17 @@ class CorpusTestCase(unittest.TestCase):
         self.assertIn("invalid_utf8 oracle consistency", out)
         self.assertIn("elsewhere.ktav", out)
 
+    def test_invalid_utf8_exemption_follows_oracle_outside_named_directory(self):
+        tests = self.build_minimal()
+        ktav_path = os.path.join(tests, "invalid", "elsewhere.ktav")
+        with open(ktav_path, "wb") as f:
+            f.write(b"\xff")
+        self.write("tests/invalid/elsewhere.json",
+                   '{"expected_error": "InvalidUtf8"}')
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+        self.assertIn("1 invalid_utf8/ fixture(s) exempt", out)
+
     def test_all_v06_categories_accepted_in_06_layout(self):
         root = "versions/0.6/tests"
         tests = self.build_minimal(root)
@@ -477,12 +538,16 @@ class CorpusTestCase(unittest.TestCase):
     def build_two_leaf_corpus(self):
         """Minimal corpus + boundary manifest with two entries (alpha, beta)."""
         tests = self.build_minimal()
-        self.write("tests/valid/beta.ktav", KTAV_DOC)
-        self.write("tests/valid/beta.json", ALPHA_JSON)
-        self.write("tests/valid/beta.canonical.ktav", KTAV_DOC)
+        for fixture in ("alpha", "beta"):
+            self.write("tests/valid/%s.ktav" % fixture,
+                       "overflow: 9223372036854775808\n")
+            self.write("tests/valid/%s.json" % fixture,
+                       '{"overflow": "9223372036854775808"}')
+            self.write("tests/valid/%s.canonical.ktav" % fixture,
+                       "overflow:: 9223372036854775808\n")
         leaves = [
-            {"fixture": "alpha", "path": "/host", "boundary_class": "integer_range"},
-            {"fixture": "beta", "path": "/port", "boundary_class": "integer_range"},
+            {"fixture": "alpha", "path": "/overflow", "boundary_class": "integer_range"},
+            {"fixture": "beta", "path": "/overflow", "boundary_class": "integer_range"},
         ]
         self.write("tests/boundary-fixtures.json",
                    json.dumps({"boundary_dependent_leaves": leaves}))
@@ -516,6 +581,117 @@ class CorpusTestCase(unittest.TestCase):
                    json.dumps({"boundary_dependent_leaves": [leaves[0]]}))
         code, out = self.run_main(tests)
         self.assertEqual(code, 0, out)
+
+    def test_boundary_manifest_requires_real_object_field_boundary(self):
+        tests = self.build_full()
+        self.write("tests/valid/boundary.ktav",
+                   "overflow: 9223372036854775808\ngroup: {}\n")
+        self.write("tests/valid/boundary.json",
+                   '{"overflow": "9223372036854775808", "group": {}}')
+        self.write("tests/valid/boundary.canonical.ktav",
+                   "overflow:: 9223372036854775808\ngroup: {}\n")
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "boundary", "path": "/overflow",
+                "boundary_class": "float_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("does not prove boundary_class 'float_range'", out)
+
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "boundary", "path": "/group",
+                "boundary_class": "integer_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("must identify a scalar field of an Object", out)
+
+    def test_boundary_manifest_accepts_only_matching_numeric_classes(self):
+        tests = self.build_minimal()
+        cases = [
+            ("integer", "overflow: 9223372036854775808\n",
+             '{"overflow": "9223372036854775808"}',
+             "integer_range"),
+            ("range", "overflow: 1e9999\n",
+             '{"overflow": "1e9999"}', "float_range"),
+            ("underflow", "underflow: -1e-9999\n",
+             '{"underflow": -0.0}', "float_underflow"),
+            ("precision", "tie: 9007199254740993.0\n",
+             '{"tie": 9007199254740992.0}', "float_precision"),
+        ]
+        leaves = []
+        for name, source, oracle, boundary_class in cases:
+            self.write("tests/valid/%s.ktav" % name, source)
+            self.write("tests/valid/%s.json" % name, oracle)
+            self.write("tests/valid/%s.canonical.ktav" % name, source)
+            key = source.split(":", 1)[0]
+            leaves.append({"fixture": name, "path": "/%s" % key,
+                           "boundary_class": boundary_class})
+        self.write("tests/boundary-fixtures.json",
+                   json.dumps({"boundary_dependent_leaves": leaves}))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 0, out)
+
+    def test_boundary_manifest_rejects_exact_float_token_as_precision_boundary(self):
+        tests = self.build_minimal()
+        self.write("tests/valid/exact.ktav", "value: 3.14\n")
+        self.write("tests/valid/exact.json", '{"value": 3.14}')
+        self.write("tests/valid/exact.canonical.ktav", "value: 3.14\n")
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "exact", "path": "/value",
+                "boundary_class": "float_precision",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("does not prove boundary_class 'float_precision'", out)
+
+    def test_boundary_source_matching_rejects_non_ktav_unicode_whitespace(self):
+        tests = self.build_minimal()
+        hostile = "overflow:\x1c9223372036854775808\n"
+        self.write("tests/valid/hostile.ktav", hostile)
+        self.write("tests/valid/hostile.json",
+                   '{"overflow": "9223372036854775808"}')
+        self.write("tests/valid/hostile.canonical.ktav",
+                   "overflow:: 9223372036854775808\n")
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "hostile", "path": "/overflow",
+                "boundary_class": "integer_range",
+            }]
+        }))
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("could not identify one unquoted Ktav source literal", out)
+
+    def test_boundary_record_schema_is_closed_before_lock_comparison(self):
+        tests = self.build_full()
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "boundary", "path": "/overflow",
+                "boundary_class": "integer_range", "extra": True,
+            }]
+        }))
+        lock_path = self.write("lock/boundary.json", json.dumps([{
+            "fixture": [], "path": "/overflow", "boundary_class": "integer_range"
+        }]))
+        code, out = self.run_main(tests, "--boundary-manifest-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected field(s)", out)
+        self.assertIn("'fixture' must be a string", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_json_pointer_array_index_uses_ascii_grammar_without_value_error(self):
+        for pointer in ("/\u0660", "/" + "9" * 5000):
+            with self.subTest(pointer=pointer):
+                node, error = validate_corpus.resolve_pointer(["value"], pointer)
+                self.assertIsNone(node)
+                self.assertIsInstance(error, str)
 
     # -- full corpus SHA-256 lock and closed top level -------------------
 

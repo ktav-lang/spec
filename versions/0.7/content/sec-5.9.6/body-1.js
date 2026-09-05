@@ -43,7 +43,9 @@ export default {
   other item position is dispatched directly as an array-item line
   regardless of its shape (§ 5.1 rules 7–8), so neither exclusion
   applies there.
-- **Raw-marker item:** \`:: <bytes>\` — when the body would otherwise
+- **Raw-marker item:** \`:: <bytes>\` — after \`::\`, \`<sep-end>\` consumes
+  the maximal contiguous run of line-bounded whitespace before the body;
+  thus \`::  x\` has body \`x\`, not \` x\`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly \`(\` or
   \`((\`), or (via § 5.7's shortcuts) the empty String, or would
@@ -126,7 +128,10 @@ export default {
   диспетчеризуется напрямую как строка-элемент массива независимо
   от своей формы (§ 5.1 правила 7–8), так что ни одно из этих
   исключений там не применяется.
-- **Raw-маркерный элемент:** \`:: <bytes>\` — когда тело иначе было
+- **Raw-маркерный элемент:** \`:: <bytes>\` — после \`::\` \`<sep-end>\`
+  поглощает максимальную непрерывную последовательность ограниченных
+  строкой пробельных кодовых точек перед телом; поэтому \`::  x\` имеет
+  тело \`x\`, а не \` x\`. Когда тело иначе было
   бы переинтерпретировано по § 5.2 как число, ключевое слово,
   inline-составное, опенер многострочной строки (тело в точности
   \`(\` или \`((\`), либо (через shortcut'ы § 5.7) как пустая String,
@@ -189,7 +194,9 @@ export default {
 Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的项
 都直接按数组项行分发,与其形状无关(§ 5.1 规则 7–8),因此这些排除
 条件在那里都不适用。
-- **原始标记项:** \`:: <bytes>\` —— 当体本应被 § 5.2 重解释为数字、
+- **原始标记项:** \`:: <bytes>\` —— \`::\` 之后的 \`<sep-end>\` 吸收
+  体之前最大连续的行边界内空白序列;因此 \`::  x\` 的体是 \`x\`,而
+  不是 \` x\`。当体本应被 § 5.2 重解释为数字、
   关键词、inline 复合值、多行字符串开启符(体恰好为 \`(\` 或
   \`((\`),或(通过 § 5.7 的 shortcut)空 String,或本会与行级别的
   结构性 token 冲突(体恰好为 \`}\` 或 \`]\`,或以 \`##\` 或两字节

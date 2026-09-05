@@ -1,12 +1,18 @@
 export default {
   en: `
-The Rust reference implementation's actual parsing behaviour is
-**unaffected** by the § 3.3 / § 4 whitespace change — it already
-trimmed the full 25-code-point set in every 0.6.x release, so a
-document that round-tripped correctly under 0.6.x round-trips
-identically under 0.7.0. Only implementations that followed the old
-§ 4 text literally (ASCII-only key trimming) rather than matching the
-Rust core's actual behaviour need to change.
+The Rust reference implementation already trimmed the full
+25-code-point set at key-segment edges in every 0.6.x release. For Rust,
+and for implementations whose 0.6.x behaviour already matched that
+trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
+that rely on either of the two breaking forms below, previously
+round-tripping documents retain their meaning under 0.7.0.
+
+An implementation that followed old § 4 literally and trimmed only its
+specified ASCII whitespace has an additional **document-behaviour**
+change. A document whose key segment has leading or trailing § 3.3
+whitespace that the old rule did not trim can now produce a different
+key/path or error under 0.7.0. Such documents require migration review;
+this is not merely an implementation-code update.
 
 Two breaking changes apply to every implementation, Rust included:
 
@@ -40,13 +46,19 @@ Additionally, \`\\uXXXX\` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
 `,
   ru: `
-Фактическое поведение парсинга эталонной Rust-реализации изменением
-§ 3.3 / § 4 **не затронуто** — она уже обрезала полный набор из 25
-кодовых точек в каждом релизе 0.6.x, поэтому документ, корректно
-проходивший round-trip под 0.6.x, проходит его идентично и под 0.7.0.
-Меняться нужно только тем реализациям, которые следовали старому
-тексту § 4 буквально (ASCII-only обрезка ключей), а не фактическому
-поведению Rust-ядра.
+Эталонная Rust-реализация уже обрезала полный набор из 25 кодовых точек
+на границах сегмента ключа в каждом релизе 0.6.x. Для Rust и реализаций,
+чьё поведение 0.6.x уже совпадало с такой обрезкой, уточнение § 3.3 / § 4
+не является ломающим: кроме документов, зависящих от одной из двух
+ломающих форм ниже, ранее проходившие round-trip документы сохраняют
+смысл в 0.7.0.
+
+У реализации, буквально следовавшей старому § 4 и обрезавшей только
+указанные там ASCII-пробелы, есть дополнительное изменение **поведения
+документов**. Документ, у которого на границе сегмента ключа находится
+пробел § 3.3, не обрезавшийся старым правилом, в 0.7.0 может породить
+другой ключ/путь или ошибку. Такие документы требуют проверки миграции;
+это не просто обновление кода реализации.
 
 Два ломающих изменения касаются каждой реализации, включая Rust:
 
@@ -83,11 +95,15 @@ no existing document's meaning changes because of it.
 меняется.
 `,
   zh: `
-Rust 参考实现的实际解析行为**不受** § 3.3 / § 4 空白变更影响 ——
-它在每一个 0.6.x 版本中就已经修剪完整的 25 码点集合,因此在 0.6.x
-下能正确往返的文档,在 0.7.0 下往返结果完全相同。只有那些字面遵循
-旧 § 4 文本(仅 ASCII 键修剪)、而非匹配 Rust 核心实际行为的实现,
-才需要修改。
+Rust 参考实现在每个 0.6.x 版本中就已在键段边缘修剪完整的 25 码点
+集合。对 Rust 以及 0.6.x 行为已匹配这种修剪的实现而言,§ 3.3 / § 4
+澄清不是破坏性变更:除依赖下面两种破坏性形式之一的文档外,原先能
+round-trip 的文档在 0.7.0 中保持其含义。
+
+字面遵循旧 § 4、仅修剪其中指定 ASCII 空白的实现还有额外的**文档
+行为**变更。若文档的键段前缘或后缘含有旧规则未修剪的 § 3.3 空白,
+它在 0.7.0 中可能产生不同的键/路径或错误。这类文档需要迁移审查;
+这并非仅仅更新实现代码。
 
 有两项破坏性变更适用于包括 Rust 在内的每一个实现:
 

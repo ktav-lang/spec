@@ -29,7 +29,9 @@ export default {
   \`0b\` binary, decimal, with underscore separators between digits
   (§ 3.6). Integer Value carries an integer value; Float Value
   carries a numeric value; both have canonical textual forms
-  (§ 5.9.8). Big-integer overflow falls back to String.
+  (§ 5.9.8). On the minimum i64 domain, big-integer overflow falls
+  back to String; a wider integer domain MAY retain such a literal as
+  Integer, subject to §§ 5.2 and 8.1.
 - **Added:** **Canonical form (§ 5.9)** — a normative writer
   output for every Value, used by writer-conforming
   implementations and verified by \`*.canonical.ktav\` fixtures.
@@ -71,7 +73,10 @@ export default {
   ASCII-пробелов (§ 4).
 - **Добавлено:** Inline-составные (§ 5.8).
 - **Добавлено:** Восемь escape-последовательностей (§ 3.7).
-- **Добавлено:** Грамматика числовых литералов (§ 3.6).
+- **Добавлено:** Грамматика числовых литералов (§ 3.6). В минимальном
+  i64-домене переполнение big-integer проваливается в String; более
+  широкий целочисленный домен MAY сохранить такой литерал как Integer
+  с учётом §§ 5.2 и 8.1.
 - **Добавлено:** **Каноническая форма (§ 5.9)** — нормативный
   вывод эмиттера для каждого Value, используемый
   writer-conforming реализациями и проверяемый
@@ -111,7 +116,9 @@ export default {
 - **Breaking:** 键段修剪前后 ASCII 空白(§ 4)。
 - **新增:** Inline 复合值(§ 5.8)。
 - **新增:** 八个 escape 序列(§ 3.7)。
-- **新增:** 数字字面量语法(§ 3.6)。
+- **新增:** 数字字面量语法(§ 3.6)。在最小 i64 域上,大整数溢出回退为
+  String;更宽的整数域 MAY 将该字面量保留为 Integer,但须遵守 §§ 5.2
+  与 8.1。
 - **新增:** **规范形式(§ 5.9)** —— 每个 Value 的规范 writer
   输出,由 writer-conforming 实现使用,由 \`*.canonical.ktav\`
   fixture 验证。

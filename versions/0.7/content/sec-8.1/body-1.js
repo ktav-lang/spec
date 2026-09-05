@@ -6,11 +6,20 @@ A parser-conforming implementation:
   document that pertains to parsing.
 - Accepts every fixture under \`versions/0.7/tests/valid/\` and
   produces a Value equivalent to the corresponding \`name.json\`
-  oracle. That equivalence is defined at the minimum-required
-  numeric domain of § 5 (i64 Integer, binary64 Float).
-  In every JSON Value oracle, an ordinary number token containing no
-  \`.\`, \`e\`, or \`E\` denotes Integer; a token containing any of
-  them denotes Float, including \`-0.0\`.
+  oracle. In every JSON Value oracle, the number token's lexical shape
+  fixes the Value kind: a token containing none of \`.\`, \`e\`, or \`E\`
+  denotes Integer; a token containing any of them denotes Float,
+  including \`-0.0\`. At an ordinary numeric leaf, the oracle token is
+  interpreted, or comparison-coerced, in the tested implementation's
+  declared Integer or Float domain, and equivalence is tested in that
+  domain. Thus an ordinary Float token such as \`3.14\` does not require
+  a wider decimal implementation to manufacture binary64's rounded
+  value. A manifest exemption applies only when the source Ktav literal,
+  interpreted in the tested implementation's declared domain, diverges
+  in value or kind from the minimum-domain oracle token because it
+  crosses that leaf's named boundary. If no such divergence occurs, the
+  listed leaf MUST match normally; the exemption never extends to any
+  other leaf.
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
@@ -53,12 +62,20 @@ Parser-conforming реализация:
 - Удовлетворяет каждому нормативному MUST / MUST NOT в этом
   документе, относящемуся к парсингу.
 - Принимает каждую фикстуру из \`versions/0.7/tests/valid/\` и даёт
-  Value, эквивалентное соответствующему \`name.json\` оракулу. Эта
-  эквивалентность определяется на минимально требуемом числовом
-  домене § 5 (Integer i64, Float binary64).
-  В каждом JSON-оракуле Value обычный числовой токен без \`.\`, \`e\`
-  и \`E\` обозначает Integer; токен с любым из них обозначает Float,
-  включая \`-0.0\`.
+  Value, эквивалентное соответствующему \`name.json\` оракулу. В каждом
+  JSON-оракуле Value лексическая форма числового токена фиксирует kind
+  Value: токен без \`.\`, \`e\` и \`E\` обозначает Integer; токен с любым
+  из них обозначает Float, включая \`-0.0\`. Для обычного числового листа
+  токен оракула интерпретируется или приводится для сравнения в заявленном
+  домене Integer или Float тестируемой реализации, и эквивалентность
+  проверяется в этом домене. Поэтому обычный Float-токен, например
+  \`3.14\`, не требует от реализации с более широким decimal-доменом
+  искусственно воспроизводить округлённое значение binary64. Освобождение
+  manifest применяется только когда исходный Ktav-литерал в заявленном
+  домене тестируемой реализации расходится по значению или kind с токеном
+  оракула минимального домена из-за пересечения названной границы этого
+  листа. Если такого расхождения нет, перечисленный лист MUST совпадать
+  обычным образом; освобождение никогда не распространяется на другой лист.
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   перечисляет отдельные поля Object (листья), известные как
   boundary-probing — зондирующие границу числового домена (§ 5.2), —
@@ -103,10 +120,15 @@ Parser-conforming 实现:
 
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
 - 接受 \`versions/0.7/tests/valid/\` 下每个 fixture 并产生与对应
-  \`name.json\` 等价的 Value。该等价性定义在 § 5 的最小必需数值域上
-  (i64 Integer、binary64 Float)。
-  在每个 JSON Value oracle 中,不含 \`.\`、\`e\` 或 \`E\` 的普通数字
-  token 表示 Integer;含其中任一项的 token 表示 Float,包括 \`-0.0\`。
+  \`name.json\` 等价的 Value。在每个 JSON Value oracle 中,数字 token
+  的词法形状固定 Value kind:不含 \`.\`、\`e\` 或 \`E\` 的 token 表示
+  Integer;含其中任一项的 token 表示 Float,包括 \`-0.0\`。对于普通
+  数值叶,oracle token 在被测实现声明的 Integer 或 Float 域中解释,
+  或转换到该域后比较,且等价性在该域中检验。因此普通 Float token
+  (例如 \`3.14\`)不要求更宽的 decimal 实现伪造 binary64 的舍入值。
+  只有当源 Ktav 字面量在被测实现声明的域中解释后,因越过该叶指明的
+  边界而在值或 kind 上不同于最小域 oracle token 时,manifest 豁免才
+  适用。若没有这种差异,列出的叶 MUST 正常匹配;豁免绝不扩展到其他叶。
   [\`versions/0.7/tests/boundary-fixtures.json\`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如

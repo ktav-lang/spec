@@ -4,9 +4,10 @@ An array-item line introduces one Value inside the innermost open
 Array (or the top-level Array, § 5.0.1). The forms are:
 
 1. **Raw-marker item** — \`:: literal\` — the body after \`::\` is a
-   literal String (no type inference). \`<sep-end>\` rules apply
-   (whitespace or EOL after \`::\` is required; glued forms are a
-   \`MissingSeparatorSpace\` error).
+   literal String (no type inference). \`<sep-end>\` rules apply:
+   whitespace or EOL after \`::\` is required, and the maximal contiguous
+   run of following whitespace belongs to \`<sep-end>\` (so \`::  x\`
+   has value \`x\`). Glued forms are a \`MissingSeparatorSpace\` error.
 2. **Closed-inline-object item** — \`{ key: value, … }\` on one line.
 3. **Closed-inline-array item** — \`[ v, v, … ]\` on one line.
 4. **Empty-inline-object item** — \`{}\`.
@@ -28,9 +29,11 @@ Array (или top-level Array, § 5.0.1). Формы:
 
 1. **Raw-маркерный элемент** — \`:: literal\` — тело после \`::\` —
    литеральная String (без вывода типа). Применяются правила
-   \`<sep-end>\` (после \`::\` требуется пробельная кодовая точка или
-   конец строки; склеенные формы являются ошибкой
-   \`MissingSeparatorSpace\`).
+   \`<sep-end>\`: после \`::\` требуется пробельная кодовая точка или
+   конец строки, и вся максимальная непрерывная последовательность
+   следующих пробельных кодовых точек принадлежит \`<sep-end>\` (поэтому
+   \`::  x\` имеет значение \`x\`). Склеенные формы являются ошибкой
+   \`MissingSeparatorSpace\`.
 2. **Замкнутый inline-объектный элемент** — \`{ key: value, … }\`.
 3. **Замкнутый inline-массивный элемент** — \`[ v, v, … ]\`.
 4. **Пустой inline-объект** — \`{}\`.
@@ -51,8 +54,9 @@ array-item line 在最内层开启的 Array(或 top-level Array,
 § 5.0.1)内引入一个 Value。形式:
 
 1. **原始标记项** \`:: literal\` —— \`::\` 之后的体是字面 String
-   (无类型推断)。\`<sep-end>\` 规则适用(要求 \`::\` 之后为空白或
-   行末;粘连形式是 \`MissingSeparatorSpace\` 错误)。
+   (无类型推断)。适用 \`<sep-end>\` 规则:要求 \`::\` 之后为空白或
+   行末,且紧随其后的最大连续空白序列都属于 \`<sep-end>\`(因此
+   \`::  x\` 的值是 \`x\`)。粘连形式是 \`MissingSeparatorSpace\` 错误。
 2. **闭合 inline 对象项** \`{ … }\`。
 3. **闭合 inline 数组项** \`[ … ]\`。
 4. **空 inline 对象项** \`{}\`。

@@ -1,42 +1,5 @@
 export default {
-  en: `                    Examples:
-                    - \`a\\.b: v\`     → key "a.b", value "v" (flat, no nesting)
-                    - \`a\\:b: v\`    → key "a:b", value "v"
-                    - \`a\\:: v\`     → key "a:", value "v" (escaped colon, then the plain \`:\` separator)
-                    - \`x.y\\.z: v\`  → path ["x", "y.z"], value "v"
-                                     ({"x": {"y.z": "v"}})
-                    - \`path\\\\to: v\` → key "path\\to", value "v"
-                    - a key segment spelling the dot as \`\\u\` followed
-                      by the four hex digits for \`U+002E\` decodes
-                      identically to \`\\.\` above (flat key, no
-                      nesting) — § 3.7.1's rule that any recognised
-                      escape is never re-examined as a structural
-                      delimiter applies the same way regardless of
-                      which of the fourteen forms produced the byte
-                    - \`"a.b": v\`    → key "a.b", value "v" (flat, no
-                                       nesting — same Value as \`a\\.b: v\`
-                                       above; § 5.3.3)
-                    - \`a."b.c".d: v\` → path ["a", "b.c", "d"], value "v"
-                                       ({"a": {"b.c": {"d": "v"}}}) —
-                                       contrast \`x.y\\.z: v\` above: the
-                                       middle segment is quoted instead
-                                       of bare-with-escape, same result
-
-<sep-end>       ::= 1*ws | &line-end              ; ≥1 whitespace code point, or the line end
-<value-part-opt> ::= <value-start> | ""             ; value-part is optional; "" ⇒ empty String
-<value-start>   ::= "{" (ws) "}" (ws)                ; empty inline object
-                  | "[" (ws) "]" (ws)                ; empty inline array
-                  | "{" (ws) <inline-pair-list> (ws) "}" ; inline object (§ 5.8)
-                  | "[" (ws) <inline-item-list> (ws) "]" ; inline array (§ 5.8)
-                  | "{" (ws) &line-end                ; open object (multi-line body)
-                  | "[" (ws) &line-end                ; open array (multi-line body)
-                  | "(" (ws) &line-end                ; open multiline string (stripped)
-                  | "((" (ws) &line-end               ; open multiline string (verbatim)
-                  | "()" (ws)                        ; empty inline (yields "")
-                  | "(())" (ws)                      ; empty inline (yields "")
-                  | <scalar-body>                    ; scalar value, dispatched per § 5.2
-
-<scalar-body>   ::= (ws) any-chars-until-line-end
+  en: `<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; trimmed; interpreted per § 5.2
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
@@ -48,16 +11,28 @@ export default {
 <item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
-<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
-                     | <key> (ws) "::" (ws) <inline-value> (ws)
+<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
+                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
+<plain-inline-separator> ::= ":" not immediately followed by ":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
+<inline-raw-scalar> ::= sequence of bytes after the raw marker,
+                        terminated by the first unescaped "," / "}" /
+                        "]" or by <line-end> (which is an error per
+                        § 6.11); surrounding whitespace is trimmed from
+                        this sequence before § 3.7 escape processing,
+                        and the resulting bytes are the literal String
+                        body. This production does NOT dispatch through
+                        <inline-value> or <inline-scalar>; an initial
+                        "{" or "[" is literal data.
 <inline-scalar>    ::= sequence of bytes terminated by an unescaped
                        "," / "}" / "]" or by <line-end> (which is
                        an error per § 6.11); escape sequences per
@@ -75,11 +50,15 @@ Notes on the notation:
   above; LF and CR are excluded.
 - \`1*ws\` stands for **one or more** of those same line-bounded code points.
 - \`<sep-end>\` stands for "at least one line-bounded whitespace code point,
-  or the end of the line". It is used after the multi-line pair separators (\`:\`,
-  \`::\`). Writing \`key:value\` (no whitespace, no EOL after the
-  separator) is a syntax error in the multi-line pair form — see
-  § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace
-  after \`:\` / \`::\`.
+  or the end of the line". After a separator it MUST consume the whole
+  immediately following contiguous run of such whitespace code points (the
+  maximal run); the remaining bytes form the body. This also applies to a
+  raw-marker array item, so both spaces in \`::  x\` belong to \`<sep-end>\`
+  and the value is \`x\`, not \` x\`. It is used after the multi-line pair
+  separators (\`:\`, \`::\`). Writing \`key:value\` (no whitespace, no EOL
+  after the separator) is a syntax error in the multi-line pair form — see
+  § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace after
+  \`:\` / \`::\`.
 - \`&line-end\` is a zero-width positive lookahead for \`<line-end>\`; it
   matches either eol or EOF without consuming it. Every line production
   consumes exactly one \`<line-end>\`, so a final line need not have a
@@ -91,6 +70,15 @@ Notes on the notation:
   before (without consuming) \`<line-end>\`; the enclosing line production
   consumes it. The zero-length case permits an empty \`<comment-body>\` and
   an empty raw-marker \`<item-literal>\`.
+- At an inline-pair position, the parser MUST recognise the two-byte raw
+  marker \`::\` before the one-byte plain separator \`:\`. Equivalently,
+  \`<plain-inline-separator>\` is inapplicable when the next byte is \`:\`;
+  \`::\` can never be parsed as a plain \`:\` followed by a value. After
+  \`::\`, the parser uses the dedicated \`<inline-raw-scalar>\` production,
+  not \`<inline-value>\` or \`<inline-scalar>\`: it consumes through the
+  first unescaped delimiter, processes escapes, and treats an initial
+  \`{\` or \`[\` as literal content. The \`::\` marker therefore cannot
+  open or recurse into a compound.
 - The \`<inline-value>\` alternatives are checked **left-to-right** on
   the first non-whitespace code point of the inline-value position. If that
   byte is \`{\`, the value is a nested inline object (matching one of
@@ -101,30 +89,7 @@ Notes on the notation:
   or \`[\` bytes inside the inline scalar are literal data (§ 5.8.5).
 
 `,
-  ru: `                    Примеры:
-                    - \`a\\.b: v\`     → ключ "a.b", значение "v" (плоский)
-                    - \`a\\:b: v\`    → ключ "a:b", значение "v"
-                    - \`a\\:: v\`     → ключ "a:", значение "v" (экранированное двоеточие, затем обычный разделитель \`:\`)
-                    - \`x.y\\.z: v\`  → путь ["x", "y.z"], значение "v"
-                                     ({"x": {"y.z": "v"}})
-                    - \`path\\\\to: v\` → ключ "path\\to", значение "v"
-                    - сегмент ключа, записывающий точку как \`\\u\` плюс
-                      четыре hex-цифры для \`U+002E\`, декодируется
-                      идентично \`\\.\` выше (плоский ключ, без вложенности)
-                      — правило § 3.7.1 о том, что любая распознанная
-                      escape-последовательность никогда не рассматривается
-                      как структурный разделитель, применяется одинаково
-                      независимо от того, какая из четырнадцати форм породила байт
-                    - \`"a.b": v\`    → ключ "a.b", значение "v" (плоский,
-                                       без вложенности — то же Value, что
-                                       и у \`a\\.b: v\` выше; § 5.3.3)
-                    - \`a."b.c".d: v\` → путь ["a", "b.c", "d"], значение
-                                       "v" ({"a": {"b.c": {"d": "v"}}}) —
-                                       в отличие от \`x.y\\.z: v\` выше: средний
-                                       сегмент квотирован, а не голый с
-                                       экранированием, но результат тот же
-
-<sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
+  ru: `<sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
 <value-part-opt> ::= <value-start> | ""             ; value-часть опциональна; "" ⇒ пустая String
 <value-start>   ::= "{" (ws) "}" (ws)                ; пустой inline-объект
                   | "[" (ws) "]" (ws)                ; пустой inline-массив
@@ -150,16 +115,28 @@ Notes on the notation:
 <item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
-<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
-                     | <key> (ws) "::" (ws) <inline-value> (ws)
+<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
+                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
+<plain-inline-separator> ::= ":" not immediately followed by ":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
+<inline-raw-scalar> ::= последовательность байтов после raw-маркера
+                        до первого неэкранированного "," / "}" /
+                        "]" или до <line-end> (что является ошибкой
+                        по § 6.11); окружающие пробелы обрезаются из
+                        этой последовательности перед обработкой escape
+                        по § 3.7, а получившиеся байты являются телом
+                        литеральной String. Эта продукция НЕ проходит
+                        через <inline-value> или <inline-scalar>; начальные
+                        "{" или "[" являются литеральными данными.
 <inline-scalar>    ::= последовательность байтов до неэкранированного
                        "," / "}" / "]" или до <line-end> (что —
                        ошибка по § 6.11); escape-последовательности
@@ -178,6 +155,11 @@ Notes on the notation:
 - \`1*ws\` — **одна или более** тех же ограниченных строкой кодовых точек.
 - \`<sep-end>\` — «как минимум одна ограниченная строкой пробельная кодовая
   точка или конец строки».
+  После разделителя MUST поглощаться вся непосредственно следующая
+  непрерывная последовательность таких пробельных кодовых точек (то есть
+  максимальный contiguous run), а оставшиеся байты образуют тело; это также
+  относится к raw-маркерным array-item. Поэтому в \`::  x\` оба пробела
+  принадлежат \`<sep-end>\`, а значение равно \`x\`, не \` x\`.
   Используется после разделителей пар многострочной формы (\`:\`,
   \`::\`). Запись \`key:value\` (без пробела, без EOL после разделителя) —
   синтаксическая ошибка в многострочной форме пары — см. § 6.10.
@@ -194,6 +176,16 @@ Notes on the notation:
   текста и останавливается перед \`<line-end>\`, не поглощая его; его поглощает
   окружающая продукция строки. Нулевая длина допускает пустой
   \`<comment-body>\` и пустой raw-маркерный \`<item-literal>\`.
+- В позиции inline-пары парсер MUST распознавать двухбайтовый raw-маркер
+  \`::\` раньше однобайтового обычного разделителя \`:\`. Эквивалентно,
+  \`<plain-inline-separator>\` неприменим, если следующий байт — \`:\`;
+  \`::\` никогда нельзя разобрать как обычный \`:\` с последующим
+  значением. После \`::\` используется специальная продукция
+  \`<inline-raw-scalar>\`, а не \`<inline-value>\` и не
+  \`<inline-scalar>\`: она идёт до первого неэкранированного разделителя,
+  обрабатывает escape и считает начальные \`{\` или \`[\` литеральными
+  данными. Поэтому \`::\` не может открыть или рекурсивно разобрать
+  составное значение.
 - Альтернативы \`<inline-value>\` проверяются **слева-направо** по
   первому непробельному байту в позиции inline-значения. Если этот
   байт — \`{\`, значение — вложенный inline-объект (одна из первых
@@ -204,42 +196,7 @@ Notes on the notation:
   \`{\` / \`[\` внутри inline-скаляра — литеральные данные (§ 5.8.5).
 
 `,
-  zh: `                    示例:
-                    - \`a\\.b: v\`     → 键 "a.b",值 "v"(平坦,无嵌套)
-                    - \`a\\:b: v\`    → 键 "a:b",值 "v"
-                    - \`a\\:: v\`     → 键 "a:",值 "v"(escape 冒号,然后是普通的 \`:\` 分隔符)
-                    - \`x.y\\.z: v\`  → 路径 ["x", "y.z"],值 "v"
-                                     ({"x": {"y.z": "v"}})
-                    - \`path\\\\to: v\` → 键 "path\\to",值 "v"
-                    - 以 \`\\u\` 加 \`U+002E\` 的四位十六进制数字写出的
-                      键段,与上面的 \`\\.\` 解码结果相同(平坦键,
-                      无嵌套)—— § 3.7.1 中「任意已识别 escape 永远
-                      不会被重新视为结构性分隔符」的规则,无论字节
-                      来自十四种形式中的哪一种,均一致适用
-                    - \`"a.b": v\`    → 键 "a.b",值 "v"(平坦,无嵌套
-                                       —— 与上面 \`a\\.b: v\` 的 Value
-                                       相同;§ 5.3.3)
-                    - \`a."b.c".d: v\` → 路径 ["a", "b.c", "d"],值
-                                       "v"({"a": {"b.c": {"d": "v"}}})
-                                       —— 与上面 \`x.y\\.z: v\` 相比:
-                                       中间段是 quoted 而非
-                                       bare-with-escape,但结果相同
-
-<sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
-<value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
-<value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
-                  | "[" (ws) "]" (ws)                ; 空 inline 数组
-                  | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
-                  | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
-                   | "{" (ws) &line-end                ; 对象开启(多行 body)
-                   | "[" (ws) &line-end                ; 数组开启(多行 body)
-                   | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
-                   | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
-                  | "()" (ws)                        ; 空 inline(得到 "")
-                  | "(())" (ws)                      ; 空 inline(得到 "")
-                  | <scalar-body>                    ; 标量值,按 § 5.2 分发
-
-<scalar-body>   ::= (ws) any-chars-until-line-end
+  zh: `<scalar-body>   ::= (ws) any-chars-until-line-end
                     ; 修剪;按 § 5.2 解释
 
 <array-item-line> ::= <item-literal> | <item-inline> | <item-value>
@@ -251,19 +208,32 @@ Notes on the notation:
 <item-value>    ::= <value-start> <line-end>
 
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
-<inline-pair>      ::= <key> (ws) ":"  (ws) <inline-value> (ws)
-                     | <key> (ws) "::" (ws) <inline-value> (ws)
+<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
+                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
+<plain-inline-separator> ::= ":" not immediately followed by ":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"
                      | "[" (ws) "]"
                      | <inline-scalar>
-<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或 <line-end> 终止的
-                       字节序列(行末情况按 § 6.11 为错误);
-                       § 3.7 的 escape 序列被处理;周围空白在分发到
+<inline-raw-scalar> ::= raw 标记之后的字节序列,
+                        在第一个未 escape 的 "," / "}" /
+                        "]" 或 <line-end> 处终止(后者按
+                        § 6.11 为错误);该序列的周围空白
+                        在 § 3.7 escape 处理之前修剪,
+                        所得字节就是字面 String 体。此产生式
+                        不经过 <inline-value> 或
+                        <inline-scalar> 分发;初始 "{" 或
+                        "[" 是字面数据。
+<inline-scalar>    ::= 由未 escape 的 "," / "}" / "]" 或
+                       <line-end> 终止的字节序列(后者按
+                       § 6.11 为错误);§ 3.7 的 escape
+                       序列被处理;周围空白在分发到
                        § 5.2 前被修剪
 
 <multiline-content-line> ::= 打开的 <multiline> 内的任意行,
@@ -276,7 +246,11 @@ Notes on the notation:
 - \`(ws)\` 表示零个或多个上文定义的行边界内 \`ws\` 码点;LF 和 CR
   不包括在内。
 - \`1*ws\` 表示**一个或多个**同样的行边界内码点。
-- \`<sep-end>\` 表示「至少一个行边界内空白码点,或行末」。它用在多行
+- \`<sep-end>\` 表示「至少一个行边界内空白码点,或行末」。分隔符之后
+  MUST 吸收所有紧接着的、连续的此类空白码点(即 maximal contiguous
+  run),剩余字节才构成体;这同样适用于 raw-marker array-item。因此
+  在 \`::  x\` 中两个空格都属于 \`<sep-end>\`,值是 \`x\`,而不是
+  \` x\`。它用在多行
   pair 分隔符(\`:\`、\`::\`)之后。写 \`key:value\`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 \`:\` / \`::\` 之后有空白。
@@ -288,6 +262,13 @@ Notes on the notation:
 - \`any-chars-until-line-end\` 表示零个或多个源字节,在 \`<line-end>\`
   之前停止且不消耗它;由外层行产生式消耗该终止符。零长度情形允许
   空 \`<comment-body>\` 和空 raw-marker \`<item-literal>\`。
+- 在 inline pair 位置,parser MUST 先识别两字节 raw 标记 \`::\`,再识别
+  单字节普通分隔符 \`:\`。等价地,若下一个字节是 \`:\`,则
+  \`<plain-inline-separator>\` 不适用;\`::\` 绝不能解析为普通 \`:\`
+  加后续值。\`::\` 之后使用专用 \`<inline-raw-scalar>\` 产生式,而非
+  \`<inline-value>\` 或 \`<inline-scalar>\`:它延伸到第一个未 escape 的
+  分隔符,处理 escape,并将初始 \`{\` 或 \`[\` 视为字面内容。因此
+  \`::\` 不能开启或递归解析复合值。
 - \`<inline-value>\` 的各候选按 inline 值位置上**首个非空白码点**
   从左到右检查。若该字节为 \`{\`,值是嵌套 inline 对象(匹配前两条
   \`{\`-规则之一)且 MUST 在同一行以 \`}\` 关闭;若该字节为 \`[\`,

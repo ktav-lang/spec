@@ -8,5 +8,5 @@ export default {
     "ru": "Интерпретация скалярного значения",
     "zh": "标量值解释"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }
