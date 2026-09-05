@@ -265,12 +265,17 @@ test('unit bodies reject injected Setext H1 and H2 headings', async () => {
 });
 
 test('a Unicode separator is content, not ASCII blank, before a Setext underline', async () => {
-  const fx = baseFixtures();
-  fx[1].bodies = [sameLanguageBodies(['\u2028\n===\n\n'])[0]];
-  await assert.rejects(
-    validate(fx),
-    /unit "named-abstract": en: unit body contains a Setext heading/
-  );
+  for (const separator of ['\u2028', '\u00a0']) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([
+      `- list paragraph\n${separator}\n===\n\n`,
+    ])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains a Setext heading/,
+      `U+${separator.codePointAt(0).toString(16).toUpperCase().padStart(4, '0')}`
+    );
+  }
 });
 
 test('ATX-looking lines inside backtick and tilde fences are accepted', async () => {
@@ -318,6 +323,114 @@ test('unit heading checks normalize blockquote/list containers without treating 
     fx[1].bodies = [sameLanguageBodies([body])[0]];
     await assert.doesNotReject(validate(fx), JSON.stringify(body));
   }
+});
+
+test('heading checks recursively normalize blockquote and list containers in either order', async () => {
+  const rejected = [
+    '> - ## nested',
+    '- > ## nested',
+    '> - > - ## deeply nested',
+    '- > - > ## deeply nested',
+    '> - Title\n>   ---',
+    '- > Title\n  > ---',
+    '  - Title\n    ---',
+  ];
+  for (const body of rejected) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${body}\n\n`])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains (?:an ATX|a Setext) heading/,
+      body
+    );
+  }
+});
+
+test('fences are scoped to their container and reprocess lines that leave it', async () => {
+  for (const body of [
+    '- ```text\n  # inside the list fence\n  ```\n\n',
+    '> - ```text\n>   # inside the nested fence\n>   ```\n\n',
+    '```text\n> ## blockquote marker is root-fence code\n' +
+      '- ## list marker is root-fence code\n' +
+      '1. ## ordered marker is root-fence code\n' +
+      '> ```\n' +
+      '# still root-fence code\n```\n\n',
+    '> ```text\n> > ## deeper quote marker is code\n' +
+      '> > ```\n> # still quote-fence code\n' +
+      '> - ## nested list marker is code\n> ```\n\n',
+    '- ```text\n  > ## nested quote marker is code\n' +
+      '  - ```\n  # still list-fence code\n' +
+      '  - ## nested list marker is code\n  ```\n\n',
+    '> - ```text\n>   > ## marker after quote/list continuation is code\n' +
+      '>   - ## list marker after continuation is code\n>   ```\n\n',
+    '- > ```text\n  > > ## marker after list/quote continuation is code\n' +
+      '  > 1. ## ordered marker after continuation is code\n  > ```\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx), body);
+  }
+
+  for (const body of [
+    '- ```text\n  # inside the list fence\n# root heading escapes the fence\n',
+    '> ```text\n> # inside the quote fence\n# root heading escapes the fence\n',
+    '> - ```text\n>   # inside the nested fence\n> - # sibling heading escapes the fence\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
+});
+
+test('list padding consumes one to four spaces but leaves five-plus as indented code', async () => {
+  for (const spaces of [1, 2, 3, 4]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`-${' '.repeat(spaces)}## injected\n\n`])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      `${spaces} spaces`
+    );
+  }
+  for (const spaces of [5, 6]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`-${' '.repeat(spaces)}## indented code\n\n`])[0]];
+    await assert.doesNotReject(validate(fx), `${spaces} spaces`);
+  }
+  for (const body of [
+    '-\t## tab-padded heading\n\n',
+    '>\t## tab-padded blockquote heading\n\n',
+    '- \t## tab-padded heading\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
+});
+
+test('ordered list interruption follows the CommonMark start-number rule', async () => {
+  const nonInterrupting = baseFixtures();
+  nonInterrupting[1].bodies = [sameLanguageBodies([
+    'paragraph remains active\n2. ## accepted paragraph content\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(nonInterrupting));
+
+  const interrupting = baseFixtures();
+  interrupting[1].bodies = [sameLanguageBodies([
+    'paragraph remains active\n1. ## injected list heading\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(interrupting),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
 });
 
 test('fence marker lengths follow CommonMark 4-backtick/3-backtick behavior', async () => {
@@ -476,6 +589,43 @@ test('generated heading classification rejects numbered syntax in unlocked named
     validate(fx, null, null, { lock: records }),
     /unit "named-abstract": en: named title must not match numbered-heading syntax/
   );
+});
+
+test('named titles reject every numbered-heading prefix shape but allow prose', async () => {
+  const numberedTitles = [
+    '99',
+    '99 Review',
+    '99-Review',
+    '99.Review',
+    '99:Review',
+    '99/Review',
+    '9.9',
+    '9.9 Review',
+    '9.9-Review',
+    '9.9.Review',
+    '9.9:Review',
+    '9.9/Review',
+  ];
+  for (const title of numberedTitles) {
+    const fx = baseFixtures();
+    const records = lockUnits(fx, fx.map((unit) => unit.name));
+    fx[1].meta.title = { en: title, ru: title, zh: title };
+    await assert.rejects(
+      validate(fx, null, null, { lock: records }),
+      /unit "named-abstract": en: named title must not match numbered-heading syntax/,
+      title
+    );
+  }
+
+  for (const title of ['Review 99', '99Review', '99_Review']) {
+    const fx = baseFixtures();
+    const records = lockUnits(fx, fx.map((unit) => unit.name));
+    fx[1].meta.title = { en: title, ru: title, zh: title };
+    await assert.doesNotReject(
+      validate(fx, null, null, { lock: records }),
+      title
+    );
+  }
 });
 
 test('README source object rejects a non-canonical shape', async () => {

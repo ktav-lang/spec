@@ -30,7 +30,7 @@ export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.z
 export const README_SOURCE_FILE = 'README.source.js';
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
 
-const NUMBERED_HEADING_PREFIX = /^(\d+(?:\.\d+)*)(\. | )/;
+const NUMBERED_HEADING_RE = /^(\d+(?:\.\d+)*)\b/;
 
 const BODY_LINE_LIMIT = 120;
 const BODY_TARGET_LINES = 100;
@@ -208,14 +208,14 @@ function validateGeneratedHeading(unit, meta, lang) {
   if (meta.kind === 'frontmatter') return;
   const heading = generatedHeadingLine(meta, lang);
   const text = heading.slice(meta.level + 1);
-  const numbered = text.match(NUMBERED_HEADING_PREFIX);
   if (meta.kind === 'numbered') {
-    if (numbered === null || numbered[1] !== meta.number || numbered[2] !== meta.sep) {
+    const expectedPrefix = meta.number + meta.sep;
+    if (!text.startsWith(expectedPrefix)) {
       failUnit(unit,
         `${lang}: generated heading must render locked number ${JSON.stringify(meta.number)} ` +
         `with separator ${JSON.stringify(meta.sep)}`);
     }
-  } else if (numbered !== null) {
+  } else if (NUMBERED_HEADING_RE.test(text)) {
     failUnit(unit,
       `${lang}: named title must not match numbered-heading syntax: ${JSON.stringify(meta.title[lang])}`);
   }
@@ -281,97 +281,230 @@ function isSetextParagraphLine(line, isIndentedCode = false) {
     !isThematicBreak(line);
 }
 
-function parseListMarker(line, start) {
-  let spaces = 0;
-  while (start + spaces < line.length && line[start + spaces] === ' ') spaces++;
-  if (spaces > 3) return null;
-  const markerStart = start + spaces;
-  const match = line.slice(markerStart).match(/^(?:[*+-]|\d{1,9}[.)])(?=$|[ \t])/);
-  if (match === null) return null;
-  return { markerStart, markerEnd: markerStart + match[0].length };
+function advanceColumn(column, ch) {
+  if (ch === '\t') return column + (4 - (column % 4));
+  return column + 1;
 }
 
-// Normalize only the container syntax needed by the heading checks. A list
-// item gets a per-item identity so `- Title` cannot pair with the next list
-// item, while an indented continuation keeps the current item identity.
+function leadingColumns(line, start = 0) {
+  let column = 0;
+  let pos = start;
+  while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t')) {
+    column = advanceColumn(column, line[pos]);
+    pos++;
+  }
+  return { column, pos };
+}
+
+function consumeIndent(line, start, columns) {
+  let column = 0;
+  let pos = start;
+  while (pos < line.length && column < columns &&
+         (line[pos] === ' ' || line[pos] === '\t')) {
+    column = advanceColumn(column, line[pos]);
+    pos++;
+  }
+  return column >= columns ? pos : null;
+}
+
+function consumeBlockquoteMarker(line, start) {
+  const leading = leadingColumns(line, start);
+  if (leading.column > 3 || line[leading.pos] !== '>') return null;
+  let pos = leading.pos + 1;
+  if (line[pos] === ' ' || line[pos] === '\t') pos++;
+  return pos;
+}
+
+function hasContainerPrefix(container, ancestor) {
+  return container === ancestor || container.startsWith(`${ancestor}/`);
+}
+
+function parseListMarker(line, start) {
+  const leading = leadingColumns(line, start);
+  if (leading.column > 3) return null;
+  const markerStart = leading.pos;
+  const match = line.slice(markerStart).match(/^(?:[*+-]|\d{1,9}[.)])(?=$|[ \t])/);
+  if (match === null) return null;
+  const text = match[0];
+  return {
+    markerStart,
+    markerEnd: markerStart + text.length,
+    ordered: /^\d/.test(text),
+    number: /^\d/.test(text) ? text.slice(0, -1) : null,
+  };
+}
+
+function consumeListPadding(line, list) {
+  let pos = list.markerEnd;
+  if (pos === line.length || (line[pos] !== ' ' && line[pos] !== '\t')) {
+    return { pos, indent: list.markerEnd - list.markerStart + 1, indentedCode: false };
+  }
+
+  let whitespaceColumns = 0;
+  let scanColumn = list.markerEnd - list.markerStart;
+  let scan = pos;
+  while (scan < line.length && (line[scan] === ' ' || line[scan] === '\t')) {
+    const nextColumn = advanceColumn(scanColumn, line[scan]);
+    whitespaceColumns = nextColumn - (list.markerEnd - list.markerStart);
+    scanColumn = nextColumn;
+    scan++;
+  }
+
+  if (whitespaceColumns > 4) {
+    // Five or more columns of padding consume exactly one whitespace
+    // character, leaving the remainder as indented code.
+    const firstColumn = advanceColumn(list.markerEnd - list.markerStart, line[pos]);
+    return {
+      pos: pos + 1,
+      indent: firstColumn,
+      indentedCode: true,
+    };
+  }
+  return {
+    pos: scan,
+    indent: scanColumn,
+    indentedCode: false,
+  };
+}
+
+// Normalize a line by repeatedly consuming blockquote and list containers.
+// List frames retain the relative content indent needed to recognize a later
+// continuation, while their unique item paths keep sibling paragraphs apart.
 function normalizeContainerLine(line, state) {
   let pos = 0;
-  const prefix = [];
+  let container = 'root';
+  let indentedCode = false;
+  let consumedContainer = false;
+  let frames = state.activeLists;
+  const containerFrames = [];
+
   while (true) {
-    let spaces = 0;
-    while (pos + spaces < line.length && line[pos + spaces] === ' ') spaces++;
-    if (spaces > 3 || line[pos + spaces] !== '>') break;
-    pos += spaces + 1;
-    if (line[pos] === ' ' || line[pos] === '\t') pos++;
-    prefix.push('quote');
+    const continuationIndent = leadingColumns(line, pos);
+    const frame = frames
+      .filter((candidate) => candidate.parent === container &&
+        continuationIndent.column >= candidate.indent)
+      .at(-1);
+    if (frame !== undefined) {
+      const end = consumeIndent(line, pos, frame.indent);
+      if (end !== null) {
+        pos = end;
+        container = frame.container;
+        consumedContainer = true;
+        containerFrames.push({ kind: 'list', indent: frame.indent });
+        frames = frames.slice(0, frames.indexOf(frame) + 1);
+        continue;
+      }
+    }
+
+    const quoteEnd = consumeBlockquoteMarker(line, pos);
+    if (quoteEnd !== null) {
+      pos = quoteEnd;
+      container += '/quote';
+      consumedContainer = true;
+      containerFrames.push({ kind: 'quote' });
+      continue;
+    }
+
+    const list = parseListMarker(line, pos);
+    if (list === null) break;
+    if (list.ordered && list.number !== '1' && state.paragraphContainer === container) break;
+
+    const markerIndent = leadingColumns(line, pos).column;
+    const padding = consumeListPadding(line, list);
+    const item = `${container}/list-${state.nextListId++}`;
+    frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
+    frames.push({
+      parent: container,
+      container: item,
+      indent: markerIndent + padding.indent,
+    });
+    containerFrames.push({
+      kind: 'list',
+      indent: markerIndent + padding.indent,
+    });
+    container = item;
+    pos = padding.pos;
+    indentedCode ||= padding.indentedCode;
+    consumedContainer = true;
   }
 
-  const parent = prefix.join('/');
-  const prefixStart = pos;
-  const list = parseListMarker(line, pos);
-  let container = parent || 'root';
-  let isContinuation = false;
-  if (list !== null) {
-    pos = list.markerEnd;
-    let markerSpaces = 0;
-    while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t') && markerSpaces < 4) {
-      pos++;
-      markerSpaces++;
-    }
-    container = `${parent || 'root'}/list-${state.nextListId++}`;
-    state.activeList = {
-      parent,
-      container,
-      indent: pos - prefixStart,
-    };
-  } else if (state.activeList !== null && state.activeList.parent === parent) {
-    let spaces = 0;
-    while (pos + spaces < line.length && line[pos + spaces] === ' ') spaces++;
-    if (spaces >= state.activeList.indent && state.activeList.indent > 0) {
-      pos += state.activeList.indent;
-      container = state.activeList.container;
-      isContinuation = true;
-    }
+  if (/^[ \t]*$/.test(line) && frames.length > 0) {
+    container = frames.at(-1).container;
+    consumedContainer = true;
+  } else if (!consumedContainer) {
+    frames = [];
   }
+  frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
+  state.activeLists = frames;
 
-  if (list === null && !isContinuation) state.activeList = null;
   const content = line.slice(pos);
+  const contentIndent = leadingColumns(content).column;
   return {
     content,
     container,
-    // A tab or four leading spaces at the normalized block level is code,
+    // A tab or four visual columns at the normalized block level is code,
     // not a paragraph which can become a Setext heading.
-    isIndentedCode: content.startsWith('\t') || /^ {4}/.test(content),
+    isIndentedCode: indentedCode || contentIndent >= 4,
+    containerFrames,
     raw: line,
   };
+}
+
+function matchFenceContainer(line, frames) {
+  let pos = 0;
+  for (const frame of frames) {
+    if (frame.kind === 'quote') {
+      const end = consumeBlockquoteMarker(line, pos);
+      if (end === null) return null;
+      pos = end;
+    } else {
+      const end = consumeIndent(line, pos, frame.indent);
+      if (end === null) return null;
+      pos = end;
+    }
+  }
+  return line.slice(pos);
 }
 
 function findHeadings(body) {
   const headings = [];
   let fence = null;
   let paragraphLine = null;
-  const containerState = { activeList: null, nextListId: 0 };
+  const containerState = { activeLists: [], nextListId: 0, paragraphContainer: null };
   const lines = body.split('\n');
   for (let index = 0; index < lines.length; index++) {
-    const normalized = normalizeContainerLine(lines[index], containerState);
-    const line = normalized.content;
-    if (fence === null) {
-      const opener = normalized.isIndentedCode ? null : parseFenceOpener(line);
-      if (opener !== null) {
-        fence = { ...opener, container: normalized.container };
+    const raw = lines[index];
+    if (fence !== null) {
+      const line = matchFenceContainer(raw, fence.containerFrames);
+      if (line !== null) {
+        if (isFenceCloser(line, fence)) fence = null;
         paragraphLine = null;
+        containerState.paragraphContainer = null;
         continue;
       }
-    } else {
-      if (normalized.container === fence.container &&
-          !normalized.isIndentedCode && isFenceCloser(line, fence)) fence = null;
+      // A container fence ends when its required continuation frames are
+      // absent. Reprocess the raw line so an escaped heading stays visible.
+      fence = null;
+    }
+
+    const normalized = normalizeContainerLine(raw, containerState);
+    const line = normalized.content;
+    const opener = normalized.isIndentedCode ? null : parseFenceOpener(line);
+    if (opener !== null) {
+      fence = {
+        ...opener,
+        container: normalized.container,
+        containerFrames: normalized.containerFrames,
+      };
       paragraphLine = null;
+      containerState.paragraphContainer = null;
       continue;
     }
     const heading = parseAtxHeading(line);
     if (heading !== null) {
       headings.push({ ...heading, raw: normalized.raw, container: normalized.container, type: 'ATX', line: index + 1 });
       paragraphLine = null;
+      containerState.paragraphContainer = null;
       continue;
     }
     const underline = parseSetextUnderline(line);
@@ -386,11 +519,13 @@ function findHeadings(body) {
         paragraph: paragraphLine.raw,
       });
       paragraphLine = null;
+      containerState.paragraphContainer = null;
       continue;
     }
     paragraphLine = isSetextParagraphLine(line, normalized.isIndentedCode)
       ? { raw: normalized.raw, container: normalized.container, line: index + 1 }
       : null;
+    containerState.paragraphContainer = paragraphLine === null ? null : normalized.container;
   }
   return headings;
 }

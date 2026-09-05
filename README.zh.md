@@ -356,7 +356,7 @@ timeout: null
 - **本文描述的草案：** [Ktav 0.7.0](versions/0.7/spec.zh.md) — 尚未发布;本 README 的功能概览遵循该草案。
 - **当前稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23;稳定语义与 fixture 请使用此版本。
 - **已发布/稳定版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
-- **跨版本的历史记录：** [`CHANGELOG.md`](CHANGELOG.md)。
+- **跨版本的历史记录：** [`CHANGELOG.zh.md`](CHANGELOG.zh.md)。
 
 ## 一致性测试套件
 
