@@ -315,6 +315,12 @@ class TranslationParityTestCase(unittest.TestCase):
             f.write(text)
         return path
 
+    def write_with_line_ending(self, name, text, line_ending):
+        path = os.path.join(self.tmp, name)
+        with open(path, "w", encoding="utf-8", newline="") as f:
+            f.write(text.replace("\n", line_ending))
+        return path
+
     def _replace_semi_line(self, lines, prefix, new_line):
         mutated = list(lines)
         for i, l in enumerate(mutated):
@@ -349,6 +355,45 @@ class TranslationParityTestCase(unittest.TestCase):
             self.assertEqual(bad, [])
 
     # -- happy path -----------------------------------------------------
+
+    def test_split_source_lines_only_recognizes_markdown_line_terminators(self):
+        cases = [
+            ("", []),
+            ("first\nsecond\n", ["first", "second"]),
+            ("first\rsecond\r", ["first", "second"]),
+            ("first\r\nsecond\r\n", ["first", "second"]),
+            ("first\u0085second\u2028third\u2029fourth\vfifth\ffinal",
+             ["first\u0085second\u2028third\u2029fourth\vfifth\ffinal"]),
+        ]
+        for source, expected in cases:
+            with self.subTest(source=repr(source)):
+                self.assertEqual(ctp.split_source_lines(source), expected)
+
+    def test_crlf_lf_and_cr_files_have_the_same_parity(self):
+        for line_ending in ("\r\n", "\n", "\r"):
+            with self.subTest(line_ending=repr(line_ending)):
+                en = self.write_with_line_ending(
+                    "spec.md", EN_DOC, line_ending)
+                ru = self.write_with_line_ending(
+                    "spec.ru.md", RU_DOC_OK, line_ending)
+                code, out = self.run_main(en, ru)
+                self.assertEqual(code, 0, out)
+                self.assertIn("OVERALL: PASS", out)
+
+    def test_unicode_line_separator_before_grammar_fence_is_not_a_break(self):
+        grammar = [
+            "<document> ::= <line>*",
+            "<line> ::= <pair-line>",
+        ]
+        en = self.write("spec.md", semi_doc(grammar))
+        translated = semi_doc(grammar).replace(
+            "Grammar productions.\n\n```\n",
+            "Grammar productions.\n\u2028```\n")
+        ru = self.write("spec.ru.md", translated)
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertIn("unclosed fenced code block", out)
 
     def test_happy_path_identical_structure_passes(self):
         en = self.write("spec.md", EN_DOC)

@@ -81,9 +81,11 @@ class CorpusTestCase(unittest.TestCase):
             code = validate_corpus.main([tests_dir] + list(flags))
         return code, out.getvalue()
 
-    def write_corpus_lock(self, tests_dir, relpath="lock/corpus.json"):
+    def write_corpus_lock(self, tests_dir, relpath="lock/corpus.json",
+                          version="0.7.0"):
         files = {}
-        for dirname in sorted(validate_corpus.LOCKED_CORPUS_DIRS):
+        profile = validate_corpus.CORPUS_LAYOUT_PROFILES[version]
+        for dirname in sorted(profile["directories"]):
             directory = os.path.join(tests_dir, dirname)
             for root, _dirs, names in os.walk(directory):
                 for name in names:
@@ -91,14 +93,13 @@ class CorpusTestCase(unittest.TestCase):
                     rpath = os.path.relpath(path, tests_dir).replace(os.sep, "/")
                     with open(path, "rb") as stream:
                         files[rpath] = hashlib.sha256(stream.read()).hexdigest()
-        boundary = os.path.join(tests_dir, "boundary-fixtures.json")
-        if os.path.isfile(boundary):
-            with open(boundary, "rb") as stream:
-                files["boundary-fixtures.json"] = hashlib.sha256(
-                    stream.read()
-                ).hexdigest()
+        for filename in sorted(profile["files"]):
+            path = os.path.join(tests_dir, filename)
+            if os.path.isfile(path):
+                with open(path, "rb") as stream:
+                    files[filename] = hashlib.sha256(stream.read()).hexdigest()
         return self.write(relpath, json.dumps({
-            "version": "0.7.0",
+            "version": version,
             "files": dict(sorted(files.items())),
         }))
 
@@ -938,6 +939,109 @@ class CorpusTestCase(unittest.TestCase):
                 self.assertIsInstance(error, str)
 
     # -- full corpus SHA-256 lock and closed top level -------------------
+
+    def test_corpus_inventory_lock_happy_paths_for_both_profiles(self):
+        cases = [
+            ("versions/0.6/tests", "0.6.4", self.build_minimal),
+            ("versions/0.7/tests", "0.7.0", self.build_full),
+        ]
+        for index, (root, version, builder) in enumerate(cases):
+            with self.subTest(version=version):
+                tests = builder(root)
+                lock_path = self.write_corpus_lock(
+                    tests, "lock/profile-%d.json" % index, version=version
+                )
+                code, out = self.run_main(
+                    tests, "--corpus-inventory-lock", lock_path
+                )
+                self.assertEqual(code, 0, out)
+                self.assertIn("OVERALL: PASS", out)
+
+    def test_corpus_inventory_lock_rejects_cross_version_layouts(self):
+        tests = self.build_full("cross-06/tests")
+        lock_path = self.write_corpus_lock(
+            tests, "lock/cross-06.json", version="0.6.4"
+        )
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected top-level entry 'boundary-fixtures.json'", out)
+        self.assertIn("unexpected top-level entry 'unrepresentable'", out)
+
+        tests = self.build_minimal("cross-07/tests")
+        lock_path = self.write_corpus_lock(
+            tests, "lock/cross-07.json", version="0.7.0"
+        )
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("missing top-level file 'boundary-fixtures.json'", out)
+        self.assertIn("missing top-level directory 'unrepresentable'", out)
+
+    def test_v06_lock_rejects_v07_only_paths(self):
+        tests = self.build_minimal("versions/0.6/tests")
+        lock_path = self.write("lock/v06-v07-paths.json", json.dumps({
+            "version": "0.6.4",
+            "files": {
+                "boundary-fixtures.json": "0" * 64,
+                "unrepresentable/case.json": "0" * 64,
+            },
+        }))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("invalid canonical corpus path 'boundary-fixtures.json'", out)
+        self.assertIn("invalid canonical corpus path 'unrepresentable/case.json'", out)
+
+    def test_corpus_inventory_lock_rejects_unknown_versions(self):
+        for index, version in enumerate(("0.8.0", [0, 8, 0])):
+            with self.subTest(version=version):
+                tests = self.build_full("unknown-%d/tests" % index)
+                lock_path = self.write(
+                    "lock/unknown-%d.json" % index,
+                    json.dumps({"version": version, "files": {}}),
+                )
+                code, out = self.run_main(
+                    tests, "--corpus-inventory-lock", lock_path
+                )
+                self.assertEqual(code, 1)
+                self.assertIn("unsupported corpus inventory version", out)
+                self.assertNotIn("Traceback", out)
+
+    def test_corpus_inventory_lock_ignores_only_top_level_local_metadata(self):
+        root = "versions/0.6/tests"
+        tests = self.build_minimal(root)
+        lock_path = self.write_corpus_lock(
+            tests, "lock/metadata.json", version="0.6.4"
+        )
+        for rpath in (
+            "docs_local/note.txt",
+            ".idea/workspace.xml",
+            ".vscode/settings.txt",
+            "project.iml",
+            "scratch.swp",
+            "scratch.swo",
+            "backup~",
+            ".DS_Store",
+            "Thumbs.db",
+            "desktop.ini",
+        ):
+            self.write(root + "/" + rpath, "local metadata")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
+        self.write(root + "/valid/.idea/workspace.xml", "fixture metadata")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("valid/.idea/workspace.xml: not present in lock", out)
+
+    def test_v06_corpus_inventory_lock_rejects_unknown_category(self):
+        tests = self.build_minimal("versions/0.6/tests")
+        lock_path = self.write_corpus_lock(
+            tests, "lock/v06-unknown.json", version="0.6.4"
+        )
+        self.write("versions/0.6/tests/future/case.ktav", "value")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unexpected top-level entry 'future'", out)
 
     def test_corpus_inventory_lock_catches_deleted_file(self):
         tests = self.build_full()

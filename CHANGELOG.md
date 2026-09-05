@@ -71,13 +71,14 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 - **§ 5.9.0 (new) — representable Values are now normatively
   defined**, delimiting the domain over which the canonical writer's
   guarantees operate. A bare scalar document root, an Object pair with
-  an empty name, a non-finite Float (NaN / ±Infinity), and any compound
-  containing a non-representable Value at any depth are not
-  representable, and a writer-conforming implementation MUST reject
-  them with an error, emitting no partial output. Previously § 5.9
-  left these programmatic-only cases undefined. The Rust reference
-  core already rejects scalar roots and `CR`-bearing Strings; closing
-  the remaining gaps there is tracked separately.
+  an empty name, a non-finite Float (NaN / ±Infinity), a String bearing
+  a `CR` byte or a stripped-form collision, and any compound containing
+  a non-representable Value at any depth are not representable, and a
+  writer-conforming implementation MUST reject them with an error,
+  emitting no partial output. Previously § 5.9 left these
+  programmatic-only cases undefined. The Rust reference core already
+  rejects scalar roots and `CR`-bearing Strings; closing the remaining
+  gaps there is tracked separately.
 - **A leading quote character in a key now opens a `<quoted-segment>`
   (§ 5.3.3, § 10.7).** A line whose first content — after § 4's
   key-segment trimming — begins with `"`, `'`, or `` ` `` no longer
@@ -98,6 +99,20 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   0.7.0. This applies to every recognised escape, including `\.` / `\:`
   and the three quote escapes `\"` / `\'` / `` \` ``, even when the
   decoded byte has no structural role.
+- **§ 5 (Float) / § 5.2 rule 14 — the Float domain now has a
+  normative floor and an overflow fallback.** Implementations MUST
+  support at least the range and precision of IEEE 754 binary64
+  (MAY support a wider representation), and a float literal whose
+  parsed value is non-finite in the implementation's Float domain
+  (e.g. `1e9999` on binary64) falls through to String exactly as an
+  out-of-range Integer does under rule 13 — so a 0.7.0-conformant
+  parser MUST NOT ever produce a non-finite Float, making § 5.9.0's
+  "no literal grammar of § 3.6 produces a non-finite Float" claim
+  actually true. New fixtures `float/positive_overflow_to_string`,
+  `float/negative_overflow_to_string`, and
+  `float/underflow_to_zero` lock the boundary in; the last
+  documents that underflow to `0.0` (finite) is an ordinary Float,
+  not a String-fallback case.
 
 ### Changed
 
@@ -124,13 +139,14 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   literal key content, matching the § 3.3 widening. Non-breaking — only
   accepts documents previously rejected as `InvalidKey`.
 - **§ 5.9 / § 8.3** now define the round-trip guarantee over
-  *representable* Values only (§ 5.9.7's narrow set of String values —
-  a `CR` byte, or one of a few pathological multi-line stripped-form
-  collisions). A writer-conforming implementation MUST reject a
-  non-representable Value with an error rather than serialise it;
-  previously § 5.9.7 separately allowed any implementation-chosen or
-  lossy encoding for the same Values, which was incompatible with
-  § 5.9's byte-determinism requirement.
+  *representable* Values only. Strings containing a `CR` byte or one
+  of the pathological multi-line stripped-form collisions are
+  explicitly excluded from the representable domain by § 5.9.7. A
+  writer-conforming implementation MUST reject a non-representable
+  Value with an error rather than serialise it; previously § 5.9.7
+  separately allowed any implementation-chosen or lossy encoding for
+  the same Values, which was incompatible with § 5.9's byte-
+  determinism requirement.
 - **§ 5.9.6** — a root Array's first item, if its bare rendering would
   itself be recognised by § 5.0.1 rule 6 as a pair line (e.g.
   `host: localhost`, or a bare `a:`), now MUST use the raw-marker
@@ -146,41 +162,30 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   Rust reference core's existing behaviour; only the normative text
   changes. New fixtures `float/positive_zero` and `float/negative_zero`
   lock it in.
-- **§ 8.1 (with § 5's Integer definition) — fixture equivalence is
-  defined at the minimum-required numeric domain** (i64 Integer,
-  binary64 Float). An implementation supporting a wider domain MAY
-  diverge from a fixture oracle exactly where that fixture probes the
-  minimum-domain boundary (e.g. `i64_overflow_to_string.json`), without
-  forfeiting parser-conformance. Previously an arbitrary-precision
-  implementation — explicitly permitted by § 5 — failed § 8.1 on that
-  fixture as written.
+- **§ 8.1 (with § 5's Integer definition) — ordinary fixture numeric
+  equivalence is interpreted, or comparison-coerced, in the tested
+  implementation's declared Integer or Float domain, not against a
+  universal minimum-domain Value.** Thus an ordinary Float token such
+  as `3.14` does not require a wider decimal implementation to
+  manufacture binary64's rounded value. A manifest exemption applies
+  only when the source Ktav literal, interpreted in the tested
+  implementation's declared domain, diverges in value or kind from the
+  minimum-domain oracle token because it crosses that leaf's named
+  boundary. If no such divergence occurs, the listed leaf MUST match
+  normally; the exemption never extends to another leaf.
 - **§ 8.2 (with § 5.9.5) — the writer-conforming byte-exact fixture
-  requirement now carries the numeric-domain caveat mirroring
-  § 8.1.** On exactly the boundary-probing fixtures § 8.1 names, the
-  Value a wider-domain implementation parses from `name.ktav` may
-  legitimately differ from the minimum-domain Value the fixture's
-  `.json` oracle describes, so its output MAY differ from the
-  fixture's fixed `canonical.ktav` — provided that output is the
-  correct canonical form (§ 5.9) for the Value it actually holds.
-  Previously an arbitrary-precision implementation — explicitly
-  permitted by § 5 — failed § 8.2 on `i64_overflow_to_string` as
-  written: it parses the body as an Integer and would canonically
-  write it bare (no raw marker), which the fixture's fixed
-  `canonical.ktav` forbids.
-- **§ 5 (Float) / § 5.2 rule 14 — the Float domain now has a
-  normative floor and an overflow fallback.** Implementations MUST
-  support at least the range and precision of IEEE 754 binary64
-  (MAY support a wider representation), and a float literal whose
-  parsed value is non-finite in the implementation's Float domain
-  (e.g. `1e9999` on binary64) falls through to String exactly as an
-  out-of-range Integer does under rule 13 — so a 0.7.0-conformant
-  parser MUST NOT ever produce a non-finite Float, making § 5.9.0's
-  "no literal grammar of § 3.6 produces a non-finite Float" claim
-  actually true. New fixtures `float/positive_overflow_to_string`,
-  `float/negative_overflow_to_string`, and
-  `float/underflow_to_zero` lock the boundary in; the last
-  documents that underflow to `0.0` (finite) is an ordinary Float,
-  not a String-fallback case.
+  requirement follows the same domain rule.** Every ordinary,
+  non-exempt field MUST match its JSON oracle in the tested
+  implementation's declared domain; an ordinary numeric field is not
+  required to hold a universal minimum-domain Value. A listed boundary
+  leaf MAY differ only when the source Ktav literal crosses that leaf's
+  named boundary in the tested domain and the implementation supports a
+  wider domain along that boundary class. Every other field MUST match
+  normally, and its contribution MUST remain byte-exactly equal to the
+  fixture's `canonical.ktav`. This corrects the former § 8.2 reading
+  under which an arbitrary-precision implementation failed on
+  `i64_overflow_to_string` merely because it retained the body as an
+  Integer and wrote it bare.
 - **§ 5.9.10 — the canonical writer now prefers quoted form when
   escaping a structural byte.** The writer prefers a quoted key
   segment (delimiter `"`) over bare-with-escape whenever escaping a
@@ -379,9 +384,10 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   the minimum binary64 representation MUST use IEEE 754
   `roundTiesToEven`, and the minimum representation MUST support
   subnormal (gradual-underflow) values. Seven new fixtures cover the
-  floor: `max_finite`, `min_positive_normal`, `min_positive_subnormal`
-  (unambiguous at any supported domain), plus four boundary-dependent
-  fixtures added to the new manifest —
+  floor: `max_finite` and `min_positive_normal` (unambiguous at any
+  supported domain), while `min_positive_subnormal` is a
+  `float_precision` boundary-dependent fixture alongside four more
+  boundary-dependent fixtures added to the new manifest —
   `just_above_max_finite_to_string` (finite in a wider decimal domain,
   overflows to String at binary64), `negative_underflow_to_negative_zero`
   and `half_min_subnormal_underflow_to_zero` (both finite in a wider

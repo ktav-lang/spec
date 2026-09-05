@@ -56,11 +56,11 @@
   也是破坏性的 —— 它此前在 stripped 块的每一行都保留尾部空白。
 - **§ 5.9.0(新增)—— 可表示的 Value 现在被规范性定义**,划定了
   规范 writer 保证所作用的域。裸标量文档根、名为空的 Object 对、
-  非有限 Float(NaN / ±Infinity),以及任意深度包含不可表示
-  Value 的任何复合值均不可表示,writer-conforming 实现 MUST 以
-  错误拒绝它们,不输出任何部分内容。此前 § 5.9 未定义这些仅经
-  编程方式出现的情形。Rust 参考核心已拒绝标量根与含 `CR` 的
-  String;弥补其余缺口另行跟踪。
+  非有限 Float(NaN / ±Infinity)、含 `CR` 字节或 stripped 形式碰撞
+  的 String,以及任意深度包含不可表示 Value 的任何复合值均不可表示,
+  writer-conforming 实现 MUST 以错误拒绝它们,不输出任何部分内容。
+  此前 § 5.9 未定义这些仅经编程方式出现的情形。Rust 参考核心已
+  拒绝标量根与含 `CR` 的 String;弥补其余缺口另行跟踪。
 - **键中的前导引号字符现在会开启 `<quoted-segment>`
   (§ 5.3.3、§ 10.7)。** 某行的首个内容 —— 经 § 4 的键段修剪后 ——
   以 `"`、`'` 或 `` ` `` 开头时,不再必然按引入 quoted keys 之前的
@@ -77,6 +77,16 @@
   中可以先解码再定型为 Float,在 0.7.0 中则是 String。该规则适用于
   每一个已识别的 escape,包括 `\.` / `\:` 以及三个引号 escape（三者）
   `\"` / `\'` / `` \` ``,即使解码出的字节不具有结构性作用。
+- **§ 5(Float)/ § 5.2 规则 14 —— Float 域现在有规范性下限与
+  溢出回退。** 实现 MUST 至少支持 IEEE 754 binary64 的范围与
+  精度(MAY 支持更宽表示),且在实现 Float 域内解析值非有限的
+  浮点字面量(如 binary64 上的 `1e9999`)回退为 String —— 与
+  规则 13 中超出范围的 Integer 完全一致 —— 因此 0.7.0 兼容解析器
+  MUST NOT 永远产生非有限 Float,这使 § 5.9.0「§ 3.6 的任何
+  字面量语法都不产生非有限 Float」的断言真正成立。新 fixture
+  `float/positive_overflow_to_string`、`float/negative_overflow_to_string`
+  与 `float/underflow_to_zero` 将边界锁定;最后一个 fixture 记录
+  下溢到 `0.0`(有限)是普通 Float,而非回退为 String 的情形。
 
 ### 变更
 
@@ -98,11 +108,11 @@
   作为字面键内容,与 § 3.3 的扩展一致。非破坏性 —— 仅接受此前被
   拒绝为 `InvalidKey` 的文档。
 - **§ 5.9 / § 8.3** 现在仅对**可表示**(representable)的 Value
-  定义 round-trip 保证(§ 5.9.7 中的一小类 String 值 —— `CR`
-  字节,或 stripped 多行形式的若干病态碰撞之一)。writer-conforming
-  实现 MUST 以错误拒绝不可表示的 Value,而不是将其序列化;此前
-  § 5.9.7 单独允许为同一类 Value 输出任意或 lossy 编码,这与
-  § 5.9 的字节确定性要求不兼容。
+  定义 round-trip 保证。含 `CR` 字节或 stripped 多行形式的某种
+  病态碰撞的 String,已由 § 5.9.7 明确排除在可表示域之外,属于
+  不可表示 Value。writer-conforming 实现 MUST 以错误拒绝不可
+  表示的 Value,而不是将其序列化;此前 § 5.9.7 单独允许为同一类
+  Value 输出任意或 lossy 编码,这与 § 5.9 的字节确定性要求不兼容。
 - **§ 5.9.6** —— 根 Array 的第一个项,若其裸形式本身会被 § 5.0.1
   规则 6 识别为 pair line(例如 `host: localhost`,或裸
   `a:`),现在 MUST 使用原始标记(`::`)形式。此前规范 writer 可能
@@ -115,33 +125,22 @@
   科学形式,符号保留(不同于 Integer 的 `-0` → `0`)。这与 Rust
   参考核心的既有行为一致;改变的只是规范文本。新 fixture
   `float/positive_zero` 与 `float/negative_zero` 将其锁定。
-- **§ 8.1(连同 § 5 的 Integer 定义)—— fixture 等价性定义在
-  最小必需数值域上**(i64 Integer、binary64 Float)。支持更宽域
-  的实现 MAY 恰好在 fixture 探测最小域边界之处偏离 fixture
-  oracle(如 `i64_overflow_to_string.json`),而不丧失
-  parser-conformance。此前 § 5 明确允许的任意精度实现会按原文本
-  在该 fixture 上不满足 § 8.1。
+- **§ 8.1(连同 § 5 的 Integer 定义)——普通 fixture 的数值等价性
+  在被测实现声明的 Integer 或 Float 域中解释,或转换到该域后比较,
+  而不是相对于一个普遍适用的最小域 Value。** 因此普通 Float token
+  (例如 `3.14`)不要求更宽的 decimal 实现伪造 binary64 的舍入值。
+  只有当源 Ktav 字面量在被测实现声明的域中解释后,因越过该叶指明的
+  边界而在值或 kind 上不同于最小域 oracle token 时,manifest 豁免才
+  适用。若没有这种差异,列出的叶 MUST 正常匹配;豁免绝不扩展到其他叶。
 - **§ 8.2(连同 § 5.9.5)—— writer-conforming 的逐字节 fixture
-  要求现在带有镜像 § 8.1 的数值域警告。** 恰在 § 8.1 所指名的
-  探测边界的 fixture 上,更宽域实现从 `name.ktav` 解析出的 Value
-  可能合法地不同于 fixture 的 `.json` oracle 所描述的最小域
-  Value,因此其输出 MAY 不同于该 fixture 固定的 `canonical.ktav`
-  —— 只要该输出对其真正持有的 Value 是正确的规范形式(§ 5.9)。
-  此前 § 5 明确允许的任意精度实现会按原文本在
-  `i64_overflow_to_string` 上不满足 § 8.2:它把体解析为 Integer
-  并会以裸形式规范写出(无 raw 标记),而 fixture 固定的
-  `canonical.ktav` 不允许这样。
-- **§ 5(Float)/ § 5.2 规则 14 —— Float 域现在有规范性下限与
-  溢出回退。** 实现 MUST 至少支持 IEEE 754 binary64 的范围与
-  精度(MAY 支持更宽表示),且在实现 Float 域内解析值非有限的
-  浮点字面量(如 binary64 上的 `1e9999`)回退为 String —— 与
-  规则 13 中超出范围的 Integer 完全一致 —— 因此 0.7.0 兼容解析器
-  MUST NOT 永远产生非有限 Float,这使 § 5.9.0「§ 3.6 的任何
-  字面量语法都不产生非有限 Float」的断言真正成立。新 fixture
-  `float/positive_overflow_to_string`、
-  `float/negative_overflow_to_string` 与
-  `float/underflow_to_zero` 将边界锁定;最后一个 fixture 记录
-  下溢到 `0.0`(有限)是普通 Float,而非回退为 String 的情形。
+  要求遵循同一数值域规则。** 每个普通且未豁免的字段 MUST 在被测
+  实现声明的域中与 JSON oracle 匹配;普通数值字段不要求持有一个普遍
+  适用的最小域 Value。列出的边界叶 MAY 不同,仅当源 Ktav 字面量在
+  被测域中越过该叶命名的边界,且实现沿该边界类支持更宽域时才可如此。
+  其他每个字段 MUST 正常匹配,其贡献 MUST 与 fixture 的
+  `canonical.ktav` 保持字节精确相同。这修正了 § 8.2 的旧读法:该读法
+  会仅因任意精度实现将 `i64_overflow_to_string` 的 body 保留为
+  Integer 并以裸形式写出,就判定其不合规。
 - **§ 5.9.10 —— 规范 writer 现在在需要转义结构字节时优先选择
   quoted 形式。** 每当需要转义结构字节(`.` `:` `,` `{` `}` `[`
   `]`)、`(` / `)`、`##` 前缀或边界空白时,writer 现在优先选择
@@ -297,9 +296,10 @@
 - **§ 5 —— binary64 下限现在规定转换语义,而不仅是范围与精度。**
   把 decimal 的 Float 字面量转换为最小 binary64 表示 MUST 采用
   IEEE 754 的 `roundTiesToEven`,且最小表示 MUST 支持次正规
-  (gradual-underflow)值。七个新 fixture 覆盖此下限:`max_finite`、
-  `min_positive_normal`、`min_positive_subnormal`(在任何支持的域
-  下都无歧义),以及加入新清单的四个依赖边界的 fixture ——
+  (gradual-underflow)值。七个新 fixture 覆盖此下限:`max_finite` 与
+  `min_positive_normal`(在任何支持的域下都无歧义),而
+  `min_positive_subnormal` 也是依赖边界的(`float_precision`)
+  fixture,以及加入新清单的另外四个依赖边界的 fixture ——
   `just_above_max_finite_to_string`(在更宽 decimal 域内有限,在
   binary64 上溢为 String)、`negative_underflow_to_negative_zero`
   与 `half_min_subnormal_underflow_to_zero`(二者在更宽域内有限,

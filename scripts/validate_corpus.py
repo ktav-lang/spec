@@ -26,9 +26,10 @@ Purpose:
          --require-boundary is passed). With --boundary-manifest-lock, the
          entry set must also match a separate lock file exactly, catching a
          silently deleted entry that leaves the rest individually well-formed.
-      6. With --corpus-inventory-lock, tests/ has the exact 0.7 top-level
-         layout and every corpus file path and raw-byte SHA-256 digest matches
-         the versioned lock. Semantic and schema checks still run independently.
+      6. With --corpus-inventory-lock, tests/ has the exact top-level layout
+         selected by the lock version and every corpus file path and raw-byte
+         SHA-256 digest matches the lock. Semantic and schema checks still run
+         independently.
 
 Usage:
     python scripts/validate_corpus.py <tests_dir> [--require-unrepresentable]
@@ -114,10 +115,22 @@ KTAV_WHITESPACE = frozenset(
     )
 )
 CORPUS_INVENTORY_FIELDS = frozenset({"version", "files"})
-LOCKED_CORPUS_DIRS = frozenset({
-    "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
+CORPUS_LAYOUT_PROFILES = {
+    "0.6.4": {
+        "directories": frozenset({"valid", "invalid"}),
+        "files": frozenset(),
+    },
+    "0.7.0": {
+        "directories": frozenset({
+            "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
+        }),
+        "files": frozenset({"boundary-fixtures.json"}),
+    },
+}
+IGNORED_CORPUS_TOP_LEVEL_NAMES = frozenset({
+    "docs_local", ".idea", ".vscode", ".DS_Store", "Thumbs.db", "desktop.ini",
 })
-LOCKED_CORPUS_FILES = frozenset({"boundary-fixtures.json"})
+IGNORED_CORPUS_TOP_LEVEL_SUFFIXES = (".iml", ".swp", ".swo", "~")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ARRAY_INDEX_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 DECIMAL_PART = r"[0-9](?:_?[0-9])*"
@@ -1333,23 +1346,32 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     return True
 
 
-def _check_locked_top_level(tests_dir, results):
+def _is_ignored_corpus_top_level(name):
+    return (name in IGNORED_CORPUS_TOP_LEVEL_NAMES
+            or name.endswith(IGNORED_CORPUS_TOP_LEVEL_SUFFIXES))
+
+
+def _check_locked_top_level(tests_dir, results, locked_dirs, locked_files):
     category = "corpus inventory lock"
-    expected = LOCKED_CORPUS_DIRS | LOCKED_CORPUS_FILES
+    expected = locked_dirs | locked_files
     try:
-        entries = {entry.name: entry for entry in os.scandir(tests_dir)}
+        entries = {
+            entry.name: entry
+            for entry in os.scandir(tests_dir)
+            if not _is_ignored_corpus_top_level(entry.name)
+        }
     except OSError as e:
         results.fail(category, "%s: cannot inspect top level: %s" % (tests_dir, e))
         return
 
     for name in sorted(expected - set(entries)):
-        kind = "directory" if name in LOCKED_CORPUS_DIRS else "file"
+        kind = "directory" if name in locked_dirs else "file"
         results.fail(category, "missing top-level %s %r" % (kind, name))
     for name in sorted(set(entries) - expected):
         results.fail(category, "unexpected top-level entry %r" % name)
     for name in sorted(expected & set(entries)):
         entry = entries[name]
-        if name in LOCKED_CORPUS_DIRS:
+        if name in locked_dirs:
             valid = _is_regular_directory(entry.path)
             kind = "directory"
         else:
@@ -1370,10 +1392,10 @@ def _sha256_file(path):
             digest.update(chunk)
 
 
-def _corpus_file_hashes(tests_dir, results):
+def _corpus_file_hashes(tests_dir, results, locked_dirs, locked_files):
     category = "corpus inventory lock"
     hashes = {}
-    for dirname in sorted(LOCKED_CORPUS_DIRS):
+    for dirname in sorted(locked_dirs):
         directory = os.path.join(tests_dir, dirname)
         if not _is_regular_directory(directory):
             continue
@@ -1390,29 +1412,31 @@ def _corpus_file_hashes(tests_dir, results):
                 except OSError as e:
                     results.fail(category, "%s: unreadable while hashing: %s"
                                  % (rpath, e))
-    boundary_path = os.path.join(tests_dir, "boundary-fixtures.json")
-    if _is_regular_file(boundary_path):
+    for filename in sorted(locked_files):
+        path = os.path.join(tests_dir, filename)
+        if not _is_regular_file(path):
+            continue
         try:
-            hashes["boundary-fixtures.json"] = _sha256_file(boundary_path)
+            hashes[filename] = _sha256_file(path)
         except OSError as e:
-            results.fail(category, "boundary-fixtures.json: unreadable while "
-                         "hashing: %s" % e)
+            results.fail(category, "%s: unreadable while hashing: %s"
+                         % (filename, e))
     return hashes
 
 
-def _valid_locked_path(path):
-    if path == "boundary-fixtures.json":
-        return True
+def _valid_locked_path(path, locked_dirs, locked_files):
     if not isinstance(path, str) or "\\" in path:
         return False
     if _lone_surrogate(path) is not None or any(ord(char) < 0x20 for char in path):
         return False
+    if path in locked_files:
+        return True
     parts = path.split("/")
-    return (len(parts) >= 2 and parts[0] in LOCKED_CORPUS_DIRS
+    return (len(parts) >= 2 and parts[0] in locked_dirs
             and all(part not in ("", ".", "..") for part in parts))
 
 
-def _validate_hash_mapping(value, results, rpath):
+def _validate_hash_mapping(value, results, rpath, locked_dirs, locked_files):
     category = "corpus inventory lock"
     if not isinstance(value, dict):
         results.fail(category, "%s: 'files' must be an object mapping canonical "
@@ -1421,7 +1445,7 @@ def _validate_hash_mapping(value, results, rpath):
     valid = {}
     for path in sorted(value):
         digest = value[path]
-        if not _valid_locked_path(path):
+        if not _valid_locked_path(path, locked_dirs, locked_files):
             results.fail(category, "%s: invalid canonical corpus path %r"
                          % (rpath, path))
             continue
@@ -1465,11 +1489,23 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
     if extra:
         results.fail(category, "%s: unexpected field(s): %s"
                      % (lock_path, ", ".join(repr(field) for field in extra)))
-    if lock_data.get("version") != "0.7.0":
-        results.fail(category, "%s: 'version' must be '0.7.0'" % lock_path)
-    expected = _validate_hash_mapping(lock_data.get("files"), results, lock_path)
-    _check_locked_top_level(tests_dir, results)
-    actual = _corpus_file_hashes(tests_dir, results)
+    if "version" not in lock_data:
+        return
+    version = lock_data["version"]
+    profile = (CORPUS_LAYOUT_PROFILES.get(version)
+               if isinstance(version, str) else None)
+    if profile is None:
+        supported = ", ".join(repr(item) for item in sorted(CORPUS_LAYOUT_PROFILES))
+        results.fail(category, "%s: unsupported corpus inventory version %r "
+                     "(supported: %s)" % (lock_path, version, supported))
+        return
+    locked_dirs = profile["directories"]
+    locked_files = profile["files"]
+    expected = _validate_hash_mapping(
+        lock_data.get("files"), results, lock_path, locked_dirs, locked_files
+    )
+    _check_locked_top_level(tests_dir, results, locked_dirs, locked_files)
+    actual = _corpus_file_hashes(tests_dir, results, locked_dirs, locked_files)
     for path in sorted(set(expected) - set(actual)):
         results.fail(category, "%s: missing from corpus" % path)
     for path in sorted(set(actual) - set(expected)):

@@ -231,7 +231,7 @@ import sys
 
 HEADING_RE = re.compile(r'^#{1,6}\s+\S')
 NUMBERED_HEADING_RE = re.compile(r'^#{1,6}\s+(\d+(?:\.\d+)*)\b')
-FENCE_RE = re.compile(r'^\s*```')
+FENCE_RE = re.compile(r'^[ \t]*```')
 LIST_ITEM_RE = re.compile(r'^\s*(?:[-*]|\d+\.)\s+')
 TABLE_ROW_RE = re.compile(r'^\s*\|')
 # A BNF production's left-hand side, e.g. "<quoted-segment> ::= ..." (§ 4).
@@ -612,6 +612,12 @@ DATE_LINE_RE = re.compile(
 # stray digit — plain '\d{4}-\d{2}-\d{2}' would substring-match it.
 ISO_DATE_RE = re.compile(r'(?<!\d)\d{4}-\d{2}-\d{2}(?!\d)')
 
+# Markdown/source files recognize only the three conventional line-ending
+# sequences.  str.splitlines() also treats several Unicode separators and
+# control characters as line boundaries, which can change the parsed fence
+# and heading structure of an otherwise valid source file.
+SOURCE_LINE_END_RE = re.compile(r"\r\n|\r|\n")
+
 # Order matters for readability only: MUST NOT / SHOULD NOT use their own
 # literal patterns, while MUST / SHOULD use a negative lookahead so the
 # "MUST" inside "MUST NOT" (and "SHOULD" inside "SHOULD NOT") is not
@@ -625,11 +631,29 @@ KEYWORD_PATTERNS = [
 ]
 
 
+def split_source_lines(text):
+    """Split source text on CRLF, LF, and CR only.
+
+    Keep the same empty-file and final-terminator behavior as
+    ``str.splitlines()``, without treating Unicode line/paragraph separators
+    or vertical/tab form-feed controls as line boundaries.
+    """
+    if not text:
+        return []
+    lines = SOURCE_LINE_END_RE.split(text)
+    if text.endswith(("\r", "\n")):
+        lines.pop()
+    return lines
+
+
 def read_lines(path):
-    """Read a file as UTF-8 text, split into lines (no line endings). Raises
-    OSError/UnicodeDecodeError on failure; caller turns that into exit 2."""
-    with open(path, "r", encoding="utf-8") as f:
-        return f.read().splitlines()
+    """Read a UTF-8 source file and split it into lines.
+
+    OSError/UnicodeDecodeError are raised for the caller to turn into exit 2.
+    ``newline=""`` preserves the source terminators for split_source_lines.
+    """
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        return split_source_lines(f.read())
 
 
 def section_sort_key(number):

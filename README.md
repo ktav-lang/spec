@@ -437,12 +437,26 @@ having no fixtures for it at all.
   allowed. These are intentionally pairs, with no other files and no
   canonical-output file.
 
-The versioned `scripts/locks/corpus-inventory.0.7.lock.json` maps every
-corpus-relative file path in `valid/`, `invalid/`, `unrepresentable/`, and
-`parseable-unrepresentable/`, plus `boundary-fixtures.json`, to its SHA-256
-digest. CI passes it to `validate_corpus.py --corpus-inventory-lock`, which
-rejects additions, deletions, content drift, and unknown top-level entries;
-the lock supplements rather than replaces semantic and schema validation.
+The versioned `scripts/locks/corpus-inventory.0.6.lock.json` maps every
+corpus-relative file path in the stable 0.6.4 `valid/` and `invalid/`
+directories to its SHA-256 digest. The versioned
+`scripts/locks/corpus-inventory.0.7.lock.json` maps every 0.7 path in
+`valid/`, `invalid/`, `unrepresentable/`, and
+`parseable-unrepresentable/`, plus `boundary-fixtures.json`. CI passes the
+matching lock to `validate_corpus.py --corpus-inventory-lock`:
+
+```sh
+python scripts/validate_corpus.py versions/0.6/tests \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
+python scripts/validate_corpus.py versions/0.7/tests \
+  --require-unrepresentable --require-boundary \
+  --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.7.lock.json
+```
+
+Each lock rejects additions, deletions, content drift, and unknown
+top-level entries; it supplements rather than replaces semantic and schema
+validation.
 
 Passing every test in every category present in that version's suite
 is a necessary release gate, but not by itself sufficient proof of
@@ -500,7 +514,9 @@ pin to a version directory by path.
 │   ├── test_build_spec.mjs                (0.7+) adversarial unit tests for build_spec.mjs
 │   ├── archive/                           (0.7+) archived one-time content-unit bootstrap
 │   │   └── extract_content_units.py         see content/README.md; refuses to overwrite content/
-│   └── locks/                             versioned boundary, corpus, and section-inventory lock files
+│   └── locks/                             versioned corpus, boundary, and section-inventory lock files
+│       ├── corpus-inventory.0.6.lock.json  (0.6.4 valid/ and invalid/ paths + SHA-256)
+│       └── corpus-inventory.0.7.lock.json  (0.7 paths + SHA-256)
 ├── .github/workflows/     CI: content/ byte-identity check (0.7+), corpus validation,
 │                          translation-parity check, and all three unit test suites
 └── versions/

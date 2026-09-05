@@ -401,11 +401,24 @@ fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
   `LeadingWhitespaceCollision`;这些是 pair 而非 triple,没有其他文件,
   也没有 canonical-output 文件。
 
-Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 将 `valid/`、
-`invalid/`、`unrepresentable/`、`parseable-unrepresentable/` 中的每个
-corpus-relative 文件路径及 `boundary-fixtures.json` 映射到其 SHA-256。
-CI 将其传给 `validate_corpus.py --corpus-inventory-lock`,后者拒绝新增、
-删除、内容漂移与未知顶层条目;lock 补充而不取代 semantic/schema 检查。
+Versioned `scripts/locks/corpus-inventory.0.6.lock.json` 将稳定版 0.6.4
+`valid/` 与 `invalid/` 中的每个 corpus-relative 文件路径映射到其
+SHA-256。Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 将 0.7
+`valid/`、`invalid/`、`unrepresentable/`、`parseable-unrepresentable/` 中的
+每个路径及 `boundary-fixtures.json` 映射到其 SHA-256。CI 将对应的 lock
+传给 `validate_corpus.py --corpus-inventory-lock`：
+
+```sh
+python scripts/validate_corpus.py versions/0.6/tests \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
+python scripts/validate_corpus.py versions/0.7/tests \
+  --require-unrepresentable --require-boundary \
+  --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.7.lock.json
+```
+
+每个 lock 都会拒绝新增、删除、内容漂移与未知顶层条目;lock 补充而不取代
+semantic/schema 检查。
 
 通过该版本测试套件中每个存在类别的全部测试,是通过发布的必要门槛,
 但本身并不足以证明合规:`boundary-fixtures.json`(0.7 起)告诉共享
@@ -457,7 +470,9 @@ submodule 引入(或直接拷贝)。
 │   ├── test_build_spec.mjs                (0.7+) build_spec.mjs 的对抗性单元测试(负面路径)
 │   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
-│   └── locks/                             boundary、完整语料与 section inventory 的 versioned 锁文件
+│   └── locks/                             语料库、boundary 与 section inventory 的 versioned 锁文件
+│       ├── corpus-inventory.0.6.lock.json  (0.6.4: valid/ 与 invalid/ 路径 + SHA-256)
+│       └── corpus-inventory.0.7.lock.json  (0.7: 语料库路径 + SHA-256)
 ├── .github/workflows/     CI:content/ 逐字节一致性检查(0.7 起)、语料库校验、
 │                          翻译对等性检查,以及全部三套单元测试
 └── versions/

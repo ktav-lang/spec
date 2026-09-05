@@ -451,12 +451,25 @@ timeout: null
   `TrailingWhitespaceCollision` и `LeadingWhitespaceCollision`, без иных
   файлов и без canonical-output.
 
-Versioned `scripts/locks/corpus-inventory.0.7.lock.json` отображает каждый
-относительный путь corpus-файла в `valid/`, `invalid/`, `unrepresentable/`
-и `parseable-unrepresentable/`, а также `boundary-fixtures.json`, в его
-SHA-256. CI передаёт lock в `validate_corpus.py --corpus-inventory-lock`,
-который отвергает добавления, удаления, изменение содержимого и неизвестные
-верхнеуровневые элементы; lock дополняет, а не заменяет semantic/schema checks.
+Versioned `scripts/locks/corpus-inventory.0.6.lock.json` отображает каждый
+относительный путь файла стабильного корпуса 0.6.4 в `valid/` и `invalid/`
+на его SHA-256. Versioned `scripts/locks/corpus-inventory.0.7.lock.json`
+отображает каждый путь 0.7 в `valid/`, `invalid/`, `unrepresentable/` и
+`parseable-unrepresentable/`, а также `boundary-fixtures.json`. CI передаёт
+соответствующий lock в `validate_corpus.py --corpus-inventory-lock`:
+
+```sh
+python scripts/validate_corpus.py versions/0.6/tests \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
+python scripts/validate_corpus.py versions/0.7/tests \
+  --require-unrepresentable --require-boundary \
+  --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.7.lock.json
+```
+
+Каждый lock отвергает добавления, удаления, изменение содержимого и
+неизвестные верхнеуровневые элементы; он дополняет, а не заменяет
+semantic/schema checks.
 
 Прохождение каждого теста из каждой категории, присутствующей в
 наборе этой версии, — необходимое условие выпуска (release gate), но
@@ -517,7 +530,9 @@ SHA-256. CI передаёт lock в `validate_corpus.py --corpus-inventory-lock
 │   ├── test_build_spec.mjs                (0.7+) модульные тесты для build_spec.mjs (adversarial/негативные сценарии)
 │   ├── archive/                           (0.7+) архивированный одноразовый бутстрап юнитов контента
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
-│   └── locks/                             versioned lock-файлы boundary, корпуса и inventory секций
+│   └── locks/                             versioned lock-файлы корпуса, boundary и inventory секций
+│       ├── corpus-inventory.0.6.lock.json  (0.6.4: пути valid/ и invalid/ + SHA-256)
+│       └── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256)
 ├── .github/workflows/     CI: проверка байт-идентичности content/ (0.7+), валидация корпуса,
 │                          проверка паритета переводов и все три набора модульных тестов
 └── versions/
