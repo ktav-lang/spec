@@ -1,10 +1,18 @@
 export default {
   en: `
-A pair separator is selected by the kind/content of its value:
+A pair separator is selected by the kind/content of its value. The writer
+MUST test the following branches in order; exactly one branch applies:
+
+- **Non-String scalar pair:** emit the key, the plain \`: \` separator with
+  exactly one ASCII U+0020 SPACE, and the canonical scalar body. Null emits
+  \`null\`; Bool emits \`true\` or \`false\`, using the exact § 5.2 keyword
+  spellings; Integer and Float use the canonical bodies of § 5.9.8. This
+  branch never uses the raw marker \`::\`.
 
 - **\`key:\` (no body after the colon):** when the value is the
   empty String \`""\`.
-- **\`key: <bytes>\` (plain separator + one space + scalar body):**
+- **\`key: <bytes>\` (plain separator + exactly one ASCII U+0020 SPACE +
+  String body):**
   when the value is a non-empty bare String whose body (a)
   contains no \`LF\` and no \`CR\` byte, (b) has no leading or
   trailing whitespace (§ 3.3 — the fixed 25-code-point set, not
@@ -32,7 +40,7 @@ A pair separator is selected by the kind/content of its value:
   same-kind guarantee, § 5.2, is about domain-*consistent*
   classification; the canonical writer of a String must not
   depend on which domain happens to be doing the writing).
-- **\`key:: <bytes>\` (raw marker):** when the bytes are a non-empty
+- **\`key:: <bytes>\` (raw-marker String pair):** when the bytes are a non-empty
   one-line String that would otherwise be reinterpreted by § 5.2
   if emitted with plain \`:\` — either as matching the integer or
   float literal grammar of § 3.6 (regardless of whether the value
@@ -51,11 +59,18 @@ A pair separator is selected by the kind/content of its value:
 
 `,
   ru: `
-Разделитель пары выбирается по типу/содержимому значения:
+Разделитель пары выбирается по типу/содержимому значения. Writer MUST
+проверять следующие ветви по порядку; применяется ровно одна ветвь:
+
+- **Пара с не-String скаляром:** вывести имя ключа, обычный разделитель
+  \`: \` с ровно одним ASCII-пробелом U+0020 и каноническое тело скаляра.
+  Null выводится как \`null\`; Bool — как \`true\` или \`false\`, с точным
+  написанием ключевых слов § 5.2; Integer и Float используют канонические
+  тела § 5.9.8. Эта ветвь никогда не использует raw-маркер \`::\`.
 
 - **\`key:\` (без тела):** когда значение — пустая String \`""\`.
-- **\`key: <bytes>\` (обычный разделитель + один пробел + тело
-  скаляра):** когда значение — непустая обычная String, тело
+- **\`key: <bytes>\` (обычный разделитель + ровно один ASCII-пробел U+0020 + тело
+  String):** когда значение — непустая обычная String, тело
   которой (a) не содержит \`LF\` и не содержит байта \`CR\`, (b) не
   имеет ведущих или хвостовых пробелов (§ 3.3 — фиксированный
   набор из 25 кодовых точек, не только ASCII), (c) не содержит
@@ -81,7 +96,7 @@ A pair separator is selected by the kind/content of its value:
   молча (гарантия одинакового kind из § 5.2 — про
   домен-*согласованную* классификацию; каноническая форма String
   не должна зависеть от того, какой именно домен её пишет).
-- **\`key:: <bytes>\` (raw-маркер):** когда байты — непустая
+- **\`key:: <bytes>\` (raw-маркер String-пары):** когда байты — непустая
   однострочная String, которая иначе была бы переинтерпретирована
   по § 5.2 при выводе с обычным \`:\` — либо как совпадающая с
   грамматикой integer- или float-литерала § 3.6 (независимо от
@@ -100,10 +115,16 @@ A pair separator is selected by the kind/content of its value:
 
 `,
   zh: `
-对分隔符由值的类型/内容选择:
+对分隔符由值的类型/内容选择。Writer MUST 按以下顺序检查各分支;
+恰好适用一个分支:
+
+- **非 String 标量对:** 输出键、普通 \`: \` 分隔符、恰好一个 ASCII
+  U+0020 空格以及规范标量体。Null 输出为 \`null\`; Bool 输出为
+  \`true\` 或 \`false\`,使用 § 5.2 的精确关键词拼写; Integer 与 Float
+  使用 § 5.9.8 的规范体。此分支绝不使用原始标记 \`::\`。
 
 - **\`key:\`(冒号后无体)** 当值为空 String \`""\`。
-- **\`key: <bytes>\`(常规 + 一个空格 + 标量体)** 当值是非空 String,
+- **\`key: <bytes>\`(常规 + 恰好一个 ASCII U+0020 空格 + String 体)** 当值是非空 String,
   其体 (a) 不含 \`LF\`,也不含 \`CR\` 字节,(b) 无前后空白(§ 3.3
   —— 固定的 25 码点集合,不仅是 ASCII),(c) 不含 ASCII 控制
   字节(0x00–0x1F 除 0x09 \`TAB\`),(d) 不匹配 § 3.6 的 integer
@@ -121,7 +142,7 @@ A pair separator is selected by the kind/content of its value:
   仍然需要下面的原始标记,正是为了让持有不同数值域的读者不会
   悄悄地重新分类它(§ 5.2 自身的同 kind 保证针对的是域*内部*
   一致的分类;String 的规范形式不应取决于写出它的究竟是哪个域)。
-- **\`key:: <bytes>\`(原始标记)** 当字节是非空单行 String,若以
+- **\`key:: <bytes>\`(原始标记 String 对)** 当字节是非空单行 String,若以
   普通 \`:\` 输出会被 § 5.2 重解释 —— 或作为匹配 § 3.6 integer /
   float 字面量语法(无论其值是否落在 writer 自身的数值域内),
   或恰好等于 \`null\` /

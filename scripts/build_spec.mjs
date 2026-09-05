@@ -294,25 +294,33 @@ function advanceColumn(column, ch) {
   return column + 1;
 }
 
-function leadingColumns(line, start = 0) {
+function columnAt(line, end) {
   let column = 0;
+  for (let pos = 0; pos < end; pos++) column = advanceColumn(column, line[pos]);
+  return column;
+}
+
+function leadingColumns(line, start = 0) {
+  const startColumn = columnAt(line, start);
+  let column = startColumn;
   let pos = start;
   while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t')) {
     column = advanceColumn(column, line[pos]);
     pos++;
   }
-  return { column, pos };
+  return { column: column - startColumn, pos };
 }
 
 function consumeIndent(line, start, columns) {
-  let column = 0;
+  const startColumn = columnAt(line, start);
+  let column = startColumn;
   let pos = start;
-  while (pos < line.length && column < columns &&
+  while (pos < line.length && column - startColumn < columns &&
          (line[pos] === ' ' || line[pos] === '\t')) {
     column = advanceColumn(column, line[pos]);
     pos++;
   }
-  return column >= columns ? pos : null;
+  return column - startColumn >= columns ? pos : null;
 }
 
 function consumeBlockquoteMarker(line, start) {
@@ -349,12 +357,13 @@ function consumeListPadding(line, list) {
     return { pos, indent: list.markerEnd - list.markerStart + 1, indentedCode: false };
   }
 
+  const markerEndColumn = columnAt(line, list.markerEnd);
   let whitespaceColumns = 0;
-  let scanColumn = list.markerEnd - list.markerStart;
+  let scanColumn = markerEndColumn;
   let scan = pos;
   while (scan < line.length && (line[scan] === ' ' || line[scan] === '\t')) {
     const nextColumn = advanceColumn(scanColumn, line[scan]);
-    whitespaceColumns = nextColumn - (list.markerEnd - list.markerStart);
+    whitespaceColumns = nextColumn - markerEndColumn;
     scanColumn = nextColumn;
     scan++;
   }
@@ -362,18 +371,38 @@ function consumeListPadding(line, list) {
   if (whitespaceColumns > 4) {
     // Five or more columns of padding consume exactly one whitespace
     // character, leaving the remainder as indented code.
-    const firstColumn = advanceColumn(list.markerEnd - list.markerStart, line[pos]);
+    const firstColumn = advanceColumn(markerEndColumn, line[pos]);
     return {
       pos: pos + 1,
-      indent: firstColumn,
+      indent: list.markerEnd - list.markerStart + firstColumn - markerEndColumn,
       indentedCode: true,
     };
   }
   return {
     pos: scan,
-    indent: scanColumn,
+    indent: list.markerEnd - list.markerStart + scanColumn - markerEndColumn,
     indentedCode: false,
   };
+}
+
+function isEmptyListMarker(line, list) {
+  return /^[ \t]*$/.test(line.slice(list.markerEnd));
+}
+
+// A block that cannot interrupt a paragraph may continue a list or quote
+// paragraph without repeating its container marker. Keep that container so a
+// later Setext underline is still associated with the active paragraph.
+function canContinueParagraph(line) {
+  if (/^[ \t]*$/.test(line) || parseAtxHeading(line) !== null ||
+      parseFenceOpener(line) !== null || isThematicBreak(line)) {
+    return false;
+  }
+  const list = parseListMarker(line, 0);
+  if (list !== null && !isEmptyListMarker(line, list) &&
+      (!list.ordered || list.number === '1')) {
+    return false;
+  }
+  return true;
 }
 
 // Normalize a line by repeatedly consuming blockquote and list containers.
@@ -416,10 +445,12 @@ function normalizeContainerLine(line, state) {
 
     const list = parseListMarker(line, pos);
     if (list === null) break;
-    // A paragraph in this container makes a single dash a Setext H2
-    // underline, even though it also parses as an empty list marker.
-    if (list.marker === '-' && state.paragraphContainer === container) break;
-    if (list.ordered && list.number !== '1' && state.paragraphContainer === container) break;
+    // Empty list markers cannot interrupt an active paragraph, allowing a
+    // bare dash to remain a Setext underline. "- content" is a real list
+    // item and must be normalized as one.
+    if (state.paragraphContainer !== null &&
+        (isEmptyListMarker(line, list) ||
+         (list.ordered && list.number !== '1'))) break;
 
     const markerIndent = leadingColumns(line, pos).column;
     const padding = consumeListPadding(line, list);
@@ -440,9 +471,14 @@ function normalizeContainerLine(line, state) {
     consumedContainer = true;
   }
 
+  const lazyContainer = !consumedContainer && state.paragraphContainer !== null &&
+    canContinueParagraph(line) ? state.paragraphContainer : null;
   if (/^[ \t]*$/.test(line) && frames.length > 0) {
     container = frames.at(-1).container;
     consumedContainer = true;
+  } else if (lazyContainer !== null) {
+    container = lazyContainer;
+    frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
   } else if (!consumedContainer) {
     frames = [];
   }
@@ -494,9 +530,12 @@ function findHeadings(body) {
         containerState.paragraphContainer = null;
         continue;
       }
-      // A list-contained fence may span completely unindented ASCII blank
-      // lines. Keep the active fence and its container frames intact.
-      if (/^[ \t]*$/.test(raw)) {
+      // A root fence and a list-only fence may span an unindented blank line.
+      // An unquoted blank ends every fence with a blockquote frame.
+      const listOnlyFence = fence.containerFrames.length > 0 &&
+        fence.containerFrames.every((frame) => frame.kind === 'list');
+      if (/^[ \t]*$/.test(raw) &&
+          (fence.containerFrames.length === 0 || listOnlyFence)) {
         paragraphLine = null;
         containerState.paragraphContainer = null;
         continue;
@@ -541,9 +580,17 @@ function findHeadings(body) {
       containerState.paragraphContainer = null;
       continue;
     }
-    paragraphLine = isSetextParagraphLine(line, normalized.isIndentedCode)
-      ? { raw: normalized.raw, container: normalized.container, line: index + 1 }
-      : null;
+    if (isSetextParagraphLine(line, normalized.isIndentedCode)) {
+      paragraphLine = { raw: normalized.raw, container: normalized.container, line: index + 1 };
+    } else if (paragraphLine !== null &&
+               paragraphLine.container === normalized.container &&
+               canContinueParagraph(raw)) {
+      // Indented code and other non-interrupting lines do not end the active
+      // paragraph. This also covers lazy continuation in list and quote
+      // containers, whose marker is absent from the raw line.
+    } else {
+      paragraphLine = null;
+    }
     containerState.paragraphContainer = paragraphLine === null ? null : normalized.container;
   }
   return headings;

@@ -269,6 +269,9 @@ test('a single dash uses Setext precedence over an empty list marker', async () 
     'Root paragraph\n-\n\n',
     '> Blockquote paragraph\n> -\n\n',
     '- List paragraph\n  -\n\n',
+    'Root paragraph\n+\n---\n\n',
+    'Root paragraph\n*\n---\n\n',
+    'Root paragraph\n1.\n---\n\n',
   ]) {
     const fx = baseFixtures();
     fx[1].bodies = [sameLanguageBodies([body])[0]];
@@ -278,6 +281,28 @@ test('a single dash uses Setext precedence over an empty list marker', async () 
       body
     );
   }
+});
+
+test('only an empty list marker gets Setext precedence over an active paragraph', async () => {
+  for (const body of [
+    'Root paragraph\n- content\n---\n\n',
+    'Root paragraph\n+ content\n---\n\n',
+    'Root paragraph\n* content\n---\n\n',
+    'Root paragraph\n1. content\n---\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx), body);
+  }
+
+  const realListHeading = baseFixtures();
+  realListHeading[1].bodies = [sameLanguageBodies([
+    'Root paragraph\n- ## real list heading\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(realListHeading),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
 });
 
 test('a Unicode separator is content, not ASCII blank, before a Setext underline', async () => {
@@ -424,6 +449,30 @@ test('list-contained fences survive unindented blank lines and preserve frame st
   );
 });
 
+test('unquoted blank lines end quote fences but quoted blank lines do not', async () => {
+  const unquotedBlank = baseFixtures();
+  unquotedBlank[1].bodies = [sameLanguageBodies([
+    '> ```text\n' +
+    '> code\n' +
+    '\n' +
+    '# heading after the quote fence\n',
+  ])[0]];
+  await assert.rejects(
+    validate(unquotedBlank),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
+
+  const quotedBlank = baseFixtures();
+  quotedBlank[1].bodies = [sameLanguageBodies([
+    '> ```text\n' +
+    '> code\n' +
+    '> \n' +
+    '> # inside the quote fence\n' +
+    '> ```\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(quotedBlank));
+});
+
 test('list padding consumes one to four spaces but leaves five-plus as indented code', async () => {
   for (const spaces of [1, 2, 3, 4]) {
     const fx = baseFixtures();
@@ -452,6 +501,59 @@ test('list padding consumes one to four spaces but leaves five-plus as indented 
       body
     );
   }
+});
+
+test('list fence padding expands tabs from the absolute parent column', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [sameLanguageBodies([
+    '  -\t```text\n' +
+    '\t# inside the list fence\n' +
+    '\t```\n' +
+    '  - ## heading after the fence\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(fx),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
+
+  const noFalseRed = baseFixtures();
+  noFalseRed[1].bodies = [sameLanguageBodies([
+    '  -\t```text\n' +
+    '\t# inside the list fence\n' +
+    '\t```\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(noFalseRed));
+});
+
+test('active paragraphs survive non-interrupting indented and lazy continuation lines', async () => {
+  for (const body of [
+    'Root paragraph\n    indented continuation\n---\n\n',
+    '- List paragraph\nlazy continuation\n  ---\n\n',
+    '> Paragraph\nlazy continuation\n> ---\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains a Setext heading/,
+      body
+    );
+  }
+
+  const interrupted = baseFixtures();
+  interrupted[1].bodies = [sameLanguageBodies([
+    'Root paragraph\n- content\n---\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(interrupted));
+
+  const lazyOrdered = baseFixtures();
+  lazyOrdered[1].bodies = [sameLanguageBodies([
+    '> Paragraph\n2. lazy continuation\n> ---\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(lazyOrdered),
+    /unit "named-abstract": en: unit body contains a Setext heading/
+  );
 });
 
 test('ordered list interruption follows the CommonMark start-number rule', async () => {

@@ -67,6 +67,13 @@ PARSER_UNREPRESENTABLE_REASONS = frozenset({
 UNREPRESENTABLE_REASONS = (
     PROGRAMMATIC_UNREPRESENTABLE_REASONS | PARSER_UNREPRESENTABLE_REASONS
 )
+VALID_ORACLE_WITNESS_REASONS = (
+    "EmptyKeyName",
+    "CRByte",
+    "BothFormsRequired",
+    "TrailingWhitespaceCollision",
+    "LeadingWhitespaceCollision",
+)
 
 # Closed set of expected_error category names, per spec version.
 # Derived from versions/0.6/spec.md and versions/0.7/spec.md Sec 6 headings.
@@ -457,11 +464,22 @@ def check_valid(tests_dir, results, parsed):
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
             oracle = parsed.get(rpath, JSON_PARSE_FAILED)
             if oracle is not JSON_PARSE_FAILED:
-                errors, _witnesses, root_kind = _inspect_unrepresentable_value(
-                    oracle, sentinel_policy="ordinary"
+                witness_paths = {}
+                errors, witnesses, root_kind = _inspect_unrepresentable_value(
+                    oracle, sentinel_policy="ordinary",
+                    witness_paths=witness_paths,
                 )
                 for message in errors:
                     results.fail(category, "%s: %s" % (rpath, message))
+                for reason in VALID_ORACLE_WITNESS_REASONS:
+                    if not witnesses[reason]:
+                        continue
+                    for witness_path in witness_paths[reason]:
+                        results.fail(
+                            category,
+                            "%s: non-representable %s witness at Value path %s"
+                            % (rpath, reason, witness_path),
+                        )
                 if root_kind not in ("Object", "Array"):
                     results.fail(category, "%s: parser-produced Value oracle "
                                  "root must be Object or Array" % rpath)
@@ -720,7 +738,8 @@ def _oracle_path(path, key):
     return "%s/%s" % (path, escaped.replace("~", "~0").replace("/", "~1"))
 
 
-def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
+def _inspect_unrepresentable_value(value, sentinel_policy="allow",
+                                   witness_paths=None):
     """Validate a recursive Value oracle and collect writer-failure witnesses.
 
     sentinel_policy is "allow" for programmatic-only fixtures and "ordinary"
@@ -731,6 +750,11 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
     errors = []
     witnesses = {reason: False for reason in UNREPRESENTABLE_REASONS}
 
+    def record_witness(reason, path):
+        witnesses[reason] = True
+        if witness_paths is not None:
+            witness_paths.setdefault(reason, []).append(path)
+
     def walk(node, path):
         if isinstance(node, dict):
             for key in node:
@@ -739,11 +763,11 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                     errors.append("%s: Object key contains lone surrogate U+%04X"
                                   % (path, surrogate))
             if sentinel_policy == "allow" and _is_float_sentinel(node):
-                witnesses["NonFiniteFloat"] = True
+                record_witness("NonFiniteFloat", path)
                 return
             for key, child in node.items():
                 if key == "":
-                    witnesses["EmptyKeyName"] = True
+                    record_witness("EmptyKeyName", _oracle_path(path, key))
                 walk(child, _oracle_path(path, key))
         elif isinstance(node, list):
             for index, child in enumerate(node):
@@ -754,11 +778,14 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                 errors.append("%s: String contains lone surrogate U+%04X"
                               % (path, surrogate))
             if "\r" in node:
-                witnesses["CRByte"] = True
+                record_witness("CRByte", path)
             both, trailing, leading = _multiline_collision_witness(node)
-            witnesses["BothFormsRequired"] |= both
-            witnesses["TrailingWhitespaceCollision"] |= trailing
-            witnesses["LeadingWhitespaceCollision"] |= leading
+            if both:
+                record_witness("BothFormsRequired", path)
+            if trailing:
+                record_witness("TrailingWhitespaceCollision", path)
+            if leading:
+                record_witness("LeadingWhitespaceCollision", path)
         elif isinstance(node, float) and not math.isfinite(node):
             errors.append("%s: ordinary JSON number must be finite" % path)
         elif (isinstance(node, int) and not isinstance(node, bool)

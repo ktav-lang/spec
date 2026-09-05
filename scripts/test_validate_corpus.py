@@ -196,6 +196,53 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("boundary-fixtures.json: root must be a JSON object", out)
 
+    def test_valid_oracles_reject_nonrepresentable_witnesses_with_value_paths(self):
+        tests = self.build_minimal()
+        cases = {
+            "empty_key": ({"nested": [{"": "v"}]},
+                          "EmptyKeyName", "/value/nested/0/"),
+            "cr_byte": ({"nested": [{"s": "a\rb"}]},
+                         "CRByte", "/value/nested/0/s"),
+            "both_forms": ({"nested": [{"s": "))\n)"}]},
+                            "BothFormsRequired", "/value/nested/0/s"),
+            "trailing_whitespace": ({"nested": [{"s": "))\nx "}]},
+                                      "TrailingWhitespaceCollision",
+                                      "/value/nested/0/s"),
+            "leading_whitespace": ({"nested": [{"s": " ))\n x"}]},
+                                     "LeadingWhitespaceCollision",
+                                     "/value/nested/0/s"),
+        }
+        for name, (value, reason, value_path) in cases.items():
+            base = "tests/valid/witnesses/%s" % name
+            self.write(base + ".ktav", "fixture: value\n")
+            self.write(base + ".json", json.dumps(value))
+            self.write(base + ".canonical.ktav", "fixture: value\n")
+
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        for name, (_value, reason, value_path) in cases.items():
+            self.assertIn(
+                "valid/witnesses/%s.json: non-representable %s witness at "
+                "Value path %s" % (name, reason, value_path),
+                out,
+            )
+
+    def test_valid_oracles_accept_ordinary_leading_and_trailing_multiline_strings(
+            self):
+        tests = self.build_minimal()
+        cases = {
+            "leading": {"text": "  first\n second"},
+            "trailing": {"text": "first \nsecond"},
+        }
+        for name, value in cases.items():
+            base = "tests/valid/multiline/%s" % name
+            self.write(base + ".ktav", "fixture: value\n")
+            self.write(base + ".json", json.dumps(value))
+            self.write(base + ".canonical.ktav", "fixture: value\n")
+
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
     def test_integer_boundary_accepts_leading_zero_decimal_and_rejects_uppercase_prefix(
             self):
         tests = self.build_minimal()

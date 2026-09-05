@@ -1,6 +1,15 @@
 export default {
   en: `
-- **Bare scalar item:** \`<bytes>\` on its own line at the current
+An array-item form is selected by the kind/content of its value. The writer
+MUST test the following branches in order; exactly one branch applies:
+
+- **Bare non-String scalar item:** emit the canonical scalar body on its own
+  line at the current indent, with no raw marker. Null emits \`null\`; Bool
+  emits \`true\` or \`false\`, using the exact § 5.2 keyword spellings;
+  Integer and Float use the canonical bodies of § 5.9.8. This branch is
+  selected before every String and compound branch below and is not subject
+  to the first-item Array-root safeguards of the bare String branch.
+- **Bare String item:** \`<bytes>\` on its own line at the current
   indent — when the body satisfies the same conditions as the
   \`key: <bytes>\` form of § 5.9.5 (including: does not start with
   \`{\` or \`[\`; is not exactly \`(\` or \`((\`), and — because an item
@@ -43,7 +52,7 @@ export default {
   other item position is dispatched directly as an array-item line
   regardless of its shape (§ 5.1 rules 7–8), so neither exclusion
   applies there.
-- **Raw-marker item:** \`:: <bytes>\` — after \`::\`, \`<sep-end>\` consumes
+- **Raw-marker String item:** \`:: <bytes>\` — after \`::\`, \`<sep-end>\` consumes
   the maximal contiguous run of line-bounded whitespace before the body;
   thus \`::  x\` has body \`x\`, not \` x\`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
@@ -82,7 +91,17 @@ export default {
 
 `,
   ru: `
-- **Голый скалярный элемент:** \`<bytes>\` на своей строке на
+Форма элемента массива выбирается по типу/содержимому значения. Writer MUST
+проверять следующие ветви по порядку; применяется ровно одна ветвь:
+
+- **Голый не-String скалярный элемент:** вывести каноническое тело
+  скаляра на своей строке на текущем отступе, без raw-маркера. Null
+  выводится как \`null\`; Bool — как \`true\` или \`false\`, с точным
+  написанием ключевых слов § 5.2; Integer и Float используют канонические
+  тела § 5.9.8. Эта ветвь проверяется перед всеми ветвями String и
+  составных значений ниже и не подпадает под safeguards для первого
+  элемента Array-корня, относящиеся к голой String-ветви.
+- **Голый String-элемент:** \`<bytes>\` на своей строке на
   текущем отступе — когда тело удовлетворяет тем же условиям,
   что и форма \`key: <bytes>\` § 5.9.5 (включая: не начинается с
   \`{\` или \`[\`; не равно в точности \`(\` или \`((\`), и — поскольку
@@ -128,7 +147,7 @@ export default {
   диспетчеризуется напрямую как строка-элемент массива независимо
   от своей формы (§ 5.1 правила 7–8), так что ни одно из этих
   исключений там не применяется.
-- **Raw-маркерный элемент:** \`:: <bytes>\` — после \`::\` \`<sep-end>\`
+- **Raw-маркерный String-элемент:** \`:: <bytes>\` — после \`::\` \`<sep-end>\`
   поглощает максимальную непрерывную последовательность ограниченных
   строкой пробельных кодовых точек перед телом; поэтому \`::  x\` имеет
   тело \`x\`, а не \` x\`. Когда тело иначе было
@@ -163,7 +182,15 @@ export default {
 
 `,
   zh: `
-- **裸标量项:** \`<bytes>\` 在当前缩进的自身行上 —— 当体满足
+数组项形式由值的类型/内容选择。Writer MUST 按以下顺序检查各分支;
+恰好适用一个分支:
+
+- **裸非 String 标量项:** 在当前缩进的自身行上输出规范标量体,不使用
+  原始标记。Null 输出为 \`null\`; Bool 输出为 \`true\` 或 \`false\`,
+  使用 § 5.2 的精确关键词拼写; Integer 与 Float 使用 § 5.9.8 的规范体。
+  此分支在下面所有 String 与复合值分支之前选择,不受裸 String 分支的
+  Array 根首项 safeguards 约束。
+- **裸 String 项:** \`<bytes>\` 在当前缩进的自身行上 —— 当体满足
   § 5.9.5 中 \`key: <bytes>\` 形式的相同条件(包括:不以 \`{\` 或
   \`[\` 开头;不恰好等于 \`(\` 或 \`((\`),并且 —— 由于项行没有
   \`key: \` 前缀,整行即为体 —— 另外还不恰好等于 \`}\` 或 \`]\`,不以
@@ -194,7 +221,7 @@ export default {
 Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的项
 都直接按数组项行分发,与其形状无关(§ 5.1 规则 7–8),因此这些排除
 条件在那里都不适用。
-- **原始标记项:** \`:: <bytes>\` —— \`::\` 之后的 \`<sep-end>\` 吸收
+- **原始标记 String 项:** \`:: <bytes>\` —— \`::\` 之后的 \`<sep-end>\` 吸收
   体之前最大连续的行边界内空白序列;因此 \`::  x\` 的体是 \`x\`,而
   不是 \` x\`。当体本应被 § 5.2 重解释为数字、
   关键词、inline 复合值、多行字符串开启符(体恰好为 \`(\` 或

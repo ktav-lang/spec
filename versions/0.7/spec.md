@@ -1873,11 +1873,19 @@ for that one item instead (§ 5.9.6).
 
 #### 5.9.5 Pair separators
 
-A pair separator is selected by the kind/content of its value:
+A pair separator is selected by the kind/content of its value. The writer
+MUST test the following branches in order; exactly one branch applies:
+
+- **Non-String scalar pair:** emit the key, the plain `: ` separator with
+  exactly one ASCII U+0020 SPACE, and the canonical scalar body. Null emits
+  `null`; Bool emits `true` or `false`, using the exact § 5.2 keyword
+  spellings; Integer and Float use the canonical bodies of § 5.9.8. This
+  branch never uses the raw marker `::`.
 
 - **`key:` (no body after the colon):** when the value is the
   empty String `""`.
-- **`key: <bytes>` (plain separator + one space + scalar body):**
+- **`key: <bytes>` (plain separator + exactly one ASCII U+0020 SPACE +
+  String body):**
   when the value is a non-empty bare String whose body (a)
   contains no `LF` and no `CR` byte, (b) has no leading or
   trailing whitespace (§ 3.3 — the fixed 25-code-point set, not
@@ -1905,7 +1913,7 @@ A pair separator is selected by the kind/content of its value:
   same-kind guarantee, § 5.2, is about domain-*consistent*
   classification; the canonical writer of a String must not
   depend on which domain happens to be doing the writing).
-- **`key:: <bytes>` (raw marker):** when the bytes are a non-empty
+- **`key:: <bytes>` (raw-marker String pair):** when the bytes are a non-empty
   one-line String that would otherwise be reinterpreted by § 5.2
   if emitted with plain `:` — either as matching the integer or
   float literal grammar of § 3.6 (regardless of whether the value
@@ -1924,7 +1932,16 @@ A pair separator is selected by the kind/content of its value:
 
 #### 5.9.6 Array-item markers
 
-- **Bare scalar item:** `<bytes>` on its own line at the current
+An array-item form is selected by the kind/content of its value. The writer
+MUST test the following branches in order; exactly one branch applies:
+
+- **Bare non-String scalar item:** emit the canonical scalar body on its own
+  line at the current indent, with no raw marker. Null emits `null`; Bool
+  emits `true` or `false`, using the exact § 5.2 keyword spellings;
+  Integer and Float use the canonical bodies of § 5.9.8. This branch is
+  selected before every String and compound branch below and is not subject
+  to the first-item Array-root safeguards of the bare String branch.
+- **Bare String item:** `<bytes>` on its own line at the current
   indent — when the body satisfies the same conditions as the
   `key: <bytes>` form of § 5.9.5 (including: does not start with
   `{` or `[`; is not exactly `(` or `((`), and — because an item
@@ -1967,7 +1984,7 @@ A pair separator is selected by the kind/content of its value:
   other item position is dispatched directly as an array-item line
   regardless of its shape (§ 5.1 rules 7–8), so neither exclusion
   applies there.
-- **Raw-marker item:** `:: <bytes>` — after `::`, `<sep-end>` consumes
+- **Raw-marker String item:** `:: <bytes>` — after `::`, `<sep-end>` consumes
   the maximal contiguous run of line-bounded whitespace before the body;
   thus `::  x` has body `x`, not ` x`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
