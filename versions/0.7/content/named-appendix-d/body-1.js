@@ -4,7 +4,7 @@ The Rust reference implementation already trimmed the full
 25-code-point set at key-segment edges in every 0.6.x release. For Rust,
 and for implementations whose 0.6.x behaviour already matched that
 trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
-that rely on either of the two breaking forms below, previously
+that rely on any of the four breaking forms below, previously
 round-tripping documents retain their meaning under 0.7.0.
 
 An implementation that followed old § 4 literally and trimmed only its
@@ -14,7 +14,10 @@ whitespace that the old rule did not trim can now produce a different
 key/path or error under 0.7.0. Such documents require migration review;
 this is not merely an implementation-code update.
 
-Two breaking changes apply to every implementation, Rust included:
+Four breaking changes apply to every implementation, Rust included.
+The value/key-edge trimming clarification above remains separately
+scoped: it changes documents only for implementations that did not
+already implement the 0.6.x Rust-compatible trim.
 
 1. **\`(…)\` multi-line strings no longer preserve trailing whitespace
    (§ 3.3 — any of the 25 code points, not just space/tab) on each
@@ -44,12 +47,22 @@ Two breaking changes apply to every implementation, Rust included:
 
 Additionally, \`\\uXXXX\` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
+
+3. **A recognised escape in an inline scalar now forces String before
+   keyword or numeric classification (§ 3.7, § 5.2).** In 0.6.x, a
+   body such as \`1\\.0\` could decode and then classify as Float; in
+   0.7.0 it is String. This applies to every recognised escape, including
+   \`\\.\` and \`\\:\`, even when the decoded byte has no structural role.
+4. **A float literal that is non-finite in the declared Float domain now
+   falls back to String (§ 5.2 rule 14).** In 0.6.x, a literal such as
+   \`1e9999\` could become a non-finite Float on a binary64 backend; in
+   0.7.0 it is String. Finite underflow to signed zero remains Float.
 `,
   ru: `
 Эталонная Rust-реализация уже обрезала полный набор из 25 кодовых точек
 на границах сегмента ключа в каждом релизе 0.6.x. Для Rust и реализаций,
 чьё поведение 0.6.x уже совпадало с такой обрезкой, уточнение § 3.3 / § 4
-не является ломающим: кроме документов, зависящих от одной из двух
+не является ломающим: кроме документов, зависящих от одной из четырёх
 ломающих форм ниже, ранее проходившие round-trip документы сохраняют
 смысл в 0.7.0.
 
@@ -60,7 +73,10 @@ no existing document's meaning changes because of it.
 другой ключ/путь или ошибку. Такие документы требуют проверки миграции;
 это не просто обновление кода реализации.
 
-Два ломающих изменения касаются каждой реализации, включая Rust:
+Четыре ломающих изменения касаются каждой реализации, включая Rust.
+Уточнение trimming на границах значения/ключа, описанное выше, остаётся
+отдельно ограниченным: оно меняет документы только у реализаций, которые
+не имели уже совместимой с Rust 0.6.x обрезки.
 
 1. **Многострочные строки \`(…)\` больше не сохраняют замыкающие
    пробелы в каждой содержательной строке.** Если документ полагается
@@ -93,11 +109,23 @@ no existing document's meaning changes because of it.
 Кроме того, \`\\uXXXX\` — новая, чисто аддитивная escape-последовательность
 (§ 3.7.1) — смысл ни одного существующего документа из-за неё не
 меняется.
+
+3. **Распознанный escape в inline-скаляре теперь фиксирует String до
+   классификации ключевого слова или числа (§ 3.7, § 5.2).** В 0.6.x
+   тело вроде \`1\\.0\` могло декодироваться, а затем классифицироваться
+   как Float; в 0.7.0 это String. Правило относится к каждому
+   распознанному escape, включая \`\\.\` и \`\\:\`, даже когда
+   декодированный байт не имеет структурной роли.
+4. **Float-литерал, неконечный в заявленном домене Float, теперь
+   проваливается в String (§ 5.2, правило 14).** В 0.6.x литерал вроде
+   \`1e9999\` на binary64-бэкенде мог стать неконечным Float; в 0.7.0
+   это String. Конечный underflow в знаковый ноль по-прежнему остаётся
+   Float.
 `,
   zh: `
 Rust 参考实现在每个 0.6.x 版本中就已在键段边缘修剪完整的 25 码点
 集合。对 Rust 以及 0.6.x 行为已匹配这种修剪的实现而言,§ 3.3 / § 4
-澄清不是破坏性变更:除依赖下面两种破坏性形式之一的文档外,原先能
+澄清不是破坏性变更:除依赖下面四种破坏性形式之一的文档外,原先能
 round-trip 的文档在 0.7.0 中保持其含义。
 
 字面遵循旧 § 4、仅修剪其中指定 ASCII 空白的实现还有额外的**文档
@@ -105,7 +133,9 @@ round-trip 的文档在 0.7.0 中保持其含义。
 它在 0.7.0 中可能产生不同的键/路径或错误。这类文档需要迁移审查;
 这并非仅仅更新实现代码。
 
-有两项破坏性变更适用于包括 Rust 在内的每一个实现:
+有四项破坏性变更适用于包括 Rust 在内的每一个实现。
+上文所述的值/键边界 trim 澄清另有范围:只有尚未具备与 Rust 0.6.x
+兼容的 trim 的实现,其文档行为才会因此改变。
 
 1. **\`(…)\` 多行字符串不再保留每个内容行的尾部空白。** 若某文档依赖
    \`(…)\` 块内的尾部空白码点(§ 3.3 —— 25 个码点中的任意一个,
@@ -129,5 +159,14 @@ round-trip 的文档在 0.7.0 中保持其含义。
 
 此外,\`\\uXXXX\` 是一个纯新增的 escape(§ 3.7.1)—— 不会因此改变任何
 现有文档的含义。
+
+3. **inline 标量中的已识别 escape 现在会在关键字或数字分类之前强制
+   为 String(§ 3.7、§ 5.2)。** 在 0.6.x 中,像 \`1\\.0\` 这样的体可以先
+   解码再分类为 Float;在 0.7.0 中它是 String。该规则适用于每个已
+   识别的 escape,包括 \`\\.\` 与 \`\\:\`,即使解码出的字节不具有结构性作用。
+4. **在声明 Float 域中非有限的浮点字面量现在回退为 String
+   (§ 5.2 规则 14)。** 在 0.6.x 中,binary64 后端上的 \`1e9999\` 之类
+   字面量可能成为非有限 Float;在 0.7.0 中它是 String。下溢到有限的
+   带符号零仍然是 Float。
 `,
 };

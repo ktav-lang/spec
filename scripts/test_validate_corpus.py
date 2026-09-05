@@ -124,6 +124,63 @@ class CorpusTestCase(unittest.TestCase):
         self.assertIn("OVERALL: FAIL", out)
         self.assertIn("duplicate object key 'x'", out)
 
+    def test_successful_null_oracles_are_not_treated_as_parse_failures(self):
+        tests = self.build_minimal()
+
+        self.write("tests/valid/alpha.json", "null")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("valid/alpha.json: parser-produced Value oracle root must be "
+                      "Object or Array", out)
+
+        self.write("tests/invalid/bad.json", "null")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("invalid/bad.json: expected_error check skipped: not a JSON "
+                      "object", out)
+
+        self.write("tests/unrepresentable/root.json", "null")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("unrepresentable/root.json: expected a JSON object", out)
+
+        self.write("tests/parseable-unrepresentable/root.ktav", "{s: value}")
+        self.write("tests/parseable-unrepresentable/root.json", "null")
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("parseable-unrepresentable/root.json: expected a JSON object",
+                      out)
+
+        self.write("tests/boundary-fixtures.json", "null")
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 1)
+        self.assertIn("boundary-fixtures.json: root must be a JSON object", out)
+
+    def test_integer_boundary_accepts_leading_zero_decimal_and_rejects_uppercase_prefix(
+            self):
+        tests = self.build_minimal()
+        literal = "09223372036854775808"
+        self.write("tests/valid/leading_zero.ktav",
+                   "overflow: %s\n" % literal)
+        self.write("tests/valid/leading_zero.json",
+                   json.dumps({"overflow": literal}))
+        self.write("tests/valid/leading_zero.canonical.ktav",
+                   "overflow:: %s\n" % literal)
+        self.write("tests/boundary-fixtures.json", json.dumps({
+            "boundary_dependent_leaves": [{
+                "fixture": "leading_zero", "path": "/overflow",
+                "boundary_class": "integer_range",
+            }]
+        }))
+
+        code, out = self.run_main(tests, "--require-boundary")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(
+            validate_corpus._parse_integer_literal(literal),
+            9223372036854775808,
+        )
+        self.assertIsNone(validate_corpus._parse_integer_literal("0X8000000000000000"))
+
     # -- mutation 3: unknown expected_error ----------------------------
 
     def test_mutation_3_unknown_expected_error_rejected(self):
@@ -317,6 +374,66 @@ class CorpusTestCase(unittest.TestCase):
                          "Float")
         self.assertEqual(validate_corpus._semantic_kind(parsed["exponent"]),
                          "Float")
+
+    def test_deep_value_walk_reports_deterministic_recursion_diagnostic(self):
+        value = "leaf"
+        for _ in range(2000):
+            value = {"nested": value}
+        errors, _witnesses, root_kind = validate_corpus._inspect_unrepresentable_value(
+            value
+        )
+        self.assertIsNone(root_kind)
+        self.assertIn(
+            "/value: maximum recursion depth exceeded while validating JSON value",
+            errors,
+        )
+
+    def test_recursion_in_main_json_scan_is_a_deterministic_failure(self):
+        tests = self.build_minimal()
+        deep_json = "[" * 20000 + "0" + "]" * 20000
+        self.write("tests/valid/deep.json", deep_json)
+        self.write("tests/valid/deep.ktav", "deep: value\n")
+        self.write("tests/valid/deep.canonical.ktav", "deep: value\n")
+        invalid_ktav = self.write("tests/invalid/deep.ktav", "placeholder")
+        with open(invalid_ktav, "wb") as stream:
+            stream.write(b"\xff")
+        self.write("tests/invalid/deep.json", deep_json)
+        self.assertFalse(validate_corpus._sibling_declares_invalid_utf8(
+            invalid_ktav
+        ))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "valid/deep.json: invalid JSON: "
+            "maximum recursion depth exceeded while parsing JSON",
+            out,
+        )
+        self.assertNotIn("Traceback", out)
+
+    def test_recursion_in_boundary_and_inventory_locks_is_a_diagnostic(self):
+        deep_json = "[" * 20000 + "0" + "]" * 20000
+
+        tests = self.build_full()
+        boundary_lock = self.write("lock/boundary.json", deep_json)
+        code, out = self.run_main(tests, "--boundary-manifest-lock", boundary_lock)
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "--boundary-manifest-lock %s: invalid JSON: %s"
+            % (boundary_lock, validate_corpus.JSON_RECURSION_ERROR),
+            out,
+        )
+        self.assertNotIn("Traceback", out)
+
+        tests = self.build_full("inventory/tests")
+        inventory_lock = self.write("lock/inventory.json", deep_json)
+        code, out = self.run_main(tests, "--corpus-inventory-lock", inventory_lock)
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "--corpus-inventory-lock %s: invalid JSON: %s"
+            % (inventory_lock, validate_corpus.JSON_RECURSION_ERROR),
+            out,
+        )
+        self.assertNotIn("Traceback", out)
 
     def test_parser_produced_value_oracle_requires_compound_root(self):
         tests = self.build_minimal()

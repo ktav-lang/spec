@@ -247,7 +247,7 @@ GRAMMAR_LHS_RE = re.compile(r'^\s*(<[^<>]+>)\s*::=')
 # distinct from this grammar's own postfix "*"), the "&eol" / "&line-end"
 # lookaheads, the "eol" / "EOF" end-of-line markers, the exact
 # "any-chars-until-line-end" body atom, the "::=" production operator, and the
-# single-character operators "|" "*" "+" "?" "(" ")". Order matters: the
+# single-character operators "|" "*" "+" "?" "!" "(" ")". Order matters: the
 # 2-char/parenthesized/multi-char alternatives must be tried before the bare
 # single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")",
 # and "1*ws" isn't split into a stray "1" plus "*" plus a leftover "ws".
@@ -263,7 +263,7 @@ GRAMMAR_TOKEN_RE = re.compile(
     r'|(?<![\w-])any-chars-until-line-end(?![\w-])'
     r'|(?<![\w-])EOF(?![\w-])'
     r'|\beol\b'
-    r'|[|*+?()]'
+    r'|[|*+?!()]'
 )
 
 # Left-hand-side names whose RHS is intentionally natural-language prose
@@ -276,7 +276,7 @@ GRAMMAR_TOKEN_RE = re.compile(
 # find_malformed_grammar_productions below): if some other production ever
 # fails to tokenize as pure BNF, that is treated as a real defect (a typo,
 # a corrupted terminal, a translation mistake) and reported as an error
-# rather than silently excluded, unlike these twelve.
+# rather than silently excluded, unlike these eleven.
 SEMI_FORMAL_PROSE_LHS = frozenset([
     "<comment>",            # "(ws) \"##\" (any-chars until line-end)"
     "<unescaped-dot>",      # "\".\" that is NOT preceded by ..."
@@ -286,22 +286,24 @@ SEMI_FORMAL_PROSE_LHS = frozenset([
     "<bt-char>",            # "same exclusions as <dq-char>, but excluding ..."
     "<key-char>",           # "any UTF-8 code point except ..." (long multi-paragraph prose)
     "<scalar-body>",        # "(ws) any-chars-until-eol"
-    "<plain-inline-separator>",  # ":" not immediately followed by ":"
     "<inline-raw-scalar>",  # raw-marker bytes through an unescaped delimiter
     "<inline-scalar>",      # "sequence of bytes terminated by an unescaped ..."
     "<multiline-content-line>",  # "any line within an open <multiline>; ..."
 ])
 
-# Bare single-character ABNF operator tokens dropped by
+# Bare single-character BNF operator tokens dropped by
 # significant_grammar_tokens. Reason (observed against the shipped
 # EN/RU/ZH files): parenthesized grouping inside a semi-formal production's
 # prose is a legitimate per-language rendering choice -- RU/ZH <dq-char>
-# group their exclusions into parenthetical spans EN leaves ungrouped (4
-# extra paren pairs), so raw paren counts differ across languages without
-# any normative difference. Every review-flagged normative terminal in the
-# semi-formal productions is a quoted terminal, a <nonterminal> reference,
-# or "(ws)", all of which survive this filter.
-SEMI_FORMAL_OPERATOR_TOKENS = frozenset(["(", ")", "|", "*", "+", "?"])
+# group their exclusions into parenthetical spans EN leaves ungrouped (4 extra
+# paren pairs), so raw paren counts differ across languages without any
+# normative difference. The negative-lookahead operator is included here too:
+# it is syntax when a production is pure BNF, but a bare punctuation mark in
+# semi-formal prose must not become a cross-language token obligation. Every
+# review-flagged normative terminal in the semi-formal productions is a quoted
+# terminal, a <nonterminal> reference, or "(ws)", all of which survive this
+# filter.
+SEMI_FORMAL_OPERATOR_TOKENS = frozenset(["(", ")", "|", "*", "+", "?", "!"])
 
 # Inner content of a quoted terminal that is pure ASCII punctuation
 # (code points 0x21-0x2F, 0x3A-0x40, 0x5B-0x60, 0x7B-0x7E). Quoted tokens
@@ -421,7 +423,7 @@ def significant_grammar_tokens(rhs_text):
     artifacts. Two filters are applied to extract_embedded_tokens' output:
 
       1. Bare single-character operator tokens ("(", ")", "|", "*", "+",
-         "?") are dropped (see SEMI_FORMAL_OPERATOR_TOKENS for the
+         "?", "!") are dropped (see SEMI_FORMAL_OPERATOR_TOKENS for the
          observed reason: per-language parenthetical grouping).
 
       2. Quoted terminals whose INNER content is not pure ASCII

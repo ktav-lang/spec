@@ -6,13 +6,19 @@
 
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
+> **Draft scope:** the feature overview and examples in this README follow
+> the unreleased Ktav 0.7.0 draft. Stable 0.6.4 implementations should use
+> the [0.6.4 specification](versions/0.6/spec.md) and its
+> [conformance suite](versions/0.6/tests/); the draft's differences are
+> scoped in [Appendix D of the 0.7.0 specification](versions/0.7/spec.md).
+
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
 > A plain configuration format. JSON-shape — scalars, arrays, objects,
 > `null`, `true`, `false` — with none of JSON's punctuation in the
 > common case: no quotes around strings, no commas outside one-line
-> inline compounds, and a closed 10-entry escape table only for the
-> rare byte that truly needs one. Dotted keys for nesting, visible
+> inline compounds, and a closed 14-entry escape table for literal bytes
+> and explicit scalar classification. Dotted keys for nesting, visible
 > opt-in markers for literal and multi-line strings.
 
 This repository is the **canonical specification** of the Ktav format.
@@ -123,7 +129,11 @@ on binary64, is kept as a String; a wider implementation MAY retain the
 literal as Integer or Float. A decimal that *underflows in the tested
 implementation's domain* still becomes a Float, rounded to signed
 `0.0` in that domain, not a String; a wider domain in which it does
-not underflow retains a non-zero Float.
+not underflow retains a non-zero Float. A declared Float domain includes
+its decimal-conversion and rounding semantics and MUST admit only finite
+Float values with a finite decimal representation that round-trips exactly;
+the minimum binary64 conversion uses `roundTiesToEven`. An unsupported
+exact-rational value such as `1/3` is outside the Ktav Float domain.
 
 ```text
 retries: 3
@@ -197,8 +207,9 @@ TOML's two-dimensional table-vs-inline split.
 
 ## The rules, in one screen
 
-A Ktav document is an implicit top-level object. Inside any object you
-have pairs; inside any array you have items.
+A Ktav document's root is an Object or Array determined by its first
+content line. Inside any object you have pairs; inside any array you have
+items.
 
 ```text
 ## comment             — any line starting with '##'
@@ -218,8 +229,9 @@ value                  — inside an array: bare item (typed by form)
 
 That's the whole language. No commas or quotes are required for the
 common case — commas appear only as separators inside one-line inline
-compounds — and the closed 10-entry escape table (§ 3.7) covers only
-the rare byte that truly needs one. The `::` marker (in the separator
+compounds — and the closed 14-entry escape table (§ 3.7) provides
+literal-byte escapes and explicit scalar classification. The `::` marker
+(in the separator
 for pairs, or as a line prefix for array items) forces a literal
 string.
 
@@ -284,6 +296,11 @@ raising an error; a wider domain MAY classify that same boundary literal
 as Integer or Float. A decimal that *underflows in the implementation's
 domain* still becomes a Float, rounded to signed `0.0` in that domain;
 a wider domain in which it does not underflow retains a non-zero Float.
+The declared Float domain includes decimal-conversion and rounding
+semantics; every admitted finite Float MUST have a finite decimal
+candidate that round-trips exactly, and minimum binary64 uses
+`roundTiesToEven`. A finite host value without such a candidate, such as
+exact-rational `1/3`, is not a Ktav Float.
 
 ```text
 port:    8080
@@ -349,7 +366,8 @@ timeout: null
 
 ## Full specification
 
-- **Current stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23.
+- **Draft described here:** [Ktav 0.7.0](versions/0.7/spec.md) — unreleased draft; this README's feature overview follows it.
+- **Current stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23; use this version for stable semantics and fixtures.
 - **Machine-readable index** of all versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
 

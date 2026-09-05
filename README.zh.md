@@ -6,12 +6,17 @@
 
 **Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
 
+> **草案范围:** 本 README 的功能概览与示例遵循尚未发布的 Ktav 0.7.0
+> 草案。稳定的 0.6.4 实现应使用 [0.6.4 规范](versions/0.6/spec.zh.md)
+> 与其[一致性套件](versions/0.6/tests/);草案差异范围见
+> [0.7.0 规范附录 D](versions/0.7/spec.zh.md)。
+
 **演练场：** 在浏览器中互转 JSON / YAML / TOML / INI ⇄ Ktav — **[ktav-lang.github.io](https://ktav-lang.github.io/)**。
 
 > 一种朴素的配置格式。沿用 JSON 的形态——标量、数组、对象、
 > `null`、`true`、`false`——但不带 JSON 的任何标点。常见情形下
 > 不用逗号、不用引号：逗号只出现在单行 inline 复合值内作分隔符，
-> 封闭的 10 项转义表只覆盖真正需要 escape 的少见字节。以点分键
+> 封闭的 14 项转义表用于字面字节与显式的标量分类。以点分键
 > 表达嵌套，以显式的可见标记声明字面字符串和多行字符串。
 
 本仓库是 Ktav 格式的**规范正文**。任何编程语言的实现都应当符合
@@ -117,7 +122,10 @@ motd: (
 反而保持为 String;更宽的实现 MAY 将该边界字面量分类为 Integer
 或 Float。在*被测实现的域中下溢*的小数仍然成为 Float,并在该域中
 舍入到带符号的 `0.0`,而非 String;若更宽的域中不发生下溢,则保留
-非零 Float。
+非零 Float。声明的 Float 域包括十进制转换与舍入语义,并 MUST 只接纳
+拥有可精确 round-trip 的有限十进制表示的有限 Float;最小 binary64
+转换使用 `roundTiesToEven`。不支持的精确有理值(如 `1/3`)不属于
+Ktav Float 域。
 
 ```text
 retries: 3
@@ -188,7 +196,8 @@ Ktav 保留了 JSON 的形态（你始终清楚一个文档意味着什么），
 
 ## 一屏看完的规则
 
-Ktav 文档是一个隐式的顶层对象。任何对象里是键值对，任何数组里是元素。
+Ktav 文档的根是由首条内容行决定的 Object 或 Array。任何对象里是键值对，
+任何数组里是元素。
 
 ```text
 ## comment             — any line starting with '##'
@@ -207,8 +216,8 @@ value                  — inside an array: bare item (typed by form)
 ```
 
 整个语言就这些。常见情形下无需逗号与引号 —— 逗号只作为单行
-inline 复合值内的分隔符出现 —— 另有一条封闭的 10 项转义表，
-只覆盖真正需要 escape 的少见字节。`::` 标记（出现在分隔符里
+inline 复合值内的分隔符出现 —— 另有一条封闭的 14 项转义表,
+用于字面字节与显式的标量分类。`::` 标记（出现在分隔符里
 用于键值对，或行首前缀里用于数组元素）强制取字面字符串。
 
 ### 点分键
@@ -265,7 +274,10 @@ Integer;带小数点或指数 → Float;其余一切 → String。在最小数�
 会保持为 String,而不是回绕或抛出错误;更宽的域 MAY 将同一边界
 字面量分类为 Integer 或 Float。在*实现域中下溢*的小数仍然成为
 Float,并在该域中舍入到带符号的 `0.0`;若更宽的域中不发生下溢,
-则保留非零 Float。
+则保留非零 Float。声明的 Float 域包括十进制转换与舍入语义;每个被
+接纳的有限 Float MUST 有一个可精确 round-trip 的有限十进制候选,
+最小 binary64 转换使用 `roundTiesToEven`。主机表示中没有这种候选的
+有限值(例如精确有理数 `1/3`)不是 Ktav Float。
 
 ```text
 port:    8080
@@ -327,7 +339,8 @@ timeout: null
 
 ## 完整规范
 
-- **当前稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23。
+- **本文描述的草案：** [Ktav 0.7.0](versions/0.7/spec.zh.md) — 尚未发布;本 README 的功能概览遵循该草案。
+- **当前稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23;稳定语义与 fixture 请使用此版本。
 - **所有版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.md`](CHANGELOG.md)。
 

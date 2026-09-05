@@ -49,10 +49,11 @@ closes the segment); the two other quote characters are ordinary
 content there and need no escape. \`\\"\` / \`\\'\` / \`\` \\\` \`\` are
 recognised uniformly in every context where escapes are recognised
 at all — bare key segments, quoted key segments, and inline scalar
-values alike — exactly as \`\\.\` and \`\\:\` already are: a quote
-character has no structural meaning in a bare segment or an inline
-value either, so the escape is simply redundant (but valid) there,
-the same relationship \`\\.\`/\`\\:\` already have with inline values.
+values alike. In an inline value a recognised escape has no structural
+effect, but it is not semantically redundant: § 5.2 classifies any
+body containing a recognised escape as String, even when the decoded
+body would otherwise be a keyword or numeric literal. This applies
+equally to \`\\.\` and \`\\:\` in values.
 
 Any other \`\\X\` form (including \`\\#\`, \`\\t\`, \`\\ <space>\`,
 \`\\<any-other>\`) is a \`BadEscapeSequence\` error (§ 6.13). See
@@ -125,11 +126,12 @@ inline-составное, есть явная литеральная форма
 в escape. \`\\"\` / \`\\'\` / \`\` \\\` \`\` распознаются единообразно в любом
 контексте, где escape-последовательности вообще распознаются, —
 как в голых сегментах ключа, так и в квотированных, так и в
-inline-скалярных значениях — точно так же, как уже ведут себя
-\`\\.\` и \`\\:\`: символ кавычки не имеет структурного значения ни в
-голом сегменте, ни в inline-значении, поэтому там escape просто
-избыточен (но валиден) — то же отношение, что уже есть у \`\\.\`/\`\\:\`
-с inline-значениями.
+inline-скалярных значениях. В inline-значении распознанный escape не
+имеет структурного эффекта, но не является семантически избыточным:
+§ 5.2 классифицирует любое тело с распознанным escape как String,
+даже если декодированное тело иначе было бы ключевым словом или
+числовым литералом. Это в равной мере относится к \`\\.\` и \`\\:\` в
+значениях.
 
 Любая другая форма \`\\X\` (включая \`\\#\`, \`\\t\`,
 \`\\ <пробел>\`, \`\\<любой-другой>\`) — ошибка \`BadEscapeSequence\` (§ 6.13).
@@ -190,10 +192,10 @@ Escape-последовательности НЕ обрабатываются в
 开启分隔符是结构性的(其第一次未转义出现即关闭该段);另外两种
 引号字符在其中是普通内容,无需转义。\`\\"\` / \`\\'\` / \`\` \\\` \`\` 在
 每一个识别 escape 的上下文中都一致地被识别 —— 无论是裸键段、
-带引号的键段,还是 inline 标量值 —— 正如 \`\\.\` 与 \`\\:\` 已经的
-表现一样:引号字符在裸段或 inline 值中都没有结构性含义,因此该
-escape 在那里只是多余的(但仍合法)—— 与 \`\\.\`/\`\\:\` 在 inline
-值中的关系相同。
+带引号的键段,还是 inline 标量值。inline 值中的已识别 escape 没有
+结构性作用,但在语义上并非多余:§ 5.2 将任何含有已识别 escape 的体
+分类为 String,即使解码后的体本来会像关键字或数字字面量。这同样
+适用于值中的 \`\\.\` 与 \`\\:\`。
 
 其他任何 \`\\X\` 形式(包括 \`\\#\`、\`\\t\`、\`\\<空格>\`、
 \`\\<其他任意>\`)是 \`BadEscapeSequence\` 错误(§ 6.13)。

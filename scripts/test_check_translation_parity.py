@@ -154,7 +154,7 @@ ZH_DOC_DATED = ZH_DOC_OK.replace("**日期:**(未发布 —— 草案)\n",
 
     # -- embedded grammar terminals in semi-formal prose productions ---------
     #
-    # The 12 SEMI_FORMAL_PROSE_LHS productions mix real language-
+    # The 11 SEMI_FORMAL_PROSE_LHS productions mix real language-
     # independent syntax into translatable prose. Before this check was
     # added, a translation could silently corrupt an embedded normative
     # terminal (e.g. swap "." for ":" inside <unescaped-dot>'s prose RHS)
@@ -190,7 +190,7 @@ SEMI_GRAMMAR_LINES_EN = [
     "                    ; trimmed; interpreted per the value rules",
     '<inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)',
     '                     | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)',
-    '<plain-inline-separator> ::= ":" not immediately followed by ":"',
+    '<plain-inline-separator> ::= ":" !":"',
     "",
     "<inline-raw-scalar> ::= sequence of bytes after the raw marker,",
     '                        terminated by the first unescaped "," / "}" /',
@@ -708,6 +708,7 @@ class TranslationParityTestCase(unittest.TestCase):
             "<lookahead>     ::= &line-end",
             '<item-literal>  ::= (ws) "::" <sep-end> '
             'any-chars-until-line-end <line-end>',
+            '<plain-inline-separator> ::= ":" !":"',
         ]
 
         def doc(fence_lines):
@@ -823,10 +824,17 @@ class TranslationParityTestCase(unittest.TestCase):
 
     def test_source_item_literal_has_bounded_zero_or_more_body(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        body_path = os.path.join(
-            repo_root, "versions", "0.7", "content", "sec-4", "body-3.js")
-        with open(body_path, encoding="utf-8") as f:
-            source = f.read()
+        body_dir = os.path.join(
+            repo_root, "versions", "0.7", "content", "sec-4")
+        body_names = sorted(
+            (name for name in os.listdir(body_dir)
+             if name.startswith("body-") and name.endswith(".js")),
+            key=lambda name: int(name[5:-3]))
+        source_parts = []
+        for name in body_names:
+            with open(os.path.join(body_dir, name), encoding="utf-8") as f:
+                source_parts.append(f.read())
+        source = "".join(source_parts)
 
         production = (
             '<item-literal>  ::= (ws) "::" <sep-end> '
@@ -986,8 +994,9 @@ class TranslationParityTestCase(unittest.TestCase):
             lines, start, end, excluded)
         self.assertEqual(malformed, [])
         self.assertEqual(len(lhs_set), 44)
-        self.assertEqual(len(productions), 34)
-        newly_pure = {"<comment>", "<scalar-body>"}
+        self.assertEqual(len(productions), 35)
+        newly_pure = {"<comment>", "<scalar-body>",
+                      "<plain-inline-separator>"}
         self.assertEqual(
             lhs_set - set(productions),
             ctp.SEMI_FORMAL_PROSE_LHS - newly_pure)
@@ -1205,17 +1214,24 @@ class TranslationParityTestCase(unittest.TestCase):
             '                       ";" / "}" / "]" or by end-of-line')
         self.run_semi_mutation(mutated, "<inline-scalar>")
 
-    def test_plain_inline_separator_colon_mutation_fails_in_en_ru_zh(self):
+    def test_plain_inline_separator_terminal_mutation_fails_in_en_ru_zh(self):
         mutated = self._replace_semi_line(
             SEMI_GRAMMAR_LINES_EN, "<plain-inline-separator>",
-            '<plain-inline-separator> ::= ";" not immediately followed by ":"')
-        self.run_semi_triplet_mutation(mutated, "<plain-inline-separator>")
+            '<plain-inline-separator> ::= "." !":"')
+        self.run_grammar_triplet_mutation(mutated, "<plain-inline-separator>")
 
-    def test_plain_inline_separator_double_colon_mutation_fails_in_en_ru_zh(self):
-        mutated = self._replace_semi_line(
-            SEMI_GRAMMAR_LINES_EN, "<plain-inline-separator>",
-            '<plain-inline-separator> ::= ":" not immediately followed by "::"')
-        self.run_semi_triplet_mutation(mutated, "<plain-inline-separator>")
+    def test_plain_inline_separator_negative_lookahead_mutations_fail(self):
+        mutations = [
+            '<plain-inline-separator> ::= !":" ":"',
+            '<plain-inline-separator> ::= ":"',
+        ]
+        for replacement in mutations:
+            with self.subTest(replacement=replacement):
+                mutated = self._replace_semi_line(
+                    SEMI_GRAMMAR_LINES_EN, "<plain-inline-separator>",
+                    replacement)
+                self.run_grammar_triplet_mutation(
+                    mutated, "<plain-inline-separator>")
 
     def test_inline_pair_raw_double_colon_mutation_fails_in_en_ru_zh(self):
         mutated = self._replace_semi_line(
@@ -1645,8 +1661,6 @@ class TranslationParityTestCase(unittest.TestCase):
         self.assertIn('"\\""', en["<dq-char>"])
         for t in ('","', '"}"', '"]"'):
             self.assertIn(t, en["<inline-scalar>"])
-        self.assertEqual(
-            sorted(en["<plain-inline-separator>"]), ['":"', '":"'])
         self.assertEqual(
             sorted(en["<inline-raw-scalar>"]),
             sorted([

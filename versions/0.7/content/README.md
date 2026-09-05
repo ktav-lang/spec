@@ -179,7 +179,8 @@ Each language is split **independently** into N chunks by cutting only at
 blank-line boundaries (an empty line — never mid-line), choosing the N-1 cut
 points as the blank lines closest to the proportional target offsets
 `i*L/N` for `i = 1..N-1`. If a language lacks enough distinct interior blank
-lines for N-1 cut points, N for the **whole unit** is reduced to
+lines for N-1 cut points, equidistant ties choose the earlier blank boundary,
+and N for the **whole unit** is reduced to
 (available cut points + 1) rather than failing. Semantic alignment of parts
 across languages is **not** a goal — this is file-size hygiene only.
 

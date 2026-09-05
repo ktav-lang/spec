@@ -25,16 +25,19 @@ Ktav 是一种基于纯文本的配置格式,设计目标是让每一行都能�
 解决了此前存在的内部矛盾;新增 `\uXXXX` escape(§ 3.7.1)以及带引号
 的键(§ 5.3.3,分隔符 `"` / `'` / `` ` ``);多行字符串
 `(…)` 形式现在还会去除每个内容行的尾部空白 —— `(…)` 此前已去除每行
-共享的前导缩进(§ 5.6)。三项范围各自独立的破坏性变更:值/键边界的
+共享的前导缩进(§ 5.6)。五项范围各自独立的破坏性变更:值/键边界的
 trim 现在在空格/制表符之外额外覆盖 21 个码点:VT 与 FF(§ 3.3 集合中
 剩余的两个 ASCII 空白成员),加上该集合中的 19 个非 ASCII 码点 ——
 相对于每一个已发布的 0.6.x Rust 核心版本,实际上并非破坏性,它们本就
 已经去除了完整的集合;`(…)` 的尾部 trim 即使对 Rust 核心也是破坏性的
 —— 它此前在 stripped 块的每一行都保留尾部空白(包括普通 ASCII
-空格/制表符);以及某一行的内容部分若以未转义的 `"`、`'` 或 `` ` ``
+空格/制表符);某一行的内容部分若以未转义的 `"`、`'` 或 `` ` ``
 开头,不再必然按此前的方式解析 —— 引号字符现在会在该处开启一个带
 引号的段,而不再作为普通内容,因此例如对象键值对 `"port": 1` 现在
-命名的键是 `port`,而不是 `"port"`(§ 5.3.3、§ 10.7、附录 D)。
+命名的键是 `port`,而不是 `"port"`(§ 5.3.3、§ 10.7、附录 D);inline
+标量中已识别的 escape 现在会在关键字或数字分类之前强制为 String
+(因此 `1\.0` 是 String 而非 Float);而在声明的 Float 域中非有限的
+float 字面量现在回退为 String,不再产生非有限 Float(§ 5.2 规则 14)。
 
 ## 1. 引言
 
@@ -227,10 +230,10 @@ String。
 开启分隔符是结构性的(其第一次未转义出现即关闭该段);另外两种
 引号字符在其中是普通内容,无需转义。`\"` / `\'` / `` \` `` 在
 每一个识别 escape 的上下文中都一致地被识别 —— 无论是裸键段、
-带引号的键段,还是 inline 标量值 —— 正如 `\.` 与 `\:` 已经的
-表现一样:引号字符在裸段或 inline 值中都没有结构性含义,因此该
-escape 在那里只是多余的(但仍合法)—— 与 `\.`/`\:` 在 inline
-值中的关系相同。
+带引号的键段,还是 inline 标量值。inline 值中的已识别 escape 没有
+结构性作用,但在语义上并非多余:§ 5.2 将任何含有已识别 escape 的体
+分类为 String,即使解码后的体本来会像关键字或数字字面量。这同样
+适用于值中的 `\.` 与 `\:`。
 
 其他任何 `\X` 形式(包括 `\#`、`\t`、`\<空格>`、
 `\<其他任意>`)是 `BadEscapeSequence` 错误(§ 6.13)。
@@ -501,7 +504,7 @@ decoded escape 产生的码点的处理。
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
                      | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
-<plain-inline-separator> ::= ":" not immediately followed by ":"
+<plain-inline-separator> ::= ":" !":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
 
@@ -537,6 +540,8 @@ decoded escape 产生的码点的处理。
 - `(ws)` 表示零个或多个上文定义的行边界内 `ws` 码点;LF 和 CR
   不包括在内。
 - `1*ws` 表示**一个或多个**同样的行边界内码点。
+- `!` 表示针对下一个语法元素的零宽负向先行断言: `!X` 仅当
+  `X` 在当前位置不匹配时成功,且不消耗任何内容。
 - `<sep-end>` 表示「至少一个行边界内空白码点,或行末」。分隔符之后
   MUST 吸收所有紧接着的、连续的此类空白码点(即 maximal contiguous
   run),剩余字节才构成体;这同样适用于 raw-marker array-item。因此
@@ -545,6 +550,10 @@ decoded escape 产生的码点的处理。
   pair 分隔符(`:`、`::`)之后。写 `key:value`(分隔符后无空白、
   无行末)在多行 pair 形式中是语法错误 —— 见 § 6.10。inline
   复合值(§ 5.8)中的对不要求 `:` / `::` 之后有空白。
+- 对 array-item 的分发,修剪后,前导 `::` 在考虑 `<item-value>`
+  之前即提交到 `<item-literal>`。若缺少 `<sep-end>`(例如唯一一行
+  `::x`),parser MUST 报告 `MissingSeparatorSpace`,且 MUST NOT 回退
+  到 scalar `<item-value>`。
 - `&line-end` 是针对 `<line-end>` 的零宽正向先行断言 —— 它匹配
   eol 或 EOF 而不消耗它。每个行产生式恰好消耗一个 `<line-end>`,
   因此最后一行可以没有终止字节。EOF 是终结性的零字节标记:只能终止
@@ -586,18 +595,22 @@ decoded escape 产生的码点的处理。
   十进制串,无下划线、无前导零
   (`0` 除外);前导 `+` 舍弃;有符号零 (`+0`, `-0`) 归一化为
   `0`。规范形式由 writer-conforming 实现使用(§ 5.9)。
-- **Float** —— 数值标量,携带数值。实现 MUST 至少支持 IEEE 754
-  binary64 的范围与精度,且 MAY 支持更宽的表示(如任意精度
-  decimal)。将 decimal 的 Float 字面量(§ 3.6)转换为此最小
-  binary64 表示时,MUST 遵循 IEEE 754 的 `roundTiesToEven` 舍入
-  方向属性,且该最小表示 MUST 包含次正规(gradual-underflow)值,
-  一直下探到 binary64 的最小正次正规值 (2^-1074 ≈
-  4.9406564584124654 × 10^-324) —— 一个过早将次正规值冲刷为零、
-  或将中间值舍入到远离偶数一侧的实现,即便从不产生非有限的
-  Float,也不满足此下限。超出该最小值的内部表示由实现定义。规范文本形式
-  (§ 5.9) MUST 由 writer-conforming 实现使用。Value **不**保留
-  写入的文本形式;下划线、`e` vs `E` 的选择、前导 `+` 不属于
-  Value。
+- **Float** —— 数值标量,携带实现**声明的 Float 域**中的值。该声明
+  MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
+  转换与舍入语义,以及确定性的转换策略。每个被接纳进 Ktav Value
+  模型的有限 Float MUST 至少有一个有限十进制候选 `(s, D, k)`,其精确
+  十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。更宽的
+  主机表示 MAY 含有不存在这种候选的值(例如精确有理数 `1/3`),但这种
+  值在声明的 Ktav Float 域之外,MUST NOT 作为 Ktav Float 接纳。实现
+  MUST 至少支持 IEEE 754 binary64 的范围与精度,且 MAY 支持更宽表示
+  (如任意精度 decimal)。对最小 binary64 域,将 decimal Float 字面量
+  (§ 3.6)转换时 MUST 遵循 IEEE 754 的 `roundTiesToEven` 舍入方向属性,
+  且表示 MUST 包含次正规(gradual-underflow)值,一直到 binary64 最小正
+  次正规值 (2^-1074 ≈ 4.9406564584124654 × 10^-324)。过早将次正规值
+  冲刷为零或将中间值舍入到远离偶数一侧的实现,即便从不产生非有限
+  Float,也不满足此下限。声明域之外的内部表示由实现定义。规范文本形式
+  (§ 5.9) MUST 由 writer-conforming 实现使用。Value **不**保留写入的
+  文本形式;下划线、`e` vs `E` 的选择、前导 `+` 不属于 Value。
 - **String** —— (可能为空的) UTF-8 字符串。
 - **Array** —— 有序 Value 序列。
 - **Object** —— 有序 (名, Value) 对序列,名为字符串。Object 内
@@ -742,8 +755,10 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。`::` 之�
     可移植文档 SHOULD NOT 依赖于 i64 范围之外的 Integer 类型化;
     运行于严格 i64 后端的 0.7.0 兼容解析器 MUST 将这类溢出体归入
     规则 15。
-14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所支持的
-    Float 域(§ 5)内有限:Float,携带从体解析的数值。内部表示
+14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所声明的
+    Float 域(§ 5)内有限:Float,携带从体解析的数值。声明域的检查
+    还包括 § 5 的要求:每个被接纳的有限 Float 都必须有一个有限
+    十进制候选,并按声明的转换语义精确 round-trip。内部表示
     由实现定义(见 § 5);规范文本形式见 § 5.9.8。解析值在该域内
     非有限的字面量 —— 例如 binary64 后端遇到 `1e9999`,溢出为
     无穷 —— 回退到规则 15(String),与规则 13 中超出范围的整数
@@ -1060,10 +1075,12 @@ inline 对象中同样展开:`{a.b: 1, a.c: 2}` → `{a: {b: 1, c: 2}}`。
 array-item line 在最内层开启的 Array(或 top-level Array,
 § 5.0.1)内引入一个 Value。形式:
 
-1. **原始标记项** `:: literal` —— `::` 之后的体是字面 String
-   (无类型推断)。适用 `<sep-end>` 规则:要求 `::` 之后为空白或
-   行末,且紧随其后的最大连续空白序列都属于 `<sep-end>`(因此
-   `::  x` 的值是 `x`)。粘连形式是 `MissingSeparatorSpace` 错误。
+1. **原始标记项** —— 任意 trim 后以 `::` 开头的 array-item line
+   在其他项分类之前即确定为 raw-marker 语法。`::` 之后的体是字面
+   String(无类型推断)。适用 `<sep-end>` 规则:要求 `::` 之后为空白
+   或行末,且紧随其后的最大连续空白序列都属于 `<sep-end>`(因此
+   `::  x` 的值是 `x`)。若缺少所需的 separator-end,如 `::x`,
+   结果是 `MissingSeparatorSpace`;该行 MUST NOT 回退到标量分类。
 2. **闭合 inline 对象项** `{ … }`。
 3. **闭合 inline 数组项** `[ … ]`。
 4. **空 inline 对象项** `{}`。
@@ -1278,9 +1295,13 @@ Value;不允许其他内容行。
 
 **writer-conforming** 实现 MUST 对任何**可表示**(representable)
 Value 输出*规范* Ktav 序列化 —— § 5.9.0 定义了哪些 Value 可表示,
-涵盖 § 5.9.7 排除的那一小类 String 值。规范形式是字节确定性的:
-对任何给定的可表示 Value,所有 writer-conforming 实现 MUST 产生
-相同的字节序列。writer-conforming 实现 MUST 以错误拒绝不可表示的
+涵盖 § 5.9.7 排除的那一小类 String 值。规范形式在声明域内具有
+字节确定性:对于任何给定的可表示 Value,声明相同 Value 域的
+writer-conforming 实现 —— 包括相同的 Integer/Float 域以及 Float
+的十进制转换与舍入语义 —— MUST 产生相同的字节序列。每个实现
+MUST 确定性地应用其声明的域与转换策略。声明域或转换语义不同的
+实现 MAY 在这些声明导致不同 Value 或候选的地方产生不同规范字节;
+这不放宽共同声明内部的确定性。writer-conforming 实现 MUST 以错误拒绝不可表示的
 Value,而不是将其序列化 —— 该要求统一适用于 § 5.9.0 的每一条
 不可表示规则,而不仅是 § 5.9.7 的 String 排除:若允许为同一个
 不可表示 Value 产生任意/lossy 编码,则会违反刚刚声明的字节确定性
@@ -1308,9 +1329,13 @@ Value,而不是将其序列化 —— 该要求统一适用于 § 5.9.0 的每�
   无论如何,任何文档都不能产生带有空键段的对(解析侧对应
   `EmptyKey` 错误,§ 6.5)。
 - **Array:** V 的每一项都节点可表示。
-- **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity。§ 3.6 的任何
-  字面量语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14
-  回退为 String),且 § 5.9.8 未为其定义规范文本形式。
+- **Float:** V 是有限的 —— 既非 NaN 也非 ±Infinity —— 且属于
+  § 5 声明的 Ktav Float 域。因此它至少有一个有限十进制候选,按该域
+  声明的转换语义精确 round-trip(§ 5.9.8)。更宽的主机表示可能含有
+  没有这种候选的有限精确值(例如精确有理数 `1/3`);该值在 Ktav
+  Float 域之外,不构成额外的 writer 错误情形。§ 3.6 的任何字面量
+  语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14 回退为
+  String),且 § 5.9.8 未为其定义规范文本形式。
 - **String:** V 按 § 5.9.7 的规则节点可表示(无 `CR` 字节,且
   不属于该节定义的病态多行碰撞情形)。
 - **Null、Bool、Integer** 及所有其他 String:始终节点可表示。
@@ -1671,10 +1696,16 @@ SHOULD NOT 在同时需要修剪后恰为 `))` 的段的多行 String 内容中
   `-1e-3`、`9999999.0`、`1e7`,以及
   `120000000.0` → `1.2e8`。
 
-  使用相同 Float 表示(binary64)的两个 writer-conforming 实现
-  对同一 Value MUST 产生相同输出。fixture `*.canonical.ktav`
-  假定 binary64 语义。使用任意精度 decimal 的实现 MAY 产生
-  不同输出,但仅限于其 Value 域有所不同之处。
+  声明相同的 Float 域、解析与写入所用的十进制转换和舍入语义的
+  两个 writer-conforming 实现 MUST 使用确定性的转换策略,并 MUST 对同一
+  Value 产生相同输出。每个被接纳进 Ktav Value 模型的有限 Float
+  MUST 至少有一个按该语义精确 round-trip 的有限十进制候选
+  `(s, D, k)`;主机表示中没有这种候选的有限值(例如精确有理数
+  `1/3`)不属于声明的 Ktav Float 域,也不是额外的 writer 错误情形。
+  对最小 binary64 域,声明的舍入语义 MUST 是 IEEE 754
+  `roundTiesToEven`。fixture `*.canonical.ktav` 假定 binary64 语义。声明不同域或不同
+  语义的实现 MAY 产生不同输出,但仅限于这些声明导致不同 Value 或候选
+  的地方。
 
 #### 5.9.9 关键词
 
@@ -1922,6 +1953,8 @@ MUST NOT 在解析 0.7.0 文档时输出标签为 `InvalidTypedScalar`
 
 多行 pair line 内,`:` / `::` MUST 后接至少一个空白码点或行末。
 粘连形式(`key:value` / `key::value`)是 `MissingSeparatorSpace` 错误。
+同一规则适用于 trim 后以 `::` 开头的 array-item line:`::x` 一旦
+确定为 raw-marker 形式即是 `MissingSeparatorSpace`,绝不能回退为标量。
 
 inline 对(§ 5.8)**不**要求且**不**报此错误。
 
@@ -2609,7 +2642,12 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
   § 5 明确允许的任意精度实现会按原文本在 `i64_overflow_to_string`
   上不满足 § 8.2:它把体解析为 Integer 并会以裸形式规范写出
   (无 raw 标记),而 fixture 固定的 `canonical.ktav` 不允许这样。
-- **变更:** § 5 的 Float 条目与 § 5.2 规则 14 —— Float 域现在有
+- **变更:** § 5.9 的字节确定性保证限定在声明相同 Value 域、
+  Integer/Float 域以及 Float 十进制转换与舍入语义的
+  writer-conforming 实现之间。每个实现 MUST 确定性地应用其声明的
+  转换策略;声明不同的实现 MAY 在这些声明产生不同 Value 或规范候选
+  的地方输出不同结果。
+- **破坏性:** § 5 的 Float 条目与 § 5.2 规则 14 —— Float 域现在有
   规范性下限(MUST 至少支持 IEEE 754 binary64 的范围与精度;
   MAY 支持更宽表示)和镜像 Integer 规则 13 的溢出回退:在实现
   Float 域内非有限的浮点字面量(如 binary64 上的 `1e9999`)回退
@@ -2618,7 +2656,19 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
   Float」的断言真正成立。新 fixture `float/positive_overflow_to_string`、
   `float/negative_overflow_to_string` 与 `float/underflow_to_zero`
   将边界锁定;最后一个 fixture 记录下溢到 `0.0`(有限)是普通
-  Float,而非回退为 String 的情形。
+  Float,而非回退为 String 的情形。声明的 Float 域现在还包括其十进制
+  转换与舍入语义,并 MUST 使用确定性的转换策略;每个被接纳进 Ktav
+  Value 的有限 Float MUST 有一个按该策略精确 round-trip 的有限
+  (s, D, k) 十进制候选。不支持的精确有理值(如 1/3)属于 Ktav Float
+  域之外,不新增 writer 错误情形。最小 binary64 转换使用
+  roundTiesToEven。
+- **破坏性:** § 3.7 与 § 5.2 —— inline 标量中的任何已识别 escape
+  现在会在关键字或数字分类之前强制为 String。在 0.6.x 中,像
+  `1\.0` 这样的体可以先解码再分类为 Float;在 0.7.0 中它是
+  String。这包括 `\.` 与 `\:`,即使解码出的字节没有结构性作用;
+  因此 escape 在值中并非语义冗余。fixture
+  `valid/inline/escape/recognized_escape_forces_string_number.*`
+  固化该规则。
 - **新增:** 带引号的键(§ 5.3.3)—— 键段 MAY 写成 `"…"`、`'…'`
   或 `` `…` `` 而非裸形式;在分隔符内部,`.`、`:`、`,`、`{`、`}`、
   `[`、`]` 以及另外两种引号字符都是普通内容,无需 escape,且内容
@@ -2630,8 +2680,9 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
   场景(此前在包括值在内的每个场景中,它们都是
   `BadEscapeSequence`,§ 6.13)。引号字符在 inline 值中不具有
   结构性作用 —— 它从来不是分隔符,也从不会被剥离,不论是否
-  escape —— 因此该 escape 在那里合法但多余,正如 `\.` / `\:` 在
-  值中早已如此。语法(§ 4)新增了 `<escapable-byte>` 的一个新
+  escape —— 因此该 escape 在那里合法但具有语义作用:它依 § 5.2
+  强制为 String,正如 `\.` / `\:` 在值中一样。语法(§ 4)新增了
+  `<escapable-byte>` 的一个新
   候选和 `<quoted-segment>` 产生式;`<bare-segment>` 也被收窄,
   而非保持不变 —— 其首个 token 现在来自新的 `<bare-first-token>`,
   它排除了未 escape 的前导 `"` / `'` / `` ` ``(§ 4),因此这确实
@@ -2790,7 +2841,7 @@ root-Array 形式的文档:
 
 Rust 参考实现在每个 0.6.x 版本中就已在键段边缘修剪完整的 25 码点
 集合。对 Rust 以及 0.6.x 行为已匹配这种修剪的实现而言,§ 3.3 / § 4
-澄清不是破坏性变更:除依赖下面两种破坏性形式之一的文档外,原先能
+澄清不是破坏性变更:除依赖下面四种破坏性形式之一的文档外,原先能
 round-trip 的文档在 0.7.0 中保持其含义。
 
 字面遵循旧 § 4、仅修剪其中指定 ASCII 空白的实现还有额外的**文档
@@ -2798,7 +2849,9 @@ round-trip 的文档在 0.7.0 中保持其含义。
 它在 0.7.0 中可能产生不同的键/路径或错误。这类文档需要迁移审查;
 这并非仅仅更新实现代码。
 
-有两项破坏性变更适用于包括 Rust 在内的每一个实现:
+有四项破坏性变更适用于包括 Rust 在内的每一个实现。
+上文所述的值/键边界 trim 澄清另有范围:只有尚未具备与 Rust 0.6.x
+兼容的 trim 的实现,其文档行为才会因此改变。
 
 1. **`(…)` 多行字符串不再保留每个内容行的尾部空白。** 若某文档依赖
    `(…)` 块内的尾部空白码点(§ 3.3 —— 25 个码点中的任意一个,
@@ -2822,3 +2875,12 @@ round-trip 的文档在 0.7.0 中保持其含义。
 
 此外,`\uXXXX` 是一个纯新增的 escape(§ 3.7.1)—— 不会因此改变任何
 现有文档的含义。
+
+3. **inline 标量中的已识别 escape 现在会在关键字或数字分类之前强制
+   为 String(§ 3.7、§ 5.2)。** 在 0.6.x 中,像 `1\.0` 这样的体可以先
+   解码再分类为 Float;在 0.7.0 中它是 String。该规则适用于每个已
+   识别的 escape,包括 `\.` 与 `\:`,即使解码出的字节不具有结构性作用。
+4. **在声明 Float 域中非有限的浮点字面量现在回退为 String
+   (§ 5.2 规则 14)。** 在 0.6.x 中,binary64 后端上的 `1e9999` 之类
+   字面量可能成为非有限 Float;在 0.7.0 中它是 String。下溢到有限的
+   带符号零仍然是 Float。

@@ -120,8 +120,8 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 ARRAY_INDEX_RE = re.compile(r"^(0|[1-9][0-9]*)$")
 DECIMAL_PART = r"[0-9](?:_?[0-9])*"
 INTEGER_LITERAL_RE = re.compile(
-    r"^[+-]?(?:0|[1-9](?:_?[0-9])*|0[bB][01](?:_?[01])*|"
-    r"0[oO][0-7](?:_?[0-7])*|0[xX][0-9a-fA-F](?:_?[0-9a-fA-F])*)$"
+    rf"^[+-]?(?:0x[0-9a-fA-F](?:_?[0-9a-fA-F])*|"
+    rf"0o[0-7](?:_?[0-7])*|0b[01](?:_?[01])*|{DECIMAL_PART})$"
 )
 FLOAT_LITERAL_RE = re.compile(
     rf"^[+-]?(?:{DECIMAL_PART}\.{DECIMAL_PART}(?:[eE][+-]?{DECIMAL_PART})?|"
@@ -130,6 +130,8 @@ FLOAT_LITERAL_RE = re.compile(
 BOUNDARY_RECORD_FIELDS = frozenset({"fixture", "path", "boundary_class"})
 I64_MIN = -(1 << 63)
 I64_MAX = (1 << 63) - 1
+JSON_PARSE_FAILED = object()
+JSON_RECURSION_ERROR = "maximum recursion depth exceeded while parsing JSON"
 
 
 def rel(path, tests_dir):
@@ -163,7 +165,7 @@ def _sibling_declares_invalid_utf8(path):
     try:
         with open(sibling, "r", encoding="utf-8") as stream:
             value = loads_strict(stream.read())
-    except (OSError, UnicodeError, json.JSONDecodeError, ValueError):
+    except (OSError, UnicodeError, json.JSONDecodeError, ValueError, RecursionError):
         return False
     return isinstance(value, dict) and value.get("expected_error") == "InvalidUtf8"
 
@@ -203,7 +205,7 @@ def check_utf8_json(tests_dir, results):
     n_files = 0
     n_json = 0
     n_exempt = 0
-    parsed = {}  # relpath -> parsed object (or None on failure)
+    parsed = {}  # relpath -> parsed object, or JSON_PARSE_FAILED on failure
     for root, _dirs, files in os.walk(tests_dir):
         for fname in files:
             path = os.path.join(root, fname)
@@ -233,11 +235,15 @@ def check_utf8_json(tests_dir, results):
                 except json.JSONDecodeError as e:
                     results.fail(category, "%s: invalid JSON: %s"
                                  % (rel(path, tests_dir), e))
-                    parsed[rel(path, tests_dir)] = None
+                    parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
                 except ValueError as e:
                     results.fail(category, "%s: invalid JSON: %s"
                                  % (rel(path, tests_dir), e))
-                    parsed[rel(path, tests_dir)] = None
+                    parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
+                except RecursionError:
+                    results.fail(category, "%s: invalid JSON: %s"
+                                 % (rel(path, tests_dir), JSON_RECURSION_ERROR))
+                    parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
     results.set_count(category, n_files=n_files, n_json=n_json, n_exempt=n_exempt,
                        parsed=parsed)
     return parsed
@@ -320,9 +326,10 @@ def check_valid(tests_dir, results, parsed):
                     % (rel(os.path.join(root, name + ".ktav"), tests_dir),
                        rel(os.path.join(root, name + ".canonical.ktav"), tests_dir)))
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
-            if rpath in parsed and parsed[rpath] is not None:
+            oracle = parsed.get(rpath, JSON_PARSE_FAILED)
+            if oracle is not JSON_PARSE_FAILED:
                 errors, _witnesses, root_kind = _inspect_unrepresentable_value(
-                    parsed[rpath], sentinel_policy="ordinary"
+                    oracle, sentinel_policy="ordinary"
                 )
                 for message in errors:
                     results.fail(category, "%s: %s" % (rpath, message))
@@ -388,9 +395,9 @@ def check_invalid(tests_dir, results, parsed, error_categories):
                     % (rel(os.path.join(root, name + ".json"), tests_dir),
                        rel(os.path.join(root, name + ".ktav"), tests_dir)))
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
-            if rpath not in parsed or parsed[rpath] is None:
+            obj = parsed.get(rpath, JSON_PARSE_FAILED)
+            if obj is JSON_PARSE_FAILED:
                 continue  # parse failure already reported in check 1
-            obj = parsed[rpath]
             if not isinstance(obj, dict):
                 results.fail(category, "%s: expected_error check skipped: "
                              "not a JSON object" % rpath)
@@ -431,9 +438,9 @@ def check_invalid_utf8_oracle(tests_dir, results, parsed):
                 continue  # missing sibling already reported by check_invalid
             json_path = os.path.join(root, fname)
             jrpath = rel(json_path, tests_dir)
-            if jrpath not in parsed or parsed[jrpath] is None:
+            obj = parsed.get(jrpath, JSON_PARSE_FAILED)
+            if obj is JSON_PARSE_FAILED:
                 continue  # parse failure already reported in check 1
-            obj = parsed[jrpath]
             if not isinstance(obj, dict):
                 continue  # already reported by check_invalid
             err = obj.get("expected_error")
@@ -603,10 +610,16 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                           "the mandatory i64 range [%d, %d]"
                           % (path, node, I64_MIN, I64_MAX))
 
-    walk(value, "/value")
-    return errors, witnesses, _semantic_kind(
-        value, decode_float_sentinel=sentinel_policy == "allow"
-    )
+    try:
+        walk(value, "/value")
+        root_kind = _semantic_kind(
+            value, decode_float_sentinel=sentinel_policy == "allow"
+        )
+    except RecursionError:
+        errors.append("/value: maximum recursion depth exceeded while validating "
+                      "JSON value")
+        root_kind = None
+    return errors, witnesses, root_kind
 
 
 def _check_unrepresentable_object(obj, rpath, results, category,
@@ -680,9 +693,10 @@ def check_unrepresentable(tests_dir, results, parsed, require=False):
                              "unrepresentable/ (only .json allowed)" % rpath)
                 continue
             n_fixtures += 1
-            if rpath in parsed and parsed[rpath] is not None:
+            value = parsed.get(rpath, JSON_PARSE_FAILED)
+            if value is not JSON_PARSE_FAILED:
                 _check_unrepresentable_object(
-                    parsed[rpath], rpath, results, category,
+                    value, rpath, results, category,
                     PROGRAMMATIC_UNREPRESENTABLE_REASONS,
                     parser_produced=False,
                 )
@@ -730,9 +744,10 @@ def check_parseable_unrepresentable(tests_dir, results, parsed, require=False):
         for name in sorted(jsons):
             n_fixtures += 1
             rpath = rel(os.path.join(root, name + ".json"), tests_dir)
-            if rpath in parsed and parsed[rpath] is not None:
+            value = parsed.get(rpath, JSON_PARSE_FAILED)
+            if value is not JSON_PARSE_FAILED:
                 _check_unrepresentable_object(
-                    parsed[rpath], rpath, results, category,
+                    value, rpath, results, category,
                     PARSER_UNREPRESENTABLE_REASONS,
                     parser_produced=True,
                 )
@@ -923,11 +938,11 @@ def _parse_integer_literal(literal):
     if cleaned[:1] in ("+", "-"):
         sign = -1 if cleaned[0] == "-" else 1
         cleaned = cleaned[1:]
-    if cleaned.startswith(("0b", "0B")):
+    if cleaned.startswith("0b"):
         base = 2
-    elif cleaned.startswith(("0o", "0O")):
+    elif cleaned.startswith("0o"):
         base = 8
-    elif cleaned.startswith(("0x", "0X")):
+    elif cleaned.startswith("0x"):
         base = 16
     else:
         base = 10
@@ -1054,6 +1069,10 @@ def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
         results.fail(category, "--boundary-manifest-lock %s: invalid JSON: %s"
                      % (lock_path, e))
         return
+    except RecursionError:
+        results.fail(category, "--boundary-manifest-lock %s: invalid JSON: %s"
+                     % (lock_path, JSON_RECURSION_ERROR))
+        return
     if not isinstance(lock_data, list):
         results.fail(category, "--boundary-manifest-lock %s: root must be a "
                      "JSON array" % lock_path)
@@ -1118,10 +1137,10 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
         results.set_count(category, skipped=True)
         return False
     rpath = rel(manifest_path, tests_dir)
-    if rpath not in parsed or parsed[rpath] is None:
+    manifest = parsed.get(rpath, JSON_PARSE_FAILED)
+    if manifest is JSON_PARSE_FAILED:
         results.fail(category, "%s: could not parse manifest (see check 1)" % rpath)
         return True
-    manifest = parsed[rpath]
     if not isinstance(manifest, dict):
         results.fail(category, "%s: root must be a JSON object" % rpath)
         return True
@@ -1157,8 +1176,10 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
                 results.fail(category, "%s: entry %d: fixture %r missing file(s): %s"
                              % (rpath, i, fixture, ", ".join(missing)))
             elif ptr is not None:
-                fixture_json = parsed.get(rel(base + ".json", tests_dir))
-                if fixture_json is not None:
+                fixture_json = parsed.get(
+                    rel(base + ".json", tests_dir), JSON_PARSE_FAILED
+                )
+                if fixture_json is not JSON_PARSE_FAILED:
                     _node, err = resolve_pointer(fixture_json, ptr)
                     if err:
                         results.fail(
@@ -1304,6 +1325,10 @@ def check_corpus_inventory_lock(tests_dir, results, lock_path):
     except (json.JSONDecodeError, ValueError) as e:
         results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
                      % (lock_path, e))
+        return
+    except RecursionError:
+        results.fail(category, "--corpus-inventory-lock %s: invalid JSON: %s"
+                     % (lock_path, JSON_RECURSION_ERROR))
         return
     if not isinstance(lock_data, dict):
         results.fail(category, "--corpus-inventory-lock %s: root must be a JSON "

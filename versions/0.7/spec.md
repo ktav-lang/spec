@@ -26,7 +26,7 @@ set, resolving a standing internal contradiction; adds the `\uXXXX`
 escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters `"` / `'` /
 `` ` ``); the `(…)` multi-line string form now also strips
 trailing whitespace from every content line — `(…)` already removed
-each line's shared leading indent (§ 5.6). Three independently-scoped
+each line's shared leading indent (§ 5.6). Five independently-scoped
 breaking changes: value/key-edge trimming now covers 21 additional
 code points beyond space/tab — VT and FF (§ 3.3's remaining two ASCII
 whitespace members) plus the 19 non-ASCII code points in the § 3.3
@@ -35,11 +35,15 @@ in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the `(…)` trailing-edge strip is
 breaking even for the Rust core, which previously preserved
 trailing whitespace (including plain ASCII space/tab) on every line
-of a stripped-form block; and a line whose first content begins with
+of a stripped-form block; a line whose first content begins with
 an unescaped `"`, `'`, or `` ` `` no longer necessarily parses as
 before — the quote character now opens a quoted segment there instead
 of being ordinary content, so e.g. an Object pair `"port": 1` now
-names the key `port`, not `"port"` (§ 5.3.3, § 10.7, Appendix D).
+names the key `port`, not `"port"` (§ 5.3.3, § 10.7, Appendix D);
+a recognised escape in an inline scalar now forces String before keyword
+or numeric classification (so `1\.0` is String, not Float); and a float
+literal that is non-finite in the declared Float domain now falls back to
+String rather than producing a non-finite Float (§ 5.2 rule 14).
 
 ## 1. Introduction
 
@@ -272,10 +276,11 @@ closes the segment); the two other quote characters are ordinary
 content there and need no escape. `\"` / `\'` / `` \` `` are
 recognised uniformly in every context where escapes are recognised
 at all — bare key segments, quoted key segments, and inline scalar
-values alike — exactly as `\.` and `\:` already are: a quote
-character has no structural meaning in a bare segment or an inline
-value either, so the escape is simply redundant (but valid) there,
-the same relationship `\.`/`\:` already have with inline values.
+values alike. In an inline value a recognised escape has no structural
+effect, but it is not semantically redundant: § 5.2 classifies any
+body containing a recognised escape as String, even when the decoded
+body would otherwise be a keyword or numeric literal. This applies
+equally to `\.` and `\:` in values.
 
 Any other `\X` form (including `\#`, `\t`, `\ <space>`,
 `\<any-other>`) is a `BadEscapeSequence` error (§ 6.13). See
@@ -565,7 +570,7 @@ by decoded escapes.
 <inline-pair-list> ::= <inline-pair> ( (ws) "," (ws) <inline-pair> )* ( (ws) "," )?
 <inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
                      | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
-<plain-inline-separator> ::= ":" not immediately followed by ":"
+<plain-inline-separator> ::= ":" !":"
 
 <inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
 
@@ -601,6 +606,8 @@ Notes on the notation:
 - `(ws)` stands for zero or more line-bounded `ws` code points defined
   above; LF and CR are excluded.
 - `1*ws` stands for **one or more** of those same line-bounded code points.
+- `!` is a zero-width negative lookahead: `!X` succeeds only when `X`
+  does not match at the current position, and consumes nothing.
 - `<sep-end>` stands for "at least one line-bounded whitespace code point,
   or the end of the line". After a separator it MUST consume the whole
   immediately following contiguous run of such whitespace code points (the
@@ -611,6 +618,10 @@ Notes on the notation:
   after the separator) is a syntax error in the multi-line pair form — see
   § 6.10. Inline-compound pairs (§ 5.8) do not require whitespace after
   `:` / `::`.
+- For array-item dispatch, after trimming, a leading `::` commits to
+  `<item-literal>` before `<item-value>` is considered. If `<sep-end>`
+  is absent (for example, the sole line `::x`), the parser MUST report
+  `MissingSeparatorSpace` and MUST NOT fall back to scalar `<item-value>`.
 - `&line-end` is a zero-width positive lookahead for `<line-end>`; it
   matches either eol or EOF without consuming it. Every line production
   consumes exactly one `<line-end>`, so a final line need not have a
@@ -665,23 +676,30 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   the literal `0`); a leading `+` is dropped; signed-zero literals
   (`+0`, `-0`) normalise to `0`. The canonical form is used by
   writer-conforming implementations (§ 5.9).
-- **Float** — a numeric scalar carrying a numeric value. The
-  implementation MUST support at least the range and precision of
-  IEEE 754 binary64 and MAY support a wider representation (e.g.
-  arbitrary-precision decimal). Converting a decimal float literal
-  (§ 3.6) to this minimum binary64 representation MUST follow IEEE
-  754's `roundTiesToEven` rounding-direction attribute, and the
-  minimum representation MUST include subnormal (gradual-underflow)
-  values down to binary64's smallest positive subnormal
-  (2^-1074 ≈ 4.9406564584124654 × 10^-324) — an implementation that
-  flushes subnormals to zero early, or rounds ties away from even,
-  does not meet this floor even though it never produces a non-finite
-  Float. The internal representation beyond
-  that minimum is implementation-defined. The canonical
-  textual form (§ 5.9) MUST be used by writer-conforming
-  implementations. The Value does **not** preserve the textual form
-  as written; underscores, the choice of `e` vs `E`, and leading-`+`
-  signs are not part of the Value model.
+- **Float** — a numeric scalar carrying a value in the implementation's
+  **declared Float domain**. That declaration MUST include the finite
+  values admitted as Ktav Floats, the decimal-conversion and rounding
+  semantics used to parse and render them, and a deterministic conversion
+  policy. Every finite Float admitted to the Ktav Value model MUST have
+  at least one finite decimal candidate `(s, D, k)` whose exact decimal
+  value reparses under those declared semantics to exactly that Float
+  (§ 5.9.8). A wider host representation MAY contain values with no such
+  candidate (for example, exact-rational `1/3`), but such a value is
+  outside the declared Ktav Float domain and MUST NOT be admitted as a
+  Ktav Float. The implementation MUST support at least the range and
+  precision of IEEE 754 binary64 and MAY support a wider representation
+  (e.g. arbitrary-precision decimal). For the minimum binary64 domain,
+  converting a decimal float literal (§ 3.6) MUST follow IEEE 754's
+  `roundTiesToEven` rounding-direction attribute, and the representation
+  MUST include subnormal (gradual-underflow) values down to binary64's
+  smallest positive subnormal (2^-1074 ≈ 4.9406564584124654 × 10^-324).
+  An implementation that flushes subnormals to zero early, or rounds ties
+  away from even, does not meet this floor even though it never produces a
+  non-finite Float. The internal representation beyond the declared
+  domain is implementation-defined. The canonical textual form (§ 5.9)
+  MUST be used by writer-conforming implementations. The Value does **not**
+  preserve the textual form as written; underscores, the choice of `e`
+  vs `E`, and leading-`+` signs are not part of the Value model.
 - **String** — a (possibly empty) UTF-8 string.
 - **Array** — an ordered sequence of Values.
 - **Object** — an ordered sequence of (name, Value) pairs, names
@@ -888,11 +906,14 @@ escape occurs inside that unclosed quoted segment.
     outside the i64 range; a 0.7.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
 14. If the body matches the **float literal** grammar (§ 3.6) and
-    its numeric value is finite in the implementation's supported
+    its numeric value is finite in the implementation's declared
     Float domain (§ 5): Float carrying the numeric value parsed
-    from the body. The internal representation is
-    implementation-defined (see § 5 description of Float); the
-    canonical textual form is specified in § 5.9.8. A literal whose
+    from the body. The declared-domain check includes § 5's requirement
+    that every admitted finite Float have a finite decimal candidate
+    that round-trips exactly under the declared conversion semantics.
+    The internal representation is implementation-defined (see § 5
+    description of Float); the canonical textual form is specified in
+    § 5.9.8. A literal whose
     parsed value would not be finite in that domain — e.g. a
     binary64 backend given `1e9999`, which overflows to infinity —
     falls through to rule 15 (String), exactly as an out-of-range
@@ -1305,11 +1326,15 @@ content quoted once.
 An array-item line introduces one Value inside the innermost open
 Array (or the top-level Array, § 5.0.1). The forms are:
 
-1. **Raw-marker item** — `:: literal` — the body after `::` is a
-   literal String (no type inference). `<sep-end>` rules apply:
-   whitespace or EOL after `::` is required, and the maximal contiguous
-   run of following whitespace belongs to `<sep-end>` (so `::  x`
-   has value `x`). Glued forms are a `MissingSeparatorSpace` error.
+1. **Raw-marker item** — any trimmed array-item line beginning with
+   `::` commits to raw-marker syntax before any other item
+   classification. The body after `::` is a literal String (no type
+   inference). `<sep-end>` rules apply: whitespace or EOL after `::`
+   is required, and the maximal contiguous run of following whitespace
+   belongs to `<sep-end>` (so `::  x` has value `x`). If the
+   required separator-end is absent, as in `::x`, the result is
+   `MissingSeparatorSpace`; the line MUST NOT fall through to scalar
+   classification.
 2. **Closed-inline-object item** — `{ key: value, … }` on one line.
 3. **Closed-inline-array item** — `[ v, v, … ]` on one line.
 4. **Empty-inline-object item** — `{}`.
@@ -1569,9 +1594,16 @@ lines are permitted.
 A **writer-conforming** implementation MUST emit a *canonical* Ktav
 serialisation of any **representable** Value — § 5.9.0 defines which
 Values are representable, subsuming the narrow set of String values
-that § 5.9.7 excludes. The canonical form is byte-deterministic: for
-any given representable Value, every writer-conforming
-implementation MUST produce the same byte sequence. A
+that § 5.9.7 excludes. The canonical form is byte-deterministic within
+a declared domain: for any given representable Value, writer-conforming
+implementations that declare the same Value domain, including the same
+Integer/Float domains and Float decimal-conversion and rounding
+semantics, MUST produce the same byte sequence. Each implementation
+MUST use its declared domain and conversion policy deterministically.
+Implementations with different declared domains or conversion semantics
+MAY produce different canonical bytes where those declarations lead to
+different Values or candidate choices; this is not a relaxation of
+determinism within a shared declaration. A
 writer-conforming implementation MUST reject a non-representable
 Value with an error, rather than serialise it — this requirement
 applies uniformly to every non-representability rule of § 5.9.0,
@@ -1609,10 +1641,16 @@ kind:
   segment (the parse-side counterpart is the `EmptyKey` error,
   § 6.5).
 - **Array:** every item of V is node-representable.
-- **Float:** V is finite — neither NaN nor ±Infinity. No literal
-  grammar of § 3.6 produces a non-finite Float (an overflowing
-  literal falls through to String at § 5.2 rule 14), and § 5.9.8
-  defines no canonical textual form for one.
+- **Float:** V is finite — neither NaN nor ±Infinity — and belongs to
+  the declared Ktav Float domain of § 5. Consequently it has at least
+  one finite decimal candidate that round-trips exactly under the
+  domain's declared conversion semantics (§ 5.9.8). A wider host
+  representation may contain a finite exact value with no such candidate
+  (for example, exact-rational `1/3`); that value is outside the Ktav
+  Float domain and is not an additional writer error case. No literal
+  grammar of § 3.6 produces a non-finite Float (an overflowing literal
+  falls through to String at § 5.2 rule 14), and § 5.9.8 defines no
+  canonical textual form for one.
 - **String:** V is node-representable under § 5.9.7's rules (no
   `CR` byte, and none of the pathological multi-line collision
   cases defined there).
@@ -2038,7 +2076,15 @@ requires a segment trimming to `))`.
   `+0` emit as `0`. No underscores. No leading zeros (other than
   the literal `0`). The minus sign is preserved for negative
   values.
-- **Float:** the chosen textual form matches one of the two
+- **Float:** the declared Float domain includes the decimal-conversion
+  and rounding semantics used by parsing and writing, and its conversion
+  policy MUST be deterministic. Every finite Float admitted to the Ktav
+  Value model MUST have at least one finite decimal candidate `(s, D, k)`
+  that round-trips exactly under those semantics. A host representation's
+  finite value without such a candidate (for example exact-rational
+  `1/3`) is outside the declared Ktav Float domain, rather than an
+  additional writer error case. For the minimum binary64 domain, the
+  declared rounding semantics MUST be IEEE 754 `roundTiesToEven`. The chosen textual form matches one of the two
   alternatives of § 3.6:
   - `sign? digits "." digits ("e" sign? digits)?`
   - `sign? digits "e" sign? digits`
@@ -2089,11 +2135,13 @@ requires a segment trimming to `))`.
   `0.01`, `1e-3`, `1.5e-3`, `-1e-3`, `9999999.0`, `1e7`, and
   `120000000.0` → `1.2e8`.
 
-  Two writer-conforming implementations using the same Float
-  representation (binary64) MUST produce identical output for the
-  same Value. The test fixtures `*.canonical.ktav` assume binary64
-  semantics; implementations using arbitrary-precision decimal MAY
-  produce different output only where their Value domain differs.
+  Two writer-conforming implementations declaring the same Value domain,
+  the same Float representation, and the same decimal-conversion and
+  rounding semantics MUST produce identical output for the same Value.
+  The test fixtures `*.canonical.ktav` assume binary64 semantics;
+  implementations declaring a different domain or conversion semantics
+  MAY produce different output only where those declarations yield a
+  different Value or candidate.
 
 #### 5.9.9 Keywords
 
@@ -2402,6 +2450,9 @@ MUST NOT emit an error labelled `InvalidTypedScalar` when parsing
 In a multi-line pair line, the separator `:` / `::` MUST be followed
 by at least one whitespace code point or end-of-line. A glued form
 (`key:value` / `key::value`) is a `MissingSeparatorSpace` error.
+The same rule applies to an array-item line whose trimmed content begins
+with `::`: `::x` commits to the raw-marker form and is
+`MissingSeparatorSpace`, never a scalar fallback.
 
 Inline-compound pairs (§ 5.8) do NOT require whitespace after the
 separator and so do NOT raise this error.
@@ -3253,7 +3304,14 @@ shorter output (§ 10.4).
   parses the body as an Integer and would canonically write it
   bare (no raw marker), which the fixture's fixed `canonical.ktav`
   forbids.
-- **Changed:** the Float bullet of § 5 and rule 14 of § 5.2 — the
+- **Changed:** § 5.9's byte-determinism guarantee is scoped to
+  writer-conforming implementations sharing the declared Value domain,
+  Integer/Float domains, and Float decimal-conversion and rounding
+  semantics. Each implementation MUST apply its declared conversion
+  policy deterministically; implementations with different declarations
+  MAY differ where those declarations produce different Values or
+  canonical candidates.
+- **Breaking:** the Float bullet of § 5 and rule 14 of § 5.2 — the
   Float domain now has a normative floor (MUST support at least the
   range and precision of IEEE 754 binary64; MAY support a wider
   representation) and an overflow fallback mirroring Integer's rule
@@ -3265,7 +3323,22 @@ shorter output (§ 10.4).
   `float/positive_overflow_to_string`,
   `float/negative_overflow_to_string`, and `float/underflow_to_zero`
   pin the boundary; the last documents that underflowing to `0.0`
-  (finite) is an ordinary Float, not a String-fallback case.
+  (finite) is an ordinary Float, not a String-fallback case. The declared
+  Float domain now also includes its decimal-conversion and rounding
+  semantics and MUST use a deterministic conversion policy; every finite
+  Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
+  candidate that round-trips exactly under that policy. An unsupported
+  exact-rational value such as 1/3 is outside the Ktav Float domain, not a
+  new writer-error case. The minimum binary64 conversion uses
+  roundTiesToEven.
+- **Breaking:** § 3.7 and § 5.2 — any recognised escape in an inline
+  scalar now forces String before keyword or numeric classification. In
+  0.6.x a body such as `1\.0` could decode and classify as Float; in
+  0.7.0 it is String. This includes `\.` and `\:`, even where the
+  decoded byte has no structural role; the escape is therefore not
+  semantically redundant in a value. Fixture
+  `valid/inline/escape/recognized_escape_forces_string_number.*` locks
+  this in.
 - **Added:** Quoted keys (§ 5.3.3) — a key segment MAY be written
   `"…"`, `'…'`, or `` `…` `` instead of bare; inside the delimiters,
   `.`, `:`, `,`, `{`, `}`, `[`, `]`, and the two OTHER quote
@@ -3280,7 +3353,8 @@ shorter output (§ 10.4).
   every context, values included). A quote character has no
   structural role in an inline value — it is never a delimiter and is
   never stripped, escaped or not — so the escape is valid but
-  redundant there, exactly as `\.` / `\:` already are in values. A new
+  semantically significant there: its presence forces String under § 5.2,
+  exactly as `\.` / `\:` do in values. A new
   `<escapable-byte>` alternative and `<quoted-segment>` production
   (§ 4) are added to the grammar; `<bare-segment>` is also narrowed,
   not left untouched — its first token now comes from the new
@@ -3495,7 +3569,7 @@ The Rust reference implementation already trimmed the full
 25-code-point set at key-segment edges in every 0.6.x release. For Rust,
 and for implementations whose 0.6.x behaviour already matched that
 trim, the § 3.3 / § 4 clarification is non-breaking: apart from documents
-that rely on either of the two breaking forms below, previously
+that rely on any of the four breaking forms below, previously
 round-tripping documents retain their meaning under 0.7.0.
 
 An implementation that followed old § 4 literally and trimmed only its
@@ -3505,7 +3579,10 @@ whitespace that the old rule did not trim can now produce a different
 key/path or error under 0.7.0. Such documents require migration review;
 this is not merely an implementation-code update.
 
-Two breaking changes apply to every implementation, Rust included:
+Four breaking changes apply to every implementation, Rust included.
+The value/key-edge trimming clarification above remains separately
+scoped: it changes documents only for implementations that did not
+already implement the 0.6.x Rust-compatible trim.
 
 1. **`(…)` multi-line strings no longer preserve trailing whitespace
    (§ 3.3 — any of the 25 code points, not just space/tab) on each
@@ -3535,3 +3612,13 @@ Two breaking changes apply to every implementation, Rust included:
 
 Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
+
+3. **A recognised escape in an inline scalar now forces String before
+   keyword or numeric classification (§ 3.7, § 5.2).** In 0.6.x, a
+   body such as `1\.0` could decode and then classify as Float; in
+   0.7.0 it is String. This applies to every recognised escape, including
+   `\.` and `\:`, even when the decoded byte has no structural role.
+4. **A float literal that is non-finite in the declared Float domain now
+   falls back to String (§ 5.2 rule 14).** In 0.6.x, a literal such as
+   `1e9999` could become a non-finite Float on a binary64 backend; in
+   0.7.0 it is String. Finite underflow to signed zero remains Float.

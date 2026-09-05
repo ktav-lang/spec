@@ -111,7 +111,14 @@ export default {
   parses the body as an Integer and would canonically write it
   bare (no raw marker), which the fixture's fixed \`canonical.ktav\`
   forbids.
-- **Changed:** the Float bullet of § 5 and rule 14 of § 5.2 — the
+- **Changed:** § 5.9's byte-determinism guarantee is scoped to
+  writer-conforming implementations sharing the declared Value domain,
+  Integer/Float domains, and Float decimal-conversion and rounding
+  semantics. Each implementation MUST apply its declared conversion
+  policy deterministically; implementations with different declarations
+  MAY differ where those declarations produce different Values or
+  canonical candidates.
+- **Breaking:** the Float bullet of § 5 and rule 14 of § 5.2 — the
   Float domain now has a normative floor (MUST support at least the
   range and precision of IEEE 754 binary64; MAY support a wider
   representation) and an overflow fallback mirroring Integer's rule
@@ -123,7 +130,22 @@ export default {
   \`float/positive_overflow_to_string\`,
   \`float/negative_overflow_to_string\`, and \`float/underflow_to_zero\`
   pin the boundary; the last documents that underflowing to \`0.0\`
-  (finite) is an ordinary Float, not a String-fallback case.
+  (finite) is an ordinary Float, not a String-fallback case. The declared
+  Float domain now also includes its decimal-conversion and rounding
+  semantics and MUST use a deterministic conversion policy; every finite
+  Float admitted to Ktav Value MUST have a finite (s, D, k) decimal
+  candidate that round-trips exactly under that policy. An unsupported
+  exact-rational value such as 1/3 is outside the Ktav Float domain, not a
+  new writer-error case. The minimum binary64 conversion uses
+  roundTiesToEven.
+- **Breaking:** § 3.7 and § 5.2 — any recognised escape in an inline
+  scalar now forces String before keyword or numeric classification. In
+  0.6.x a body such as \`1\\.0\` could decode and classify as Float; in
+  0.7.0 it is String. This includes \`\\.\` and \`\\:\`, even where the
+  decoded byte has no structural role; the escape is therefore not
+  semantically redundant in a value. Fixture
+  \`valid/inline/escape/recognized_escape_forces_string_number.*\` locks
+  this in.
 - **Added:** Quoted keys (§ 5.3.3) — a key segment MAY be written
   \`"…"\`, \`'…'\`, or \`\` \`…\` \`\` instead of bare; inside the delimiters,
   \`.\`, \`:\`, \`,\`, \`{\`, \`}\`, \`[\`, \`]\`, and the two OTHER quote
@@ -138,7 +160,8 @@ export default {
   every context, values included). A quote character has no
   structural role in an inline value — it is never a delimiter and is
   never stripped, escaped or not — so the escape is valid but
-  redundant there, exactly as \`\\.\` / \`\\:\` already are in values. A new
+  semantically significant there: its presence forces String under § 5.2,
+  exactly as \`\\.\` / \`\\:\` do in values. A new
   \`<escapable-byte>\` alternative and \`<quoted-segment>\` production
   (§ 4) are added to the grammar; \`<bare-segment>\` is also narrowed,
   not left untouched — its first token now comes from the new
@@ -326,7 +349,13 @@ export default {
   разбирает тело как Integer и записала бы его канонически голым
   (без raw-маркера), что фиксированный \`canonical.ktav\` фикстуры
   запрещает.
-- **Изменено:** маркер Float в § 5 и правило 14 § 5.2 — домен
+- **Изменено:** гарантия байт-детерминизма § 5.9 ограничивается
+  реализациями-эмиттерами с одинаковым заявленным доменом Value,
+  доменами Integer/Float и семантикой decimal-преобразования и округления
+  Float. Каждая реализация MUST детерминированно применять свою заявленную
+  политику преобразования; реализации с разными заявлениями MAY расходиться
+  там, где они получают разные Values или канонические кандидаты.
+- **Ломающее:** маркер Float в § 5 и правило 14 § 5.2 — домен
   Float теперь имеет нормативный минимум (MUST поддерживать как
   минимум диапазон и точность IEEE 754 binary64; MAY поддерживать
   более широкое представление) и откат при переполнении,
@@ -340,6 +369,22 @@ export default {
   \`float/negative_overflow_to_string\` и \`float/underflow_to_zero\`
   фиксируют границу; последняя документирует, что underflow в
   \`0.0\` (конечный) — обычный Float, а не случай отката к String.
+  Заявленный домен Float теперь также включает семантику decimal-
+  преобразования и округления и MUST использовать детерминированную
+  политику преобразования; каждый конечный Float, допускаемый в Ktav
+  Value, MUST иметь конечный десятичный кандидат (s, D, k), точно
+  проходящий round-trip с этой политикой. Неподдерживаемое точное
+  рациональное значение вроде 1/3 находится вне домена Ktav Float, а не
+  создаёт новый случай ошибки writer. Минимальное binary64 использует
+  roundTiesToEven.
+- **Ломающее:** § 3.7 и § 5.2 — любой распознанный escape в inline-
+  скаляре теперь фиксирует String до классификации ключевого слова или
+  числа. В 0.6.x тело вроде \`1\\.0\` могло декодироваться и
+  классифицироваться как Float; в 0.7.0 это String. Это включает \`\\.\`
+  и \`\\:\`, даже когда декодированный байт не имеет структурной роли;
+  поэтому escape не является семантически избыточным в значении.
+  Fixture \`valid/inline/escape/recognized_escape_forces_string_number.*\`
+  фиксирует правило.
 - **Добавлено:** Квотированные ключи (§ 5.3.3) — сегмент ключа MAY
   быть записан как \`"…"\`, \`'…'\` или \`\` \`…\` \`\` вместо голого; внутри
   разделителей \`.\`, \`:\`, \`,\`, \`{\`, \`}\`, \`[\`, \`]\` и два ДРУГИХ символа
@@ -355,8 +400,9 @@ export default {
   \`BadEscapeSequence\`, § 6.13, в любом контексте, включая значения).
   Символ кавычки не играет структурной роли в inline-значении — он
   никогда не является разделителем и никогда не удаляется,
-  экранирован он или нет, — так что escape там валиден, но избыточен,
-  точно как уже \`\\.\` / \`\\:\` в значениях. В грамматику (§ 4) добавлены
+  экранирован он или нет, — так что escape там валиден, но семантически
+  значим: его наличие фиксирует String по § 5.2, точно как уже \`\\.\` /
+  \`\\:\` в значениях. В грамматику (§ 4) добавлены
   новая альтернатива \`<escapable-byte>\` и производство
   \`<quoted-segment>\`; \`<bare-segment>\` также сужается, а не остаётся
   нетронутым — его первый токен теперь берётся из нового
@@ -511,7 +557,12 @@ export default {
   § 5 明确允许的任意精度实现会按原文本在 \`i64_overflow_to_string\`
   上不满足 § 8.2:它把体解析为 Integer 并会以裸形式规范写出
   (无 raw 标记),而 fixture 固定的 \`canonical.ktav\` 不允许这样。
-- **变更:** § 5 的 Float 条目与 § 5.2 规则 14 —— Float 域现在有
+- **变更:** § 5.9 的字节确定性保证限定在声明相同 Value 域、
+  Integer/Float 域以及 Float 十进制转换与舍入语义的
+  writer-conforming 实现之间。每个实现 MUST 确定性地应用其声明的
+  转换策略;声明不同的实现 MAY 在这些声明产生不同 Value 或规范候选
+  的地方输出不同结果。
+- **破坏性:** § 5 的 Float 条目与 § 5.2 规则 14 —— Float 域现在有
   规范性下限(MUST 至少支持 IEEE 754 binary64 的范围与精度;
   MAY 支持更宽表示)和镜像 Integer 规则 13 的溢出回退:在实现
   Float 域内非有限的浮点字面量(如 binary64 上的 \`1e9999\`)回退
@@ -520,7 +571,19 @@ export default {
   Float」的断言真正成立。新 fixture \`float/positive_overflow_to_string\`、
   \`float/negative_overflow_to_string\` 与 \`float/underflow_to_zero\`
   将边界锁定;最后一个 fixture 记录下溢到 \`0.0\`(有限)是普通
-  Float,而非回退为 String 的情形。
+  Float,而非回退为 String 的情形。声明的 Float 域现在还包括其十进制
+  转换与舍入语义,并 MUST 使用确定性的转换策略;每个被接纳进 Ktav
+  Value 的有限 Float MUST 有一个按该策略精确 round-trip 的有限
+  (s, D, k) 十进制候选。不支持的精确有理值(如 1/3)属于 Ktav Float
+  域之外,不新增 writer 错误情形。最小 binary64 转换使用
+  roundTiesToEven。
+- **破坏性:** § 3.7 与 § 5.2 —— inline 标量中的任何已识别 escape
+  现在会在关键字或数字分类之前强制为 String。在 0.6.x 中,像
+  \`1\\.0\` 这样的体可以先解码再分类为 Float;在 0.7.0 中它是
+  String。这包括 \`\\.\` 与 \`\\:\`,即使解码出的字节没有结构性作用;
+  因此 escape 在值中并非语义冗余。fixture
+  \`valid/inline/escape/recognized_escape_forces_string_number.*\`
+  固化该规则。
 - **新增:** 带引号的键(§ 5.3.3)—— 键段 MAY 写成 \`"…"\`、\`'…'\`
   或 \`\` \`…\` \`\` 而非裸形式;在分隔符内部,\`.\`、\`:\`、\`,\`、\`{\`、\`}\`、
   \`[\`、\`]\` 以及另外两种引号字符都是普通内容,无需 escape,且内容
@@ -532,8 +595,9 @@ export default {
   场景(此前在包括值在内的每个场景中,它们都是
   \`BadEscapeSequence\`,§ 6.13)。引号字符在 inline 值中不具有
   结构性作用 —— 它从来不是分隔符,也从不会被剥离,不论是否
-  escape —— 因此该 escape 在那里合法但多余,正如 \`\\.\` / \`\\:\` 在
-  值中早已如此。语法(§ 4)新增了 \`<escapable-byte>\` 的一个新
+  escape —— 因此该 escape 在那里合法但具有语义作用:它依 § 5.2
+  强制为 String,正如 \`\\.\` / \`\\:\` 在值中一样。语法(§ 4)新增了
+  \`<escapable-byte>\` 的一个新
   候选和 \`<quoted-segment>\` 产生式;\`<bare-segment>\` 也被收窄,
   而非保持不变 —— 其首个 token 现在来自新的 \`<bare-first-token>\`,
   它排除了未 escape 的前导 \`"\` / \`'\` / \`\` \` \`\`(§ 4),因此这确实

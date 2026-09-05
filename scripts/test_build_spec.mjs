@@ -141,6 +141,31 @@ function symlinksSupported() {
   return symlinksSupportedCache;
 }
 
+let directoryLinksSupportedCache = null;
+function directoryLinksSupported() {
+  if (directoryLinksSupportedCache === null) {
+    const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-directory-link-probe-'));
+    const target = path.join(probeDir, 'target');
+    const link = path.join(probeDir, 'link');
+    fs.mkdirSync(target);
+    try {
+      fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+      directoryLinksSupportedCache = true;
+    } catch {
+      // Windows without junction privileges may reject this even when files
+      // can be created normally.
+      directoryLinksSupportedCache = false;
+    } finally {
+      fs.rmSync(probeDir, { recursive: true, force: true });
+    }
+  }
+  return directoryLinksSupportedCache;
+}
+
+function makeDirectoryLink(target, link) {
+  fs.symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
+}
+
 function bodyWithInteriorBlanks(lineCount, blankIndexes) {
   const lines = Array.from({ length: lineCount }, (_, i) =>
     `paragraph-${i + 1} carries content`);
@@ -305,6 +330,21 @@ test('body parts accept the mandated two-way blank-line split', async () => {
   fx[2].bodies = sameLanguageBodies(splitBody(body, body.indexOf('\n\n') + 2));
   const result = await validate(fx);
   assert.equal(result.units.get('sec-1').parts.length, 2);
+});
+
+test('equidistant split tie chooses the earlier blank boundary', async () => {
+  const fx = baseFixtures();
+  const body = bodyWithInteriorBlanks(130, [63, 65]);
+  const cuts = interiorBlankCutOffsets(body);
+  assert.equal(cuts.length, 2);
+  assert.equal(body.slice(0, cuts[0]).split('\n').length - 1, 64);
+  assert.equal(body.slice(0, cuts[1]).split('\n').length - 1, 66);
+  const parts = splitBody(body, cuts[0]);
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = sameLanguageBodies(parts);
+
+  const result = await validate(fx);
+  assert.equal(result.units.get('sec-1').parts[0].en, parts[0]);
 });
 
 test('all languages use the maximum body line count for proportional cut targets', async () => {
@@ -643,6 +683,142 @@ test('write build rejects a generated README directory before creating temporary
     assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
     const leftovers = fs.readdirSync(contentDir).filter((name) => name.endsWith('.tmp'));
     assert.deepEqual(leftovers, []);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('failed atomic rename preserves the destination and cleans its temporary file', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-rename-failure-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const original = Buffer.from('original specification bytes\n');
+    write(path.join(versionDir, 'spec.md'), original);
+    const build = await buildBuffers(contentDir);
+    let attempts = 0;
+    const failure = new Error('injected atomic rename failure');
+    failure.code = 'EACCES';
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        renameSync() {
+          attempts++;
+          throw failure;
+        },
+      }),
+      /injected atomic rename failure/
+    );
+    assert.equal(attempts, 1);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), original);
+    assert.deepEqual(
+      fs.readdirSync(versionDir).filter((name) => name.endsWith('.tmp')),
+      []
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build rejects a specification directory symlink before creating temporary outputs', async (t) => {
+  if (!directoryLinksSupported()) {
+    t.skip('directory symlink/junction creation unavailable; this test MUST run when directory links are supported');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-root-link-'));
+  try {
+    const realVersionDir = path.join(temp, 'real-version');
+    const versionDir = path.join(temp, 'version-link');
+    makeContent(realVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    makeDirectoryLink(realVersionDir, versionDir);
+    const contentDir = path.join(versionDir, 'content');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /specDir path component .* is a symlink or junction/.test(e.message)
+    );
+    assert.deepEqual(
+      fs.readdirSync(realVersionDir).filter((name) => name.endsWith('.tmp')),
+      []
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build rejects a content directory symlink before creating temporary outputs', async (t) => {
+  if (!directoryLinksSupported()) {
+    t.skip('directory symlink/junction creation unavailable; this test MUST run when directory links are supported');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-content-link-'));
+  try {
+    const sourceVersionDir = path.join(temp, 'source-version');
+    const versionDir = path.join(temp, 'version');
+    makeContent(sourceVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    fs.mkdirSync(versionDir);
+    makeDirectoryLink(path.join(sourceVersionDir, 'content'), path.join(versionDir, 'content'));
+    const contentDir = path.join(versionDir, 'content');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /contentDir path component .* is a symlink or junction/.test(e.message)
+    );
+    assert.deepEqual(
+      fs.readdirSync(versionDir).filter((name) => name.endsWith('.tmp')),
+      []
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build rejects a symlinked ancestor of a write root', async (t) => {
+  if (!directoryLinksSupported()) {
+    t.skip('directory symlink/junction creation unavailable; this test MUST run when directory links are supported');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-ancestor-link-'));
+  try {
+    const realRepo = path.join(temp, 'real-repo');
+    const repoLink = path.join(temp, 'repo-link');
+    const realVersionDir = path.join(realRepo, 'versions', '0.7');
+    makeContent(realVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    makeDirectoryLink(realRepo, repoLink);
+    const versionDir = path.join(repoLink, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /specDir path component .* is a symlink or junction/.test(e.message)
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write build requires contentDir to be the resolved content child of specDir', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-root-shape-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const otherVersionDir = path.join(temp, 'other-version');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    makeContent(otherVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const contentDir = path.join(otherVersionDir, 'content');
+    const build = await buildBuffers(contentDir);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (e) => /contentDir .* must resolve to the expected child .* of specDir/.test(e.message)
+    );
+    assert.deepEqual(
+      fs.readdirSync(versionDir).filter((name) => name.endsWith('.tmp')),
+      []
+    );
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

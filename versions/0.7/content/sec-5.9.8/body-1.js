@@ -4,7 +4,15 @@ export default {
   \`+0\` emit as \`0\`. No underscores. No leading zeros (other than
   the literal \`0\`). The minus sign is preserved for negative
   values.
-- **Float:** the chosen textual form matches one of the two
+- **Float:** the declared Float domain includes the decimal-conversion
+  and rounding semantics used by parsing and writing, and its conversion
+  policy MUST be deterministic. Every finite Float admitted to the Ktav
+  Value model MUST have at least one finite decimal candidate \`(s, D, k)\`
+  that round-trips exactly under those semantics. A host representation's
+  finite value without such a candidate (for example exact-rational
+  \`1/3\`) is outside the declared Ktav Float domain, rather than an
+  additional writer error case. For the minimum binary64 domain, the
+  declared rounding semantics MUST be IEEE 754 \`roundTiesToEven\`. The chosen textual form matches one of the two
   alternatives of § 3.6:
   - \`sign? digits "." digits ("e" sign? digits)?\`
   - \`sign? digits "e" sign? digits\`
@@ -55,11 +63,13 @@ export default {
   \`0.01\`, \`1e-3\`, \`1.5e-3\`, \`-1e-3\`, \`9999999.0\`, \`1e7\`, and
   \`120000000.0\` → \`1.2e8\`.
 
-  Two writer-conforming implementations using the same Float
-  representation (binary64) MUST produce identical output for the
-  same Value. The test fixtures \`*.canonical.ktav\` assume binary64
-  semantics; implementations using arbitrary-precision decimal MAY
-  produce different output only where their Value domain differs.
+  Two writer-conforming implementations declaring the same Value domain,
+  the same Float representation, and the same decimal-conversion and
+  rounding semantics MUST produce identical output for the same Value.
+  The test fixtures \`*.canonical.ktav\` assume binary64 semantics;
+  implementations declaring a different domain or conversion semantics
+  MAY produce different output only where those declarations yield a
+  different Value or candidate.
 
 `,
   ru: `
@@ -67,7 +77,16 @@ export default {
   отбрасывается. \`-0\` и \`+0\` выводятся как \`0\`. Никаких
   подчёркиваний. Никаких ведущих нулей (кроме литерала \`0\`).
   Знак минус сохраняется для отрицательных значений.
-- **Float:** выбранная текстовая форма соответствует одной из
+- **Float:** заявленный домен Float включает семантику decimal-преобразования и
+  округления, используемую при разборе и выводе, а политика преобразования
+  MUST быть детерминированной. Каждый конечный Float, допускаемый в модель
+  Ktav Value, MUST иметь хотя бы один конечный десятичный кандидат
+  \`(s, D, k)\`, точно проходящий round-trip с этой семантикой. Конечное
+  значение хост-представления без такого кандидата (например, точная
+  рациональ \`1/3\`) находится вне заявленного домена Ktav Float, а не
+  образует дополнительного случая ошибки writer. Для минимального домена
+  binary64 заявленная семантика округления MUST быть IEEE 754
+  \`roundTiesToEven\`. Выбранная текстовая форма соответствует одной из
   двух альтернатив § 3.6:
   - \`sign? digits "." digits ("e" sign? digits)?\`
   - \`sign? digits "e" sign? digits\`
@@ -118,12 +137,12 @@ export default {
   \`1.5e-3\`, \`-1e-3\`, \`9999999.0\`, \`1e7\` и
   \`120000000.0\` → \`1.2e8\`.
 
-  Две writer-conforming реализации, использующие одинаковое
-  представление Float (binary64), MUST производить идентичный
-  вывод. Фикстуры \`*.canonical.ktav\` предполагают семантику
-  binary64. Реализации, использующие decimal произвольной
-  точности, MAY давать иной вывод только там, где их домен
-  Value отличается.
+  Две writer-conforming реализации, заявляющие одинаковый домен Value,
+  одинаковое представление Float и одинаковую семантику decimal-преобразования
+  и округления, MUST производить идентичный вывод. Фикстуры
+  \`*.canonical.ktav\` предполагают семантику binary64. Реализации,
+  использующие иной домен или иную семантику, MAY давать иной вывод только
+  там, где их заявленные домен или семантика дают иной Value или кандидат.
 
 `,
   zh: `
@@ -168,10 +187,16 @@ export default {
   \`-1e-3\`、\`9999999.0\`、\`1e7\`,以及
   \`120000000.0\` → \`1.2e8\`。
 
-  使用相同 Float 表示(binary64)的两个 writer-conforming 实现
-  对同一 Value MUST 产生相同输出。fixture \`*.canonical.ktav\`
-  假定 binary64 语义。使用任意精度 decimal 的实现 MAY 产生
-  不同输出,但仅限于其 Value 域有所不同之处。
+  声明相同的 Float 域、解析与写入所用的十进制转换和舍入语义的
+  两个 writer-conforming 实现 MUST 使用确定性的转换策略,并 MUST 对同一
+  Value 产生相同输出。每个被接纳进 Ktav Value 模型的有限 Float
+  MUST 至少有一个按该语义精确 round-trip 的有限十进制候选
+  \`(s, D, k)\`;主机表示中没有这种候选的有限值(例如精确有理数
+  \`1/3\`)不属于声明的 Ktav Float 域,也不是额外的 writer 错误情形。
+  对最小 binary64 域,声明的舍入语义 MUST 是 IEEE 754
+  \`roundTiesToEven\`。fixture \`*.canonical.ktav\` 假定 binary64 语义。声明不同域或不同
+  语义的实现 MAY 产生不同输出,但仅限于这些声明导致不同 Value 或候选
+  的地方。
 
 `,
 };

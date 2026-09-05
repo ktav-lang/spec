@@ -20,7 +20,7 @@ set, resolving a standing internal contradiction; adds the \`\\uXXXX\`
 escape (§ 3.7.1) and quoted keys (§ 5.3.3, delimiters \`"\` / \`'\` /
 \`\` \` \`\`); the \`(…)\` multi-line string form now also strips
 trailing whitespace from every content line — \`(…)\` already removed
-each line's shared leading indent (§ 5.6). Three independently-scoped
+each line's shared leading indent (§ 5.6). Five independently-scoped
 breaking changes: value/key-edge trimming now covers 21 additional
 code points beyond space/tab — VT and FF (§ 3.3's remaining two ASCII
 whitespace members) plus the 19 non-ASCII code points in the § 3.3
@@ -29,11 +29,15 @@ in practice against every 0.6.x Rust-core release, which already
 trimmed the full set there; the \`(…)\` trailing-edge strip is
 breaking even for the Rust core, which previously preserved
 trailing whitespace (including plain ASCII space/tab) on every line
-of a stripped-form block; and a line whose first content begins with
+of a stripped-form block; a line whose first content begins with
 an unescaped \`"\`, \`'\`, or \`\` \` \`\` no longer necessarily parses as
 before — the quote character now opens a quoted segment there instead
 of being ordinary content, so e.g. an Object pair \`"port": 1\` now
-names the key \`port\`, not \`"port"\` (§ 5.3.3, § 10.7, Appendix D).
+names the key \`port\`, not \`"port"\` (§ 5.3.3, § 10.7, Appendix D);
+a recognised escape in an inline scalar now forces String before keyword
+or numeric classification (so \`1\\.0\` is String, not Float); and a float
+literal that is non-finite in the declared Float domain now falls back to
+String rather than producing a non-finite Float (§ 5.2 rule 14).
 
 `,
   ru: `
@@ -59,7 +63,7 @@ Ktav — это конфигурационный формат на основе 
 и квотированные ключи (§ 5.3.3, разделители \`"\` / \`'\` / \`\` \` \`\`);
 многострочная строковая форма \`(…)\` теперь также обрезает
 завершающие пробельные символы каждой содержательной строки —
-\`(…)\` уже убирала общий ведущий отступ каждой строки (§ 5.6). Три
+\`(…)\` уже убирала общий ведущий отступ каждой строки (§ 5.6). Пять
 независимо-ограниченных ломающих изменения: обрезка на границе
 значения/ключа теперь покрывает 21 дополнительную кодовую точку
 сверх пробела/табуляции — VT и FF (два оставшихся ASCII-члена
@@ -68,13 +72,17 @@ Ktav — это конфигурационный формат на основе 
 для одного релиза 0.6.x Rust-ядра, которое уже обрезало там полный
 набор; замыкающая обрезка \`(…)\` — ломающая даже для Rust-ядра,
 которое ранее сохраняло замыкающие пробельные символы (включая
-обычный ASCII-пробел/табуляцию) на каждой строке stripped-блока; и
+обычный ASCII-пробел/табуляцию) на каждой строке stripped-блока;
 строка, содержательная часть которой начинается с неэкранированного
 \`"\`, \`'\` или \`\` \` \`\`, больше не обязательно разбирается как раньше —
 теперь символ кавычки открывает там квотированный сегмент вместо
 того, чтобы быть обычным содержимым, так что, например, пара объекта
 \`"port": 1\` теперь именует ключ \`port\`, а не \`"port"\` (§ 5.3.3,
-§ 10.7, Приложение D).
+§ 10.7, Приложение D); распознанный escape в inline-скаляре теперь
+фиксирует String до классификации ключевого слова или числа (поэтому
+\`1\\.0\` — String, а не Float); а float-литерал, неконечный в заявленном
+домене Float, теперь проваливается в String вместо порождения неконечного
+Float (§ 5.2, правило 14).
 
 `,
   zh: `
@@ -92,16 +100,19 @@ Ktav 是一种基于纯文本的配置格式,设计目标是让每一行都能�
 解决了此前存在的内部矛盾;新增 \`\\uXXXX\` escape(§ 3.7.1)以及带引号
 的键(§ 5.3.3,分隔符 \`"\` / \`'\` / \`\` \` \`\`);多行字符串
 \`(…)\` 形式现在还会去除每个内容行的尾部空白 —— \`(…)\` 此前已去除每行
-共享的前导缩进(§ 5.6)。三项范围各自独立的破坏性变更:值/键边界的
+共享的前导缩进(§ 5.6)。五项范围各自独立的破坏性变更:值/键边界的
 trim 现在在空格/制表符之外额外覆盖 21 个码点:VT 与 FF(§ 3.3 集合中
 剩余的两个 ASCII 空白成员),加上该集合中的 19 个非 ASCII 码点 ——
 相对于每一个已发布的 0.6.x Rust 核心版本,实际上并非破坏性,它们本就
 已经去除了完整的集合;\`(…)\` 的尾部 trim 即使对 Rust 核心也是破坏性的
 —— 它此前在 stripped 块的每一行都保留尾部空白(包括普通 ASCII
-空格/制表符);以及某一行的内容部分若以未转义的 \`"\`、\`'\` 或 \`\` \` \`\`
+空格/制表符);某一行的内容部分若以未转义的 \`"\`、\`'\` 或 \`\` \` \`\`
 开头,不再必然按此前的方式解析 —— 引号字符现在会在该处开启一个带
 引号的段,而不再作为普通内容,因此例如对象键值对 \`"port": 1\` 现在
-命名的键是 \`port\`,而不是 \`"port"\`(§ 5.3.3、§ 10.7、附录 D)。
+命名的键是 \`port\`,而不是 \`"port"\`(§ 5.3.3、§ 10.7、附录 D);inline
+标量中已识别的 escape 现在会在关键字或数字分类之前强制为 String
+(因此 \`1\\.0\` 是 String 而非 Float);而在声明的 Float 域中非有限的
+float 字面量现在回退为 String,不再产生非有限 Float(§ 5.2 规则 14)。
 
 `,
 };

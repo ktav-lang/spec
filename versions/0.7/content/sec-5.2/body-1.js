@@ -64,11 +64,14 @@ escape occurs inside that unclosed quoted segment.
     outside the i64 range; a 0.7.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
 14. If the body matches the **float literal** grammar (§ 3.6) and
-    its numeric value is finite in the implementation's supported
+    its numeric value is finite in the implementation's declared
     Float domain (§ 5): Float carrying the numeric value parsed
-    from the body. The internal representation is
-    implementation-defined (see § 5 description of Float); the
-    canonical textual form is specified in § 5.9.8. A literal whose
+    from the body. The declared-domain check includes § 5's requirement
+    that every admitted finite Float have a finite decimal candidate
+    that round-trips exactly under the declared conversion semantics.
+    The internal representation is implementation-defined (see § 5
+    description of Float); the canonical textual form is specified in
+    § 5.9.8. A literal whose
     parsed value would not be finite in that domain — e.g. a
     binary64 backend given \`1e9999\`, which overflows to infinity —
     falls through to rule 15 (String), exactly as an out-of-range
@@ -151,9 +154,12 @@ inline-значения во вложенный разбор составног�
     на строго-i64 бэкенде MUST помещать такие переполняющие тела в
     правило 15.
 14. Если тело соответствует грамматике **float literal** (§ 3.6) и
-    его числовое значение конечно в поддерживаемом реализацией
-    домене Float (§ 5): Float, несущий числовое значение,
-    разобранное из тела. Внутреннее представление определяется
+    его числовое значение конечно в заявленном реализацией домене
+    Float (§ 5): Float, несущий числовое значение, разобранное из
+    тела. Проверка заявленного домена включает требование § 5, чтобы
+    каждый допускаемый конечный Float имел конечный десятичный
+    кандидат, точно проходящий round-trip с заявленной семантикой
+    преобразования. Внутреннее представление определяется
     реализацией (см. § 5); каноническая текстовая форма указана в
     § 5.9.8. Литерал, чьё разобранное значение не было бы конечным
     в этом домене — например, binary64-бэкенд, получивший
@@ -215,8 +221,10 @@ array-item line。解析器按顺序分类;首个匹配规则胜出。\`::\` 之
     可移植文档 SHOULD NOT 依赖于 i64 范围之外的 Integer 类型化;
     运行于严格 i64 后端的 0.7.0 兼容解析器 MUST 将这类溢出体归入
     规则 15。
-14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所支持的
-    Float 域(§ 5)内有限:Float,携带从体解析的数值。内部表示
+14. 若体匹配**浮点字面量**语法(§ 3.6)且其数值在实现所声明的
+    Float 域(§ 5)内有限:Float,携带从体解析的数值。声明域的检查
+    还包括 § 5 的要求:每个被接纳的有限 Float 都必须有一个有限
+    十进制候选,并按声明的转换语义精确 round-trip。内部表示
     由实现定义(见 § 5);规范文本形式见 § 5.9.8。解析值在该域内
     非有限的字面量 —— 例如 binary64 后端遇到 \`1e9999\`,溢出为
     无穷 —— 回退到规则 15(String),与规则 13 中超出范围的整数

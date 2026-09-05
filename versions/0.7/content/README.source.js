@@ -180,7 +180,8 @@ Each language is split **independently** into N chunks by cutting only at
 blank-line boundaries (an empty line — never mid-line), choosing the N-1 cut
 points as the blank lines closest to the proportional target offsets
 \`i*L/N\` for \`i = 1..N-1\`. If a language lacks enough distinct interior blank
-lines for N-1 cut points, N for the **whole unit** is reduced to
+lines for N-1 cut points, equidistant ties choose the earlier blank boundary,
+and N for the **whole unit** is reduced to
 (available cut points + 1) rather than failing. Semantic alignment of parts
 across languages is **not** a goal — this is file-size hygiene only.
 
@@ -534,7 +535,8 @@ export default {
 Каждый язык разбивается **независимо** на N кусков, разрезами только по
 границам пустых строк (пустая строка — никогда посреди строки), причём
 N-1 точек разреза выбираются как пустые строки, ближайшие к
-пропорциональным целевым смещениям \`i*L/N\` для \`i = 1..N-1\`. Если у
+пропорциональным целевым смещениям \`i*L/N\` для \`i = 1..N-1\`; при равном расстоянии
+выбирается более ранняя граница пустой строки. Если у
 языка не хватает различных внутренних пустых строк для N-1 точек
 разреза, N для **всего юнита** уменьшается до (доступных точек
 разреза + 1), а не падает с ошибкой. Семантическое выравнивание кусков
@@ -867,7 +869,7 @@ export default {
 
 每种语言**独立**拆成 N 块,只允许在空行边界处切割(空行——绝不在
 行中间),并选取距比例目标偏移 \`i*L/N\`(\`i = 1..N-1\`)最近的空行作为
-N-1 个切割点。若某语言的内部空行不足以提供 N-1 个切割点,则把
+N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语言的内部空行不足以提供 N-1 个切割点,则把
 **整个单元**的 N 降为(可用切割点数 + 1),而不是失败。各语言之间
 分块语义对齐**不是**目标——这只是文件大小的卫生措施。
 

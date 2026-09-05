@@ -8,5 +8,5 @@ export default {
     "ru": "Грамматика",
     "zh": "语法"
   },
-  "bodyParts": 3
+  "bodyParts": 4
 }

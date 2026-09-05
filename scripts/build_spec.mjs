@@ -18,7 +18,7 @@
 //   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str),
 //   firstByteDiff(existing, expected), lineNumberAtByte(buf, offset),
 //   lineAtByte(buf, offset), formatMismatchDiagnostic(...),
-//   writeBuildOutputs(...), defaultSectionInventoryLockPath(contentDir)
+//   writeBuildOutputs(..., { renameSync }), defaultSectionInventoryLockPath(contentDir)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -746,7 +746,7 @@ function createTemporaryOutput(destination) {
   fail(`could not allocate a temporary output beside ${destination}`);
 }
 
-function atomicWriteOutput(destination, data) {
+function atomicWriteOutput(destination, data, { renameSync = fs.renameSync } = {}) {
   let fd = null;
   let tempPath = null;
   try {
@@ -758,21 +758,10 @@ function atomicWriteOutput(destination, data) {
     fs.closeSync(fd);
     fd = null;
 
-    // Recheck immediately before replacement. On POSIX rename replaces a
-    // symlink itself, never its target; the Windows fallback below also
-    // refuses to unlink anything that is no longer a regular file.
+    // Recheck immediately before replacement. rename() replaces the
+    // destination atomically and never follows a destination symlink.
     assertRegularDestination(destination);
-    try {
-      fs.renameSync(tempPath, destination);
-    } catch (e) {
-      // Windows does not replace an existing file with rename(). Remove an
-      // already-checked regular destination, then perform the same rename.
-      // The normal POSIX path remains a single atomic replacement operation.
-      if (process.platform !== 'win32' ||
-          !['EACCES', 'EEXIST', 'EPERM', 'ENOTEMPTY'].includes(e.code)) throw e;
-      if (assertRegularDestination(destination)) fs.unlinkSync(destination);
-      fs.renameSync(tempPath, destination);
-    }
+    renameSync(tempPath, destination);
     tempPath = null;
   } finally {
     if (fd !== null) {
@@ -784,7 +773,49 @@ function atomicWriteOutput(destination, data) {
   }
 }
 
-export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }) {
+function resolvedWriteRoot(root, label) {
+  const absolute = path.resolve(root);
+  const components = [];
+  let current = absolute;
+  while (true) {
+    components.push(current);
+    const parent = path.dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+
+  for (const component of components.reverse()) {
+    let stat;
+    try {
+      stat = fs.lstatSync(component);
+    } catch (e) {
+      fail(`cannot inspect ${label} path component ${component}: ${e.message}`);
+    }
+    if (stat.isSymbolicLink()) {
+      fail(`${label} path component ${component} is a symlink or junction; write roots and their ancestors must be real directories`);
+    }
+    if (!stat.isDirectory()) {
+      fail(`${label} path component ${component} is not a directory`);
+    }
+  }
+
+  try {
+    return fs.realpathSync(absolute);
+  } catch (e) {
+    fail(`cannot resolve ${label} ${absolute}: ${e.message}`);
+  }
+}
+
+function validateWriteRoots(specDir, contentDir) {
+  const resolvedSpecDir = resolvedWriteRoot(specDir, 'specDir');
+  const resolvedContentDir = resolvedWriteRoot(contentDir, 'contentDir');
+  if (path.relative(resolvedSpecDir, resolvedContentDir) !== 'content') {
+    fail(`contentDir ${path.resolve(contentDir)} must resolve to the expected child ${path.join(resolvedSpecDir, 'content')} of specDir ${resolvedSpecDir}`);
+  }
+}
+
+export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, options = {}) {
+  validateWriteRoots(specDir, contentDir);
   const outputs = [];
   for (const lang of LANGS) {
     outputs.push([path.join(specDir, OUT_FILES[lang]), bufs[lang]]);
@@ -794,7 +825,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }) {
   // Preflight every destination so a rejected symlink/special file cannot
   // leave a partially regenerated set of outputs behind.
   for (const [destination] of outputs) assertRegularDestination(destination);
-  for (const [destination, data] of outputs) atomicWriteOutput(destination, data);
+  for (const [destination, data] of outputs) atomicWriteOutput(destination, data, options);
 }
 
 export function firstByteDiff(existing, expected) {
