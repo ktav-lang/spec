@@ -197,6 +197,92 @@ function validateBodyPart(unit, k, d, label = `body-${k}.js`) {
   }
 }
 
+// These are the CommonMark line-level rules needed to keep generated section
+// headings out of unit bodies. The builder does not need a full Markdown
+// parser: fenced blocks suppress ATX-heading detection, and every other ATX
+// heading is an inventory injection.
+function parseFenceOpener(line) {
+  let indent = 0;
+  while (indent < line.length && line[indent] === ' ') indent++;
+  if (indent > 3 || indent === line.length ||
+      (line[indent] !== '`' && line[indent] !== '~')) return null;
+  const marker = line[indent];
+  let end = indent;
+  while (end < line.length && line[end] === marker) end++;
+  const length = end - indent;
+  if (length < 3) return null;
+  // CommonMark forbids backticks in a backtick fence's info string.
+  if (marker === '`' && line.slice(end).includes('`')) return null;
+  return { marker, length };
+}
+
+function isFenceCloser(line, fence) {
+  let indent = 0;
+  while (indent < line.length && line[indent] === ' ') indent++;
+  if (indent > 3 || indent === line.length || line[indent] !== fence.marker) {
+    return false;
+  }
+  let end = indent;
+  while (end < line.length && line[end] === fence.marker) end++;
+  if (end - indent < fence.length) return false;
+  return [...line.slice(end)].every((ch) => ch === ' ' || ch === '\t');
+}
+
+function parseAtxHeading(line) {
+  let indent = 0;
+  while (indent < line.length && line[indent] === ' ') indent++;
+  if (indent > 3) return null;
+  let end = indent;
+  while (end < line.length && line[end] === '#') end++;
+  const level = end - indent;
+  if (level < 1 || level > 6) return null;
+  if (end < line.length && line[end] !== ' ' && line[end] !== '\t') return null;
+  return { level, raw: line };
+}
+
+function findAtxHeadings(body) {
+  const headings = [];
+  let fence = null;
+  const lines = body.split('\n');
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (fence === null) {
+      const opener = parseFenceOpener(line);
+      if (opener !== null) {
+        fence = opener;
+        continue;
+      }
+    } else {
+      if (isFenceCloser(line, fence)) fence = null;
+      continue;
+    }
+    const heading = parseAtxHeading(line);
+    if (heading !== null) headings.push({ ...heading, line: index + 1 });
+  }
+  return headings;
+}
+
+function validateUnitHeadings(unit, meta, parts) {
+  for (const lang of LANGS) {
+    const body = parts.map((part) => part[lang]).join('');
+    const headings = findAtxHeadings(body);
+    if (meta.kind === 'frontmatter') {
+      if (headings.length !== 1 || headings[0].level !== 1) {
+        failUnit(unit,
+          `${lang}: frontmatter must contain exactly its intended h1 and no other ` +
+          `ATX heading (found ${headings.length})`);
+      }
+      continue;
+    }
+    if (headings.length) {
+      const heading = headings[0];
+      failUnit(unit,
+        `${lang}: unit body contains an ATX heading outside a fenced code block ` +
+        `at line ${heading.line}: ${JSON.stringify(heading.raw)}`);
+    }
+  }
+}
+
 // Proves `src` (the raw UTF-8 text of a body-N.js file, read via
 // fs.readFileSync) is EXACTLY:
 //   export default {\n  en: `...`,\n  ru: `...`,\n  zh: `...`,\n};\n
@@ -659,6 +745,10 @@ export async function validateContentDir(contentDir, options = {}) {
     // bodyParts is a deterministic layout contract, not just a file count:
     // validate both the required count and every inter-part cut.
     validateBodySplitting(unit, meta, parts);
+
+    // Section headings are generated from meta. Frontmatter is the sole
+    // exception: its body owns the document h1, but no other ATX heading.
+    validateUnitHeadings(unit, meta, parts);
 
     // 6. Terminal-newline invariant (per language).
     // Non-last units must end with EXACTLY two trailing LFs ("\n\n"), i.e.

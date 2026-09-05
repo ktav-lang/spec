@@ -75,10 +75,13 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   a `CR` byte or a stripped-form collision, and any compound containing
   a non-representable Value at any depth are not representable, and a
   writer-conforming implementation MUST reject them with an error,
-  emitting no partial output. Previously § 5.9 left these
-  programmatic-only cases undefined. The abstract programmatic Float
-  carrier is now distinct from the declared finite parseable/canonical
-  Float domain: it MUST distinguish NaN, +Infinity, and -Infinity so the
+  emitting no partial output. Previously § 5.9 left the programmatic-only
+  scalar-root, empty-key, and non-finite-Float cases undefined; for
+  parser-produced `CR`-bearing and collision Strings, § 5.9.7 already had
+  a permissive but ambiguous rule that allowed arbitrary or lossy output.
+  The abstract programmatic Float carrier is now distinct from the
+  declared finite parseable/canonical Float domain: it MUST distinguish
+  NaN, +Infinity, and -Infinity so the
   three `NonFiniteFloat` fixtures can be supplied and rejected. Those
   sentinels are programmatic-only; `CR`-bearing and collision Strings are
   parser-produced cases covered separately by `parseable-unrepresentable/`.

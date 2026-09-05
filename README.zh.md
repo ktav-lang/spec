@@ -355,7 +355,7 @@ timeout: null
 
 - **本文描述的草案：** [Ktav 0.7.0](versions/0.7/spec.zh.md) — 尚未发布;本 README 的功能概览遵循该草案。
 - **当前稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23;稳定语义与 fixture 请使用此版本。
-- **所有版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
+- **已发布/稳定版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.md`](CHANGELOG.md)。
 
 ## 一致性测试套件
@@ -465,7 +465,7 @@ submodule 引入(或直接拷贝)。
 ```
 .
 ├── README.md              this file
-├── versions.ktav          machine-readable index of versions
+├── versions.ktav          machine-readable index of released/stable versions
 ├── CHANGELOG.md           summary across versions
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
@@ -507,7 +507,7 @@ submodule 引入(或直接拷贝)。
 | Rust(参考)    | [`ktav-lang/rust`](https://github.com/ktav-lang/rust)   | `cargo add ktav`                                      |
 | C# / .NET       | [`ktav-lang/csharp`](https://github.com/ktav-lang/csharp) | `dotnet add package Ktav`                          |
 | Go              | [`ktav-lang/golang`](https://github.com/ktav-lang/golang) | `go get github.com/ktav-lang/golang`               |
-| Java / JVM      | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | `io.github.ktav-lang:ktav`(Maven Central)             |
+| Java / JVM      | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | GitHub Releases（Maven Central 已规划）              |
 | JS / TS         | [`ktav-lang/js`](https://github.com/ktav-lang/js)       | `npm install @ktav-lang/ktav`                         |
 | PHP             | [`ktav-lang/php`](https://github.com/ktav-lang/php)     | `composer require ktav-lang/ktav`                     |
 | Python          | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                  |

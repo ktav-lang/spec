@@ -152,6 +152,17 @@ JSON_RECURSION_ERROR = "maximum recursion depth exceeded while parsing JSON"
 SENTINEL_POLICIES = frozenset({"allow", "ordinary"})
 
 
+def _is_float_sentinel(value):
+    """Return true only for the exact programmatic non-finite Float shape."""
+    return (
+        isinstance(value, dict)
+        and len(value) == 1
+        and FLOAT_SENTINEL_KEY in value
+        and isinstance(value[FLOAT_SENTINEL_KEY], str)
+        and value[FLOAT_SENTINEL_KEY] in FLOAT_SENTINEL_VALUES
+    )
+
+
 def rel(path, tests_dir):
     """Path relative to tests_dir with forward slashes, for deterministic output."""
     try:
@@ -612,10 +623,7 @@ def _strip_ktav_whitespace(text):
 
 def _semantic_kind(value, decode_float_sentinel=True):
     if isinstance(value, dict):
-        if (decode_float_sentinel
-                and set(value) == {FLOAT_SENTINEL_KEY}
-                and isinstance(value[FLOAT_SENTINEL_KEY], str)
-                and value[FLOAT_SENTINEL_KEY] in FLOAT_SENTINEL_VALUES):
+        if decode_float_sentinel and _is_float_sentinel(value):
             return "Float"
         return "Object"
     if isinstance(value, list):
@@ -730,16 +738,9 @@ def _inspect_unrepresentable_value(value, sentinel_policy="allow"):
                 if surrogate is not None:
                     errors.append("%s: Object key contains lone surrogate U+%04X"
                                   % (path, surrogate))
-            if FLOAT_SENTINEL_KEY in node and sentinel_policy == "allow":
-                if (set(node) != {FLOAT_SENTINEL_KEY}
-                        or not isinstance(node[FLOAT_SENTINEL_KEY], str)
-                        or node[FLOAT_SENTINEL_KEY] not in FLOAT_SENTINEL_VALUES):
-                    errors.append(
-                        "%s: '$float' must be the only field of a sentinel "
-                        "with value 'NaN', 'Infinity', or '-Infinity'" % path)
-                else:
-                    witnesses["NonFiniteFloat"] = True
-                    return
+            if sentinel_policy == "allow" and _is_float_sentinel(node):
+                witnesses["NonFiniteFloat"] = True
+                return
             for key, child in node.items():
                 if key == "":
                     witnesses["EmptyKeyName"] = True

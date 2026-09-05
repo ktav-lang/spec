@@ -113,7 +113,7 @@ const MID = ['mid.\n\n', 'середина.\n\n', '中间。\n\n'];
 
 function baseFixtures() {
   return [
-    { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['fm.\n\n', 'фм.\n\n', '前言。\n\n']] },
+    { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['# Frontmatter\n\nfm.\n\n', '# Frontmatter\n\nфм.\n\n', '# Frontmatter\n\n前言。\n\n']] },
     { name: 'named-abstract', meta: unitMeta('named'), bodies: [MID] },
     { name: 'sec-1', meta: unitMeta('numbered', { __num: '1' }), bodies: [LAST] },
   ];
@@ -219,6 +219,56 @@ function zipLanguageBodies(en, ru, zh) {
 test('well-formed minimal fixture passes cleanly', async () => {
   const { manifest } = await validate(baseFixtures());
   assert.deepEqual(manifest, ['frontmatter', 'named-abstract', 'sec-1']);
+});
+
+test('unit bodies reject injected ATX headings independently in EN, RU and ZH', async () => {
+  for (const langIndex of [0, 1, 2]) {
+    const fx = baseFixtures();
+    const body = ['body.\n\n', 'body.\n\n', 'body.\n\n'];
+    body[langIndex] += '## 1. Intro\n\n';
+    fx[1].bodies = [body];
+    await assert.rejects(
+      validate(fx),
+      (e) => new RegExp(
+        `unit "named-abstract": ${LANGS[langIndex]}: unit body contains an ATX heading`
+      ).test(e.message),
+      `${LANGS[langIndex]} injected heading must be rejected`
+    );
+  }
+});
+
+test('ATX-looking lines inside backtick and tilde fences are accepted', async () => {
+  const fenced =
+    '```text\n' +
+    '# inside backticks\n' +
+    '```\n\n' +
+    '~~~text\n' +
+    '## inside tildes\n' +
+    '~~~\n\n';
+  const fx = baseFixtures();
+  fx[1].bodies = [sameLanguageBodies([fenced])[0]];
+  await assert.doesNotReject(validate(fx));
+});
+
+test('fence marker lengths follow CommonMark 4-backtick/3-backtick behavior', async () => {
+  for (const body of [
+    '````md\n### inside\n```\n````\n\n',
+    '```md\n### inside\n````\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx));
+  }
+});
+
+test('frontmatter rejects an extra ATX heading after its intended h1', async () => {
+  const fx = baseFixtures();
+  const body = '# Frontmatter\n\n## injected\n\n';
+  fx[0].bodies = [sameLanguageBodies([body])[0]];
+  await assert.rejects(
+    validate(fx),
+    /unit "frontmatter": en: frontmatter must contain exactly its intended h1 and no other ATX heading \(found 2\)/
+  );
 });
 
 test('meta.js enforces the documented top-level and nested property order', () => {
@@ -516,7 +566,7 @@ test('manifest[0] is not "frontmatter"', async () => {
 
 test('non-last unit ru final chunk ends "\\n" instead of "\\n\\n" (per-language)', async () => {
   const fx = baseFixtures();
-  fx[0].bodies = [['fm.\n\n', 'фм.\n', '前言。\n\n']];
+  fx[0].bodies = [['# Frontmatter\n\nfm.\n\n', '# Frontmatter\n\nфм.\n', '# Frontmatter\n\n前言。\n\n']];
   await assert.rejects(
     validate(fx),
     (e) => /unit "frontmatter": ru: non-last unit's final chunk must end with "\\n\\n"/.test(e.message)
@@ -648,7 +698,7 @@ test('meta.js title missing a key is rejected', async () => {
 
 test('non-last unit en final chunk ends "\\n\\n\\n" (extra blank line) is rejected', async () => {
   const fx = baseFixtures();
-  fx[0].bodies = [['fm.\n\n\n', 'фм.\n\n', '前言。\n\n']];
+  fx[0].bodies = [['# Frontmatter\n\nfm.\n\n\n', '# Frontmatter\n\nфм.\n\n', '# Frontmatter\n\n前言。\n\n']];
   await assert.rejects(
     validate(fx),
     (e) => /unit "frontmatter": en: non-last unit's final chunk must end with "\\n\\n".*got "\\n\\n\\n" or more/.test(e.message)
@@ -1166,7 +1216,7 @@ test('README-documented sec-9.9 meta.js example is accepted verbatim in EN, RU a
       assert.ok(documented.endsWith('}\n'), 'example must end with a single newline and no semicolon');
       assert.ok(!documented.includes(';'), 'meta.js example must not contain a semicolon');
       const fx = [
-        { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['fm.\n\n', 'фм.\n\n', '前言。\n\n']] },
+        { name: 'frontmatter', meta: unitMeta('frontmatter'), bodies: [['# Frontmatter\n\nfm.\n\n', '# Frontmatter\n\nфм.\n\n', '# Frontmatter\n\n前言。\n\n']] },
         { name: 'sec-9.9', meta: unitMeta('numbered', { __num: '9.9' }), bodies: [LAST] },
       ];
       const { units } = await validate(fx, ['frontmatter', 'sec-9.9'], (c) =>

@@ -1314,6 +1314,108 @@ class TranslationParityTestCase(unittest.TestCase):
             "grammar production <key> failed to parse as pure BNF "
             "in translation", out)
 
+    def test_empty_angle_grammar_rhs_is_fatal_even_when_all_languages_are_truncated(self):
+        # A shared truncation must not disappear from every production map
+        # and thereby pass cross-language parity unchanged.
+        grammar_lines = [
+            "<document> ::= <line>*",
+            "<key> ::= ",
+        ]
+        en = self.write("spec.md", semi_doc(grammar_lines))
+        ru = self.write("spec.ru.md", semi_doc(grammar_lines))
+        zh = self.write("spec.zh.md", semi_doc(grammar_lines))
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF", out)
+        self.assertNotIn("spec.ru.md", out)
+        self.assertNotIn("spec.zh.md", out)
+
+    def test_empty_angle_grammar_rhs_in_translation_is_reported(self):
+        grammar_lines_en = [
+            "<document> ::= <line>*",
+            "<key> ::= <segment>+",
+        ]
+        grammar_lines_ru = [
+            "<document> ::= <line>*",
+            "<key> ::= ",
+        ]
+        en = self.write("spec.md", semi_doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", semi_doc(grammar_lines_ru))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF "
+            "in translation", out)
+
+    def test_empty_angle_grammar_continuation_is_recorded_before_later_alternatives(self):
+        grammar_lines = [
+            "<document> ::= <line>*",
+            "<key> ::= <segment>+",
+            "|",
+            "| <other>",
+            "<other> ::= <segment>",
+        ]
+        en = self.write("spec.md", semi_doc(grammar_lines))
+        ru = self.write("spec.ru.md", semi_doc(grammar_lines))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF", out)
+        self.assertNotIn("grammar production RHS mismatch for <other>", out)
+
+    def test_empty_angle_grammar_declaration_keeps_nonempty_continuation_but_is_malformed(self):
+        lines = [
+            "<document> ::= <line>*",
+            "<key> ::= ",
+            "| <segment>+",
+        ]
+        sections, _, _, _, excluded, _, _, _ = ctp.parse_file(
+            semi_doc(lines).splitlines())
+        productions, malformed = ctp.extract_grammar_productions(
+            semi_doc(lines).splitlines(), *sections["4"], excluded)
+        self.assertEqual(productions["<key>"], ["| <segment>+"])
+        self.assertIn(("<key>", ""), malformed)
+
+    def test_grammar_terminal_tokenizer_accepts_only_documented_escapes(self):
+        self.assertTrue(ctp._is_pure_bnf(r'"\""'))
+        self.assertTrue(ctp._is_pure_bnf(r'"\\"'))
+        self.assertFalse(ctp._is_pure_bnf(r'"\q"'))
+        self.assertFalse(ctp._is_pure_bnf(r'"\."'))
+        self.assertFalse(ctp._is_pure_bnf(r'"\n"'))
+
+    def test_shared_invalid_grammar_terminal_escape_is_fatal(self):
+        grammar_lines = [
+            "<document> ::= <line>*",
+            r'<key> ::= "\q"',
+        ]
+        en = self.write("spec.md", semi_doc(grammar_lines))
+        ru = self.write("spec.ru.md", semi_doc(grammar_lines))
+        zh = self.write("spec.zh.md", semi_doc(grammar_lines))
+        code, out = self.run_main(en, ru, zh)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF", out)
+        self.assertNotIn("spec.ru.md", out)
+        self.assertNotIn("spec.zh.md", out)
+
+    def test_invalid_grammar_terminal_escape_in_translation_is_reported(self):
+        grammar_lines_en = [
+            "<document> ::= <line>*",
+            r'<key> ::= "\\"',
+        ]
+        grammar_lines_ru = [
+            "<document> ::= <line>*",
+            r'<key> ::= "\q"',
+        ]
+        en = self.write("spec.md", semi_doc(grammar_lines_en))
+        ru = self.write("spec.ru.md", semi_doc(grammar_lines_ru))
+        code, out = self.run_main(en, ru)
+        self.assertEqual(code, 1, out)
+        self.assertIn(
+            "grammar production <key> failed to parse as pure BNF "
+            "in translation", out)
+
     def test_escapable_byte_style_terminal_swap_without_semicolon_caught(self):
         # Reproduces round-16's exact adversarial case: mutate a
         # non-colon, non-semicolon terminal (here "," -> "!", matching the

@@ -214,7 +214,7 @@ document positions. The independent lock at
 both files MUST be updated together when a section is intentionally added or
 removed. A manifest-only change is rejected by the lock check.
 
-## README source object
+## Исходный объект README
 
 `README.source.js` has the same narrow static template-object shape as a body
 part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings

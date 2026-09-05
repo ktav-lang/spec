@@ -399,7 +399,7 @@ timeout: null
 
 - **Черновик, описанный здесь:** [Ktav 0.7.0](versions/0.7/spec.ru.md) — невыпущен; обзор возможностей этого README следует ему.
 - **Текущая стабильная:** [Ktav 0.6.4](versions/0.6/spec.ru.md) — выпущена 2026-08-23; для стабильной семантики и фикстур используйте эту версию.
-- **Машиночитаемый индекс** всех версий: [`versions.ktav`](versions.ktav).
+- **Машиночитаемый индекс** выпущенных/стабильных версий: [`versions.ktav`](versions.ktav).
 - **История версий:** [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Набор тестов соответствия
@@ -527,7 +527,7 @@ semantic/schema checks.
 ```
 .
 ├── README.md              this file
-├── versions.ktav          machine-readable index of versions
+├── versions.ktav          machine-readable index of released/stable versions
 ├── CHANGELOG.md           summary across versions
 ├── CONTRIBUTING.md        how to propose changes
 ├── LICENSE-MIT            MIT License
@@ -569,7 +569,7 @@ semantic/schema checks.
 | Rust (эталонная) | [`ktav-lang/rust`](https://github.com/ktav-lang/rust)   | `cargo add ktav`                                     |
 | C# / .NET        | [`ktav-lang/csharp`](https://github.com/ktav-lang/csharp) | `dotnet add package Ktav`                          |
 | Go               | [`ktav-lang/golang`](https://github.com/ktav-lang/golang) | `go get github.com/ktav-lang/golang`               |
-| Java / JVM       | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | `io.github.ktav-lang:ktav` на Maven Central          |
+| Java / JVM       | [`ktav-lang/java`](https://github.com/ktav-lang/java)   | GitHub Releases (публикация в Maven Central запланирована) |
 | JS / TS          | [`ktav-lang/js`](https://github.com/ktav-lang/js)       | `npm install @ktav-lang/ktav`                        |
 | PHP              | [`ktav-lang/php`](https://github.com/ktav-lang/php)     | `composer require ktav-lang/ktav`                    |
 | Python           | [`ktav-lang/python`](https://github.com/ktav-lang/python) | `pip install ktav`                                 |

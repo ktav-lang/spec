@@ -305,7 +305,7 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertGreaterEqual(out.count("outside the mandatory i64 range"), 2)
 
-    def test_malformed_float_sentinel_values_are_diagnostics_not_type_errors(self):
+    def test_malformed_float_sentinel_values_fail_by_missing_witness(self):
         tests = self.build_minimal()
         for malformed in ([], {}):
             with self.subTest(value=malformed):
@@ -316,8 +316,47 @@ class CorpusTestCase(unittest.TestCase):
                 }))
                 code, out = self.run_main(tests)
                 self.assertEqual(code, 1)
-                self.assertIn("'$float' must be the only field", out)
+                self.assertIn("does not contain a recursive witness", out)
+                self.assertNotIn("'$float' must be the only field", out)
                 self.assertNotIn("Traceback", out)
+
+    def test_programmatic_float_sentinel_shape_controls_recursive_witnesses(self):
+        tests = self.build_minimal()
+        cases = {
+            "exact_nan": ({"nested": [{"$float": "NaN"}]},
+                          "NonFiniteFloat"),
+            "exact_infinity": ({"nested": [{"$float": "Infinity"}]},
+                               "NonFiniteFloat"),
+            "exact_negative_infinity": (
+                {"nested": [{"$float": "-Infinity"}]},
+                "NonFiniteFloat"),
+            "exact_ordinary": ({"nested": [{"$float": "ordinary"},
+                                               {"": "nested"}]},
+                                "EmptyKeyName"),
+            "multi_field": ({"nested": [{"$float": "NaN", "extra": 1},
+                                            {"": {"deep": "nested"}}]},
+                             "EmptyKeyName"),
+        }
+        for name, (value, reason) in cases.items():
+            self.write("tests/unrepresentable/%s.json" % name, json.dumps({
+                "value": value,
+                "unrepresentable_reason": reason,
+                "note": "sentinel shape regression",
+            }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+
+    def test_programmatic_malformed_nonfinite_sentinel_fails_by_missing_witness(self):
+        tests = self.build_minimal()
+        self.write("tests/unrepresentable/malformed.json", json.dumps({
+            "value": {"nested": [{"$float": "not-a-nonfinite-value"}]},
+            "unrepresentable_reason": "NonFiniteFloat",
+            "note": "malformed sentinel must remain ordinary data",
+        }))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1)
+        self.assertIn("does not contain a recursive witness", out)
+        self.assertNotIn("'$float' must be the only field", out)
 
     def test_root_float_sentinel_uses_scalar_root_precedence(self):
         tests = self.build_minimal()
@@ -413,7 +452,8 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
         self.assertIn("unexpected field(s)", out)
-        self.assertIn("'$float' must be the only field", out)
+        self.assertIn("does not contain a recursive witness", out)
+        self.assertNotIn("'$float' must be the only field", out)
 
     def test_json_number_kind_comes_from_lexical_token(self):
         parsed = validate_corpus.loads_strict(

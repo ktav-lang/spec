@@ -59,8 +59,11 @@
   非有限 Float(NaN / ±Infinity)、含 `CR` 字节或 stripped 形式碰撞
   的 String,以及任意深度包含不可表示 Value 的任何复合值均不可表示,
   writer-conforming 实现 MUST 以错误拒绝它们,不输出任何部分内容。
-  此前 § 5.9 未区分抽象程序化 Float 载体与声明的有限可解析/规范
-  Float 域。该载体 MUST 区分 NaN、+Infinity 与 -Infinity,以便三个
+  此前 § 5.9 未定义的仅是只能通过程序构造的标量根、空键名和非有限
+  Float 情形;对于解析器产生的含 `CR` 或发生 collision 的 String,
+  § 5.9.7 已有规定,但该规定过于宽松且含糊,允许任意或有损输出。
+  现在抽象程序化 Float 载体已与声明的有限可解析/规范 Float 域区分开来。
+  该载体 MUST 区分 NaN、+Infinity 与 -Infinity,以便三个
   `NonFiniteFloat` fixture 可以被提供并拒绝。这些 sentinel 仅属于
   程序化情形;含 `CR` 或 collision 的 String 由解析器产生,另由
   `parseable-unrepresentable/` 覆盖。Rust 参考核心已拒绝标量根与含

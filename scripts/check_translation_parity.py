@@ -260,6 +260,25 @@ BARE_GRAMMAR_LHS_RE = re.compile(
 # single-character ones so e.g. "(ws)" isn't split into "(" + "ws" + ")",
 # and "1*ws" isn't split into a stray "1" plus "*" plus a leftover "ws".
 GRAMMAR_TOKEN_RE = re.compile(
+    r'"(?:[^"\\]|\\["\\])*"'
+    r'|<[^<>]+>'
+    r'|\[[^\[\]]*\]'
+    r'|\(ws\)'
+    r'|\d+\*ws\b'
+    r'|&line-end(?![\w-])'
+    r'|&eol\b'
+    r'|::='
+    r'|(?<![\w-])any-chars-until-line-end(?![\w-])'
+    r'|(?<![\w-])EOF(?![\w-])'
+    r'|\beol\b'
+    r'|[|*+?!()]'
+)
+
+# Semi-formal prose also quotes illustrative escape spellings such as
+# "\\.". Those are embedded contract tokens, not pure-BNF terminal
+# notation, so retain the broad scanner for significant_grammar_tokens while
+# keeping GRAMMAR_TOKEN_RE strict for _is_pure_bnf validation above.
+EMBEDDED_GRAMMAR_TOKEN_RE = re.compile(
     r'"(?:[^"\\]|\\.)*"'
     r'|<[^<>]+>'
     r'|\[[^\[\]]*\]'
@@ -397,8 +416,8 @@ CJK_RE = re.compile(r'[\u4E00-\u9FFF]')
 
 
 def extract_embedded_tokens(rhs_text):
-    """Return the source-ordered list of every GRAMMAR_TOKEN_RE match
-    PLUS every LANGUAGE_INDEPENDENT_ATOM_RE match in a semi-formal
+    """Return the source-ordered list of every embedded grammar-token
+    match PLUS every LANGUAGE_INDEPENDENT_ATOM_RE match in a semi-formal
     production's RHS text (the raw token stream, unfiltered). Matches
     from BOTH regexes are tagged with their .start() offset and the
     combined list is sorted by that offset, so the result reflects real
@@ -417,7 +436,7 @@ def extract_embedded_tokens(rhs_text):
     this helper's direct callers/tests, not a behavioral change for the
     parity verdict itself."""
     matches = [(m.start(), m.group(0))
-               for m in GRAMMAR_TOKEN_RE.finditer(rhs_text)]
+               for m in EMBEDDED_GRAMMAR_TOKEN_RE.finditer(rhs_text)]
     matches.extend((m.start(), m.group(0)) for m in
                    LANGUAGE_INDEPENDENT_ATOM_RE.finditer(rhs_text))
     return [tok for _, tok in sorted(matches, key=lambda pair: pair[0])]
@@ -1059,15 +1078,16 @@ def extract_grammar_productions(lines, start, end, excluded):
         fragments that pass _is_pure_bnf (or belong to an LHS listed in
         SEMI_FORMAL_PROSE_LHS) are kept here.
 
-      - malformed: [(lhs, fragment), ...] -- one entry per non-empty
-        fragment that FAILED _is_pure_bnf for an LHS that is NOT in
-        SEMI_FORMAL_PROSE_LHS. Every production outside that allowlist is
-        expected to always be pure BNF (verified against this grammar's
-        actual current text); a fragment that isn't is a real defect --
-        a malformed terminal, a typo, a translation mistake -- not
-        legitimate prose, and callers MUST treat this as fail-closed
-        (an error to report), never silently drop it the way an
-        allowlisted production's prose is dropped.
+      - malformed: [(lhs, fragment), ...] -- one entry per empty fragment
+        or non-empty fragment that FAILED _is_pure_bnf for an LHS that is
+        NOT in SEMI_FORMAL_PROSE_LHS. Empty RHS fragments are malformed for
+        every production, including the allowlisted semi-formal ones. Every
+        production outside that allowlist is expected to always be pure BNF
+        (verified against this grammar's actual current text); a fragment
+        that isn't is a real defect -- a malformed terminal, a typo, a
+        translation mistake -- not legitimate prose, and callers MUST treat
+        this as fail-closed (an error to report), never silently drop it the
+        way an allowlisted production's prose is dropped.
 
     Grammar syntax itself is never translated by this spec's own
     convention (confirmed by every existing translated section), so any
@@ -1095,6 +1115,8 @@ def extract_grammar_productions(lines, start, end, excluded):
                 fragments.append(frag)
             elif not prose_ok:
                 malformed.append((lhs, frag))
+        else:
+            malformed.append((lhs, frag))
         j = idx + 1
         while j < end and excluded[j]:
             stripped = lines[j].strip()
@@ -1106,6 +1128,8 @@ def extract_grammar_productions(lines, start, end, excluded):
                     fragments.append('| ' + frag)
                 elif not prose_ok:
                     malformed.append((lhs, '| ' + frag))
+            else:
+                malformed.append((lhs, '|'))
             j += 1
         if fragments:
             productions[lhs] = fragments

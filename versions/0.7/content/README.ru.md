@@ -225,7 +225,7 @@ lock `scripts/locks/section-inventory.0.7.lock.json` хранит тот же
 упорядоченный список; при намеренном добавлении или удалении секции оба файла
 MUST обновляться вместе. Изменение только манифеста отвергается проверкой lock.
 
-## README source object
+## Исходный объект README
 
 `README.source.js` — единый source object `{ en, ru, zh }` для трёх README в
 этой директории. Builder статически проверяет его и генерирует из него

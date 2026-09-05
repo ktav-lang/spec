@@ -196,7 +196,7 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
 仅修改 manifest 会被 lock 检查拒绝。
 
-## README source object
+## README 源对象
 
 `README.source.js` 是本目录三个 README 共用的 `{ en, ru, zh }` source
 object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和

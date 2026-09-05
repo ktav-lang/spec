@@ -215,7 +215,7 @@ document positions. The independent lock at
 both files MUST be updated together when a section is intentionally added or
 removed. A manifest-only change is rejected by the lock check.
 
-## README source object
+## Исходный объект README
 
 \`README.source.js\` has the same narrow static template-object shape as a body
 part: exactly \`en\`, \`ru\`, and \`zh\`, with no executable code. Its three strings
@@ -569,7 +569,7 @@ lock \`scripts/locks/section-inventory.0.7.lock.json\` хранит тот же
 упорядоченный список; при намеренном добавлении или удалении секции оба файла
 MUST обновляться вместе. Изменение только манифеста отвергается проверкой lock.
 
-## README source object
+## Исходный объект README
 
 \`README.source.js\` — единый source object \`{ en, ru, zh }\` для трёх README в
 этой директории. Builder статически проверяет его и генерирует из него
@@ -897,7 +897,7 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
 仅修改 manifest 会被 lock 检查拒绝。
 
-## README source object
+## README 源对象
 
 \`README.source.js\` 是本目录三个 README 共用的 \`{ en, ru, zh }\` source
 object。Builder 会静态检查它并据此生成 \`README.md\`、\`README.ru.md\` 和

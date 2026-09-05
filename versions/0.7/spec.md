@@ -3670,11 +3670,12 @@ wider semantics.
    0.6.x document's old meaning**, escape that leading quote
    character — `\"`, `\'`, `` \` ``, or `\uXXXX` — so it reads as
    ordinary bare key content rather than a quoted-segment opener. The
-   `::` raw-marker form (§ 5.4 rule 1) remains the explicit way to
-   force a root-level Array item to be read as a literal String when
-   it deliberately starts with a matched pair of quote characters
-   around a colon (e.g. `:: 'tis the season: fa`), unaffected by this
-   quoted-segment scan.
+   In 0.6.x, the `::` raw-marker form (§ 5.4 rule 1) was the explicit way
+   to force a root-level Array item to be read as a literal String when it
+   deliberately started with a matched pair of quote characters around a
+   colon (e.g. `:: "a:b"`). In 0.7.0, the matched quoted segment is
+   recognized directly, so the raw marker is no longer needed: `"a:b"` has
+   the same literal String meaning.
 
 Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
