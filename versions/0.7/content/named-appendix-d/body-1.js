@@ -58,13 +58,15 @@ wider semantics.
    (§ 5.3.3 gives the exact, context-dependent rule). **To keep a
    0.6.x document's old meaning**, escape that leading quote
    character — \`\\"\`, \`\\'\`, \`\` \\\` \`\`, or \`\\uXXXX\` — so it reads as
-   ordinary bare key content rather than a quoted-segment opener. The
+   ordinary bare key content rather than a quoted-segment opener.
    In 0.6.x, the \`::\` raw-marker form (§ 5.4 rule 1) was the explicit way
    to force a root-level Array item to be read as a literal String when it
-   deliberately started with a matched pair of quote characters around a
-   colon (e.g. \`:: "a:b"\`). In 0.7.0, the matched quoted segment is
-   recognized directly, so the raw marker is no longer needed: \`"a:b"\` has
-   the same literal String meaning.
+   deliberately used a matched pair of quote characters around a body with
+   a pair-shaped colon (e.g. \`:: "a: b"\`). Without the marker, 0.6.x root
+   detection would mistake \`"a: b"\` for an Object pair because the colon
+   is followed by separator whitespace. In 0.7.0, the matched quoted-segment
+   scan recognizes the whole item directly, so the raw marker is no longer
+   needed: \`"a: b"\` has the same literal String meaning.
 
 Additionally, \`\\uXXXX\` is a new, purely additive escape (§ 3.7.1) —
 no existing document's meaning changes because of it.
@@ -143,11 +145,14 @@ no existing document's meaning changes because of it.
    чтобы он читался как обычное голое содержимое ключа, а не как
    открывающий символ квотированного сегмента. В 0.6.x форма raw-маркера
    \`::\` (правило 1 § 5.4) была явным способом заставить элемент
-   корневого Array читаться как литеральная String, когда он
-   намеренно начинался с согласованной пары символов кавычек вокруг
-   двоеточия (например, \`:: "a:b"\`). В 0.7.0 согласованный
-   quoted-сегмент распознаётся напрямую, поэтому raw-маркер больше не
-   нужен: \`"a:b"\` имеет то же значение литеральной String.
+   корневого Array читаться как литеральная String, когда его тело
+   намеренно заключалось в согласованную пару кавычек и содержало
+   двоеточие в форме пары (например, \`:: "a: b"\`). Без маркера обнаружение типа
+   корня в 0.6.x приняло бы \`"a: b"\` за пару Object, поскольку после
+   двоеточия стоит разделительный пробел. В 0.7.0 сканирование
+   согласованного quoted-сегмента распознаёт весь элемент напрямую,
+   поэтому raw-маркер больше не нужен: \`"a: b"\` имеет то же значение
+   литеральной String.
 
 Кроме того, \`\\uXXXX\` — новая, чисто аддитивная escape-последовательность
 (§ 3.7.1) — смысл ни одного существующего документа из-за неё не
@@ -212,9 +217,10 @@ binary64 的范围与精度以及 \`roundTiesToEven\`。因此,在 0.6.x 中以
    使其被读作普通的裸键内容,而非 quoted 段的开启符。\`::\`
    在 0.6.x 中,raw-marker 形式(§ 5.4 规则 1)是显式强制根级 Array
    项被读作字面 String 的方式,适用于该项故意以一对匹配的引号字符
-   包围一个冒号的情形(例如 \`:: "a:b"\`)。在 0.7.0 中,匹配的
-   quoted 段会被直接识别,因此不再需要 raw marker:\`"a:b"\` 具有
-   相同的字面 String 含义。
+   包围一个含有 pair 形状冒号的 body(例如 \`:: "a: b"\`)。如果没有标记,
+   0.6.x 的根检测会把 \`"a: b"\` 误认为 Object pair,因为冒号后跟
+   分隔空白。在 0.7.0 中,匹配 quoted 段扫描会直接识别整个项,因此
+   不再需要 raw marker:\`"a: b"\` 具有相同的字面 String 含义。
 
 此外,\`\\uXXXX\` 是一个纯新增的 escape(§ 3.7.1)—— 不会因此改变任何
 现有文档的含义。

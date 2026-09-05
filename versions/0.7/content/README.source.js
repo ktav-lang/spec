@@ -211,11 +211,15 @@ order. It starts \`["frontmatter", "named-abstract", "sec-1", ...]\` and ends
 \`[..., "named-appendix-d"]\`. It is **never sorted alphabetically**:
 \`"sec-10.7"\` must come after \`"sec-2"\`, and named sections sit at their real
 document positions. The independent lock at
-\`scripts/locks/section-inventory.0.7.lock.json\` stores the same ordered list;
-both files MUST be updated together when a section is intentionally added or
-removed. A manifest-only change is rejected by the lock check.
+\`scripts/locks/section-inventory.0.7.lock.json\` stores one deterministic
+record per manifest entry, in manifest order. Each record has exactly
+\`{ unit, kind, number, level, sep }\`; absent structural values are \`null\`.
+The \`kind\`, \`number\`, \`level\`, and \`sep\` values MUST match the
+corresponding \`meta.js\` fields. Titles and body prose remain editable and are
+not locked. Both files MUST be updated together when a section is intentionally
+added or removed; manifest-only or hierarchy-metadata changes are rejected.
 
-## Исходный объект README
+## README source object
 
 \`README.source.js\` has the same narrow static template-object shape as a body
 part: exactly \`en\`, \`ru\`, and \`zh\`, with no executable code. Its three strings
@@ -252,7 +256,11 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 and byte-compares them against the committed files. On success: exit 0 and
 **completely silent**.
 On divergence: exit 1 with a diagnostic naming the unit, language, and line
-of the first differing byte. It writes nothing.
+of the first differing byte. It writes nothing. Write mode stages all six
+temporary outputs and recoverable backups before replacement; a caught I/O
+failure during replacement restores every destination, including originally
+missing files, and removes staging artifacts. This is not a process-kill
+durability guarantee.
 
 \`node --test scripts/test_build_spec.mjs\` runs the builder's adversarial
 (negative-path) test suite: it feeds deliberately malformed content trees
@@ -565,9 +573,14 @@ N-1 точек разреза выбираются как пустые стро�
 ...]\` и заканчивается \`[..., "named-appendix-d"]\`. Он **никогда не
 сортируется по алфавиту**: \`"sec-10.7"\` должен идти после \`"sec-2"\`, а
 именованные секции стоят на своих реальных позициях в документе. Независимый
-lock \`scripts/locks/section-inventory.0.7.lock.json\` хранит тот же
-упорядоченный список; при намеренном добавлении или удалении секции оба файла
-MUST обновляться вместе. Изменение только манифеста отвергается проверкой lock.
+lock \`scripts/locks/section-inventory.0.7.lock.json\` хранит по одной
+детерминированной записи на элемент manifest в его порядке. Каждая запись имеет
+ровно поля \`{ unit, kind, number, level, sep }\`; отсутствующие структурные
+значения равны \`null\`. Значения \`kind\`, \`number\`, \`level\` и \`sep\`
+MUST совпадать с соответствующими полями \`meta.js\`. Заголовки и текст тела
+остаются редактируемыми и lock-ом не защищаются. При намеренном добавлении или
+удалении секции оба файла MUST обновляться вместе; изменения только manifest
+или иерархических meta-полей отвергаются.
 
 ## Исходный объект README
 
@@ -603,7 +616,11 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 побайтово сравнивает их с закоммиченными: три файла спецификации и три content
 README. При успехе: код выхода 0 и **полная тишина**. При
 расхождении: код выхода 1 с диагностикой, называющей юнит, язык и
-строку первого различающегося байта. Ничего не пишет.
+строку первого различающегося байта. Ничего не пишет. В режиме записи сборщик
+сначала подготавливает все шесть временных файлов и восстанавливаемые backup,
+а затем заменяет назначения; пойманная ошибка I/O при замене откатывает все
+назначения, включая изначально отсутствовавшие, и удаляет служебные файлы.
+Это не гарантия атомарности при убийстве процесса.
 
 \`node --test scripts/test_build_spec.mjs\` запускает adversarial-набор
 тестов сборщика (негативные сценарии): он скармливает валидатору
@@ -894,8 +911,11 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 \`[..., "named-appendix-d"]\` 结尾。它**绝不按字母序排序**:
 \`"sec-10.7"\` 必须排在 \`"sec-2"\` 之后,命名节也处于它们在文档中的
 真实位置。独立的 lock \`scripts/locks/section-inventory.0.7.lock.json\`
-保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
-仅修改 manifest 会被 lock 检查拒绝。
+按 manifest 顺序为每个单元保存一条确定性的结构记录。每条记录严格包含
+\`{ unit, kind, number, level, sep }\`;缺少的结构值使用 \`null\`。
+\`kind\`、\`number\`、\`level\` 和 \`sep\` MUST 与对应的 \`meta.js\`
+字段一致。标题文字和正文仍可编辑,不受 lock 保护。有意新增或删除章节时,
+两个文件 MUST 同时更新;仅修改 manifest 或层级 meta 字段会被拒绝。
 
 ## README 源对象
 
@@ -928,7 +948,10 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 \`--check\` 会验证 inventory lock,在内存中重新生成全部六个文件,并与
 已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
 退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
-信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。
+信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。写入模式
+会先准备全部六个临时文件和可恢复的备份,再替换目标;替换阶段发生可捕获
+的 I/O 错误时,会恢复所有目标(包括原本不存在的文件)并清理临时文件。
+这不保证进程被终止时的原子性。
 
 \`node --test scripts/test_build_spec.mjs\` 运行构建器的对抗性测试套件
 (负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条

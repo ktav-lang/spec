@@ -210,11 +210,15 @@ order. It starts `["frontmatter", "named-abstract", "sec-1", ...]` and ends
 `[..., "named-appendix-d"]`. It is **never sorted alphabetically**:
 `"sec-10.7"` must come after `"sec-2"`, and named sections sit at their real
 document positions. The independent lock at
-`scripts/locks/section-inventory.0.7.lock.json` stores the same ordered list;
-both files MUST be updated together when a section is intentionally added or
-removed. A manifest-only change is rejected by the lock check.
+`scripts/locks/section-inventory.0.7.lock.json` stores one deterministic
+record per manifest entry, in manifest order. Each record has exactly
+`{ unit, kind, number, level, sep }`; absent structural values are `null`.
+The `kind`, `number`, `level`, and `sep` values MUST match the
+corresponding `meta.js` fields. Titles and body prose remain editable and are
+not locked. Both files MUST be updated together when a section is intentionally
+added or removed; manifest-only or hierarchy-metadata changes are rejected.
 
-## Исходный объект README
+## README source object
 
 `README.source.js` has the same narrow static template-object shape as a body
 part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings
@@ -251,7 +255,11 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 and byte-compares them against the committed files. On success: exit 0 and
 **completely silent**.
 On divergence: exit 1 with a diagnostic naming the unit, language, and line
-of the first differing byte. It writes nothing.
+of the first differing byte. It writes nothing. Write mode stages all six
+temporary outputs and recoverable backups before replacement; a caught I/O
+failure during replacement restores every destination, including originally
+missing files, and removes staging artifacts. This is not a process-kill
+durability guarantee.
 
 `node --test scripts/test_build_spec.mjs` runs the builder's adversarial
 (negative-path) test suite: it feeds deliberately malformed content trees

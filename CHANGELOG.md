@@ -77,7 +77,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   writer-conforming implementation MUST reject them with an error,
   emitting no partial output. Previously § 5.9 left the programmatic-only
   scalar-root, empty-key, and non-finite-Float cases undefined; for
-  parser-produced `CR`-bearing and collision Strings, § 5.9.7 already had
+  parser-produced `CR`-bearing and collision Strings, § 5.9.0 already had
   a permissive but ambiguous rule that allowed arbitrary or lossy output.
   The abstract programmatic Float carrier is now distinct from the
   declared finite parseable/canonical Float domain: it MUST distinguish
@@ -149,9 +149,9 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
 - **§ 5.9 / § 8.3** now define the round-trip guarantee over
   *representable* Values only. Strings containing a `CR` byte or one
   of the pathological multi-line stripped-form collisions are
-  explicitly excluded from the representable domain by § 5.9.7. A
+  explicitly excluded from the representable domain by § 5.9.0. A
   writer-conforming implementation MUST reject a non-representable
-  Value with an error rather than serialise it; previously § 5.9.7
+  Value with an error rather than serialise it; previously § 5.9.0
   separately allowed any implementation-chosen or lossy encoding for
   the same Values, which was incompatible with § 5.9's byte-
   determinism requirement.
@@ -294,7 +294,7 @@ still points `stable` and `latest` at 0.6.4 until this is actually released.
   is ordinary text (§ 5.1, § 5.2, § 5.4; § 6.1), not a structural
   closer — matching § 6.1 and the `lone_paren_tokens` fixture.
 - **§ 10.6** — a single canonical serialisation is defined for every
-  **representable** Value (§ 5.9.7), not every Value outright.
+  **representable** Value (§ 5.9.0), not every Value outright.
 - **Appendix A, 0.5.0** — removed the "bare `CR` is content, not a
   line terminator" bullet: the 0.5.0 spec's own § 3.2 states the
   opposite ("a `CR` byte never appears as a content byte at parse
@@ -609,7 +609,7 @@ migration from 0.1.x.
   three are equivalent. A `CR` byte never appears as content at
   parse time; to embed `CR` in a String value, use the `\r` escape
   inside an inline compound. Such Values are not representable in
-  canonical form (§ 5.9.7).
+  canonical form (§ 5.9.0).
 
 ### Added
 

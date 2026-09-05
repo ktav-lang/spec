@@ -193,8 +193,11 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 `[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
 `"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的
 真实位置。独立的 lock `scripts/locks/section-inventory.0.7.lock.json`
-保存相同的有序列表;有意新增或删除章节时,两个文件 MUST 同时更新。
-仅修改 manifest 会被 lock 检查拒绝。
+按 manifest 顺序为每个单元保存一条确定性的结构记录。每条记录严格包含
+`{ unit, kind, number, level, sep }`;缺少的结构值使用 `null`。
+`kind`、`number`、`level` 和 `sep` MUST 与对应的 `meta.js`
+字段一致。标题文字和正文仍可编辑,不受 lock 保护。有意新增或删除章节时,
+两个文件 MUST 同时更新;仅修改 manifest 或层级 meta 字段会被拒绝。
 
 ## README 源对象
 
@@ -227,7 +230,10 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 `--check` 会验证 inventory lock,在内存中重新生成全部六个文件,并与
 已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
 退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
-信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。
+信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。写入模式
+会先准备全部六个临时文件和可恢复的备份,再替换目标;替换阶段发生可捕获
+的 I/O 错误时,会恢复所有目标(包括原本不存在的文件)并清理临时文件。
+这不保证进程被终止时的原子性。
 
 `node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
 (负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条

@@ -1,109 +1,727 @@
 {
   "format": "ktav-section-inventory",
   "units": [
-    "frontmatter",
-    "named-abstract",
-    "sec-1",
-    "sec-2",
-    "sec-3",
-    "sec-3.1",
-    "sec-3.2",
-    "sec-3.3",
-    "sec-3.4",
-    "sec-3.5",
-    "sec-3.6",
-    "sec-3.7",
-    "sec-3.7.1",
-    "sec-4",
-    "sec-5",
-    "sec-5.0.1",
-    "sec-5.1",
-    "sec-5.2",
-    "sec-5.3",
-    "sec-5.3.1",
-    "sec-5.3.2",
-    "sec-5.3.3",
-    "sec-5.4",
-    "sec-5.5",
-    "sec-5.6",
-    "sec-5.6.1",
-    "sec-5.7",
-    "sec-5.8",
-    "sec-5.8.1",
-    "sec-5.8.2",
-    "sec-5.8.3",
-    "sec-5.8.4",
-    "sec-5.8.5",
-    "sec-5.8.6",
-    "sec-5.9",
-    "sec-5.9.0",
-    "sec-5.9.1",
-    "sec-5.9.2",
-    "sec-5.9.3",
-    "sec-5.9.4",
-    "sec-5.9.5",
-    "sec-5.9.6",
-    "sec-5.9.7",
-    "sec-5.9.8",
-    "sec-5.9.9",
-    "sec-5.9.10",
-    "sec-5.9.11",
-    "sec-5.9.12",
-    "sec-6",
-    "sec-6.1",
-    "sec-6.2",
-    "sec-6.3",
-    "sec-6.4",
-    "sec-6.5",
-    "sec-6.6",
-    "sec-6.7",
-    "sec-6.8",
-    "sec-6.9",
-    "sec-6.10",
-    "sec-6.11",
-    "sec-6.12",
-    "sec-6.13",
-    "sec-6.14",
-    "sec-6.15",
-    "sec-6.16",
-    "sec-7",
-    "sec-7.1",
-    "sec-7.2",
-    "sec-7.3",
-    "sec-7.4",
-    "sec-7.5",
-    "sec-7.6",
-    "sec-7.7",
-    "sec-7.8",
-    "sec-7.9",
-    "sec-7.10",
-    "sec-8",
-    "sec-8.1",
-    "sec-8.2",
-    "sec-8.3",
-    "sec-8.4",
-    "sec-9",
-    "sec-9.1",
-    "sec-9.2",
-    "sec-9.3",
-    "sec-10",
-    "sec-10.1",
-    "sec-10.2",
-    "sec-10.3",
-    "sec-10.4",
-    "sec-10.5",
-    "sec-10.6",
-    "sec-10.7",
-    "sec-11",
-    "named-appendix-a",
-    "sec-0.7.0",
-    "sec-0.6.0",
-    "sec-0.5.0",
-    "sec-0.1.1",
-    "sec-0.1.0",
-    "named-appendix-b",
-    "named-appendix-c",
-    "named-appendix-d"
+    {
+      "unit": "frontmatter",
+      "kind": "frontmatter",
+      "number": null,
+      "level": null,
+      "sep": null
+    },
+    {
+      "unit": "named-abstract",
+      "kind": "named",
+      "number": null,
+      "level": 2,
+      "sep": null
+    },
+    {
+      "unit": "sec-1",
+      "kind": "numbered",
+      "number": "1",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-2",
+      "kind": "numbered",
+      "number": "2",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-3",
+      "kind": "numbered",
+      "number": "3",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-3.1",
+      "kind": "numbered",
+      "number": "3.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.2",
+      "kind": "numbered",
+      "number": "3.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.3",
+      "kind": "numbered",
+      "number": "3.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.4",
+      "kind": "numbered",
+      "number": "3.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.5",
+      "kind": "numbered",
+      "number": "3.5",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.6",
+      "kind": "numbered",
+      "number": "3.6",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.7",
+      "kind": "numbered",
+      "number": "3.7",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-3.7.1",
+      "kind": "numbered",
+      "number": "3.7.1",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-4",
+      "kind": "numbered",
+      "number": "4",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-5",
+      "kind": "numbered",
+      "number": "5",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-5.0.1",
+      "kind": "numbered",
+      "number": "5.0.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.1",
+      "kind": "numbered",
+      "number": "5.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.2",
+      "kind": "numbered",
+      "number": "5.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.3",
+      "kind": "numbered",
+      "number": "5.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.3.1",
+      "kind": "numbered",
+      "number": "5.3.1",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.3.2",
+      "kind": "numbered",
+      "number": "5.3.2",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.3.3",
+      "kind": "numbered",
+      "number": "5.3.3",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.4",
+      "kind": "numbered",
+      "number": "5.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.5",
+      "kind": "numbered",
+      "number": "5.5",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.6",
+      "kind": "numbered",
+      "number": "5.6",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.6.1",
+      "kind": "numbered",
+      "number": "5.6.1",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.7",
+      "kind": "numbered",
+      "number": "5.7",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8",
+      "kind": "numbered",
+      "number": "5.8",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.1",
+      "kind": "numbered",
+      "number": "5.8.1",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.2",
+      "kind": "numbered",
+      "number": "5.8.2",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.3",
+      "kind": "numbered",
+      "number": "5.8.3",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.4",
+      "kind": "numbered",
+      "number": "5.8.4",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.5",
+      "kind": "numbered",
+      "number": "5.8.5",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.8.6",
+      "kind": "numbered",
+      "number": "5.8.6",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9",
+      "kind": "numbered",
+      "number": "5.9",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.0",
+      "kind": "numbered",
+      "number": "5.9.0",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.1",
+      "kind": "numbered",
+      "number": "5.9.1",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.2",
+      "kind": "numbered",
+      "number": "5.9.2",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.3",
+      "kind": "numbered",
+      "number": "5.9.3",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.4",
+      "kind": "numbered",
+      "number": "5.9.4",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.5",
+      "kind": "numbered",
+      "number": "5.9.5",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.6",
+      "kind": "numbered",
+      "number": "5.9.6",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.7",
+      "kind": "numbered",
+      "number": "5.9.7",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.8",
+      "kind": "numbered",
+      "number": "5.9.8",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.9",
+      "kind": "numbered",
+      "number": "5.9.9",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.10",
+      "kind": "numbered",
+      "number": "5.9.10",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.11",
+      "kind": "numbered",
+      "number": "5.9.11",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-5.9.12",
+      "kind": "numbered",
+      "number": "5.9.12",
+      "level": 4,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6",
+      "kind": "numbered",
+      "number": "6",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-6.1",
+      "kind": "numbered",
+      "number": "6.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.2",
+      "kind": "numbered",
+      "number": "6.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.3",
+      "kind": "numbered",
+      "number": "6.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.4",
+      "kind": "numbered",
+      "number": "6.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.5",
+      "kind": "numbered",
+      "number": "6.5",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.6",
+      "kind": "numbered",
+      "number": "6.6",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.7",
+      "kind": "numbered",
+      "number": "6.7",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.8",
+      "kind": "numbered",
+      "number": "6.8",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.9",
+      "kind": "numbered",
+      "number": "6.9",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.10",
+      "kind": "numbered",
+      "number": "6.10",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.11",
+      "kind": "numbered",
+      "number": "6.11",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.12",
+      "kind": "numbered",
+      "number": "6.12",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.13",
+      "kind": "numbered",
+      "number": "6.13",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.14",
+      "kind": "numbered",
+      "number": "6.14",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.15",
+      "kind": "numbered",
+      "number": "6.15",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-6.16",
+      "kind": "numbered",
+      "number": "6.16",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7",
+      "kind": "numbered",
+      "number": "7",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-7.1",
+      "kind": "numbered",
+      "number": "7.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.2",
+      "kind": "numbered",
+      "number": "7.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.3",
+      "kind": "numbered",
+      "number": "7.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.4",
+      "kind": "numbered",
+      "number": "7.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.5",
+      "kind": "numbered",
+      "number": "7.5",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.6",
+      "kind": "numbered",
+      "number": "7.6",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.7",
+      "kind": "numbered",
+      "number": "7.7",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.8",
+      "kind": "numbered",
+      "number": "7.8",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.9",
+      "kind": "numbered",
+      "number": "7.9",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-7.10",
+      "kind": "numbered",
+      "number": "7.10",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-8",
+      "kind": "numbered",
+      "number": "8",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-8.1",
+      "kind": "numbered",
+      "number": "8.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-8.2",
+      "kind": "numbered",
+      "number": "8.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-8.3",
+      "kind": "numbered",
+      "number": "8.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-8.4",
+      "kind": "numbered",
+      "number": "8.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-9",
+      "kind": "numbered",
+      "number": "9",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-9.1",
+      "kind": "numbered",
+      "number": "9.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-9.2",
+      "kind": "numbered",
+      "number": "9.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-9.3",
+      "kind": "numbered",
+      "number": "9.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10",
+      "kind": "numbered",
+      "number": "10",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "sec-10.1",
+      "kind": "numbered",
+      "number": "10.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.2",
+      "kind": "numbered",
+      "number": "10.2",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.3",
+      "kind": "numbered",
+      "number": "10.3",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.4",
+      "kind": "numbered",
+      "number": "10.4",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.5",
+      "kind": "numbered",
+      "number": "10.5",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.6",
+      "kind": "numbered",
+      "number": "10.6",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-10.7",
+      "kind": "numbered",
+      "number": "10.7",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-11",
+      "kind": "numbered",
+      "number": "11",
+      "level": 2,
+      "sep": ". "
+    },
+    {
+      "unit": "named-appendix-a",
+      "kind": "named",
+      "number": null,
+      "level": 2,
+      "sep": null
+    },
+    {
+      "unit": "sec-0.7.0",
+      "kind": "numbered",
+      "number": "0.7.0",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-0.6.0",
+      "kind": "numbered",
+      "number": "0.6.0",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-0.5.0",
+      "kind": "numbered",
+      "number": "0.5.0",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-0.1.1",
+      "kind": "numbered",
+      "number": "0.1.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "sec-0.1.0",
+      "kind": "numbered",
+      "number": "0.1.0",
+      "level": 3,
+      "sep": " "
+    },
+    {
+      "unit": "named-appendix-b",
+      "kind": "named",
+      "number": null,
+      "level": 2,
+      "sep": null
+    },
+    {
+      "unit": "named-appendix-c",
+      "kind": "named",
+      "number": null,
+      "level": 2,
+      "sep": null
+    },
+    {
+      "unit": "named-appendix-d",
+      "kind": "named",
+      "number": null,
+      "level": 2,
+      "sep": null
+    }
   ],
   "version": "0.7.0"
 }

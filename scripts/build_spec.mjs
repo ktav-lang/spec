@@ -18,7 +18,7 @@
 //   validateMeta(unit, meta), LANGS, OUT_FILES, hasLoneSurrogate(str),
 //   firstByteDiff(existing, expected), lineNumberAtByte(buf, offset),
 //   lineAtByte(buf, offset), formatMismatchDiagnostic(...),
-//   writeBuildOutputs(..., { renameSync }), defaultSectionInventoryLockPath(contentDir)
+//   writeBuildOutputs(..., { renameSync, unlinkSync }), defaultSectionInventoryLockPath(contentDir)
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -240,9 +240,27 @@ function parseAtxHeading(line) {
   return { level, raw: line };
 }
 
-function findAtxHeadings(body) {
+function parseSetextUnderline(line) {
+  const match = line.match(/^ {0,3}(=+|-+)[ \t]*$/);
+  return match === null ? null : { level: match[1][0] === '=' ? 1 : 2, raw: line };
+}
+
+function isThematicBreak(line) {
+  return /^(?: {0,3})(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
+}
+
+function isSetextParagraphLine(line) {
+  return !/^ {4}/.test(line) &&
+    /[^ \t]/.test(line) &&
+    parseAtxHeading(line) === null &&
+    parseFenceOpener(line) === null &&
+    !isThematicBreak(line);
+}
+
+function findHeadings(body) {
   const headings = [];
   let fence = null;
+  let paragraphLine = null;
   const lines = body.split('\n');
   for (let index = 0; index < lines.length; index++) {
     const line = lines[index];
@@ -250,14 +268,34 @@ function findAtxHeadings(body) {
       const opener = parseFenceOpener(line);
       if (opener !== null) {
         fence = opener;
+        paragraphLine = null;
         continue;
       }
     } else {
       if (isFenceCloser(line, fence)) fence = null;
+      paragraphLine = null;
       continue;
     }
     const heading = parseAtxHeading(line);
-    if (heading !== null) headings.push({ ...heading, line: index + 1 });
+    if (heading !== null) {
+      headings.push({ ...heading, type: 'ATX', line: index + 1 });
+      paragraphLine = null;
+      continue;
+    }
+    const underline = parseSetextUnderline(line);
+    if (underline !== null && paragraphLine !== null) {
+      headings.push({
+        ...underline,
+        type: 'Setext',
+        line: index + 1,
+        paragraph: paragraphLine.raw,
+      });
+      paragraphLine = null;
+      continue;
+    }
+    paragraphLine = isSetextParagraphLine(line)
+      ? { raw: line, line: index + 1 }
+      : null;
   }
   return headings;
 }
@@ -265,17 +303,22 @@ function findAtxHeadings(body) {
 function validateUnitHeadings(unit, meta, parts) {
   for (const lang of LANGS) {
     const body = parts.map((part) => part[lang]).join('');
-    const headings = findAtxHeadings(body);
+    const headings = findHeadings(body);
     if (meta.kind === 'frontmatter') {
-      if (headings.length !== 1 || headings[0].level !== 1) {
+      if (headings.length !== 1 || headings[0].type !== 'ATX' || headings[0].level !== 1) {
         failUnit(unit,
-          `${lang}: frontmatter must contain exactly its intended h1 and no other ` +
-          `ATX heading (found ${headings.length})`);
+          `${lang}: frontmatter must contain exactly one ATX level-1 heading ` +
+          `and no other ATX/Setext heading (found ${headings.length})`);
       }
       continue;
     }
     if (headings.length) {
       const heading = headings[0];
+      if (heading.type === 'Setext') {
+        failUnit(unit,
+          `${lang}: unit body contains a Setext heading outside a fenced code block ` +
+          `at line ${heading.line}: ${JSON.stringify(heading.raw)}`);
+      }
       failUnit(unit,
         `${lang}: unit body contains an ATX heading outside a fenced code block ` +
         `at line ${heading.line}: ${JSON.stringify(heading.raw)}`);
@@ -426,14 +469,27 @@ function readCanonicalJson(filePath) {
   return value;
 }
 
-function validateSectionInventoryLock(manifest, lockPath) {
+const LOCK_ROOT_KEYS = ['format', 'units', 'version'];
+const LOCK_UNIT_KEYS = ['unit', 'kind', 'number', 'level', 'sep'];
+
+function structuralMeta(unit, meta) {
+  return {
+    unit,
+    kind: meta.kind,
+    number: meta.number,
+    level: meta.level,
+    sep: meta.kind === 'numbered' ? meta.sep : null,
+  };
+}
+
+function validateSectionInventoryLock(manifest, lockPath, units = null) {
   const lock = readCanonicalJson(lockPath);
   if (typeof lock !== 'object' || lock === null || Array.isArray(lock)) {
     fail(`${lockPath} must export an object`);
   }
-  const keys = Object.keys(lock).sort();
-  const wanted = ['format', 'units', 'version'].sort();
-  if (keys.length !== wanted.length || keys.some((key, i) => key !== wanted[i])) {
+  const keys = Object.keys(lock);
+  if (keys.length !== LOCK_ROOT_KEYS.length ||
+      keys.some((key, i) => key !== LOCK_ROOT_KEYS[i])) {
     fail(`${lockPath} must have exactly the keys {"format", "units", "version"}`);
   }
   if (lock.format !== 'ktav-section-inventory') {
@@ -442,18 +498,60 @@ function validateSectionInventoryLock(manifest, lockPath) {
   if (lock.version !== '0.7.0') {
     fail(`${lockPath} must be version "0.7.0"; got ${JSON.stringify(lock.version)}`);
   }
-  if (!Array.isArray(lock.units) || lock.units.length === 0 ||
-      !lock.units.every((name) => typeof name === 'string' && name.length > 0) ||
-      new Set(lock.units).size !== lock.units.length) {
-    fail(`${lockPath}.units must be a non-empty array of unique non-empty strings`);
+  if (!Array.isArray(lock.units) || lock.units.length === 0) {
+    fail(`${lockPath}.units must be a non-empty array of structural records`);
   }
-  if (lock.units.length !== manifest.length || lock.units.some((name, i) => name !== manifest[i])) {
+  const names = [];
+  for (let i = 0; i < lock.units.length; i++) {
+    const record = lock.units[i];
+    if (typeof record !== 'object' || record === null || Array.isArray(record) ||
+        Object.keys(record).some((key, j) => key !== LOCK_UNIT_KEYS[j]) ||
+        Object.keys(record).length !== LOCK_UNIT_KEYS.length) {
+      fail(`${lockPath}.units[${i}] must have exactly the keys {"unit", "kind", "number", "level", "sep"} in that order`);
+    }
+    if (typeof record.unit !== 'string' || record.unit.length === 0 ||
+        (record.kind !== 'frontmatter' && record.kind !== 'numbered' && record.kind !== 'named') ||
+        (record.number !== null && typeof record.number !== 'string') ||
+        (record.level !== null && (!Number.isInteger(record.level) || record.level < 1 || record.level > 6)) ||
+        (record.sep !== null && typeof record.sep !== 'string')) {
+      fail(`${lockPath}.units[${i}] has invalid structural metadata`);
+    }
+    if (record.kind === 'frontmatter' &&
+        (record.number !== null || record.level !== null || record.sep !== null)) {
+      fail(`${lockPath}.units[${i}] must use null number, level, and sep for frontmatter`);
+    }
+    if (record.kind === 'named' && (record.number !== null || record.sep !== null)) {
+      fail(`${lockPath}.units[${i}] must use null number and sep for named units`);
+    }
+    if (record.kind === 'numbered' &&
+        (typeof record.number !== 'string' || record.level === null ||
+         (record.sep !== '. ' && record.sep !== ' '))) {
+      fail(`${lockPath}.units[${i}] has invalid numbered structural metadata`);
+    }
+    names.push(record.unit);
+  }
+  if (new Set(names).size !== names.length) {
+    fail(`${lockPath}.units must contain unique unit names`);
+  }
+  if (names.length !== manifest.length || names.some((name, i) => name !== manifest[i])) {
     const min = Math.min(lock.units.length, manifest.length);
     let first = 0;
-    while (first < min && lock.units[first] === manifest[first]) first++;
-    const lockName = lock.units[first];
+    while (first < min && names[first] === manifest[first]) first++;
+    const lockName = names[first];
     const manifestName = manifest[first];
     fail(`${lockPath} does not match manifest.js at index ${first}: lock has ${JSON.stringify(lockName)}, manifest has ${JSON.stringify(manifestName)}`);
+  }
+  if (units !== null) {
+    for (let i = 0; i < manifest.length; i++) {
+      const unit = manifest[i];
+      const expected = structuralMeta(unit, units.get(unit).meta);
+      const actual = lock.units[i];
+      for (const key of LOCK_UNIT_KEYS) {
+        if (actual[key] !== expected[key]) {
+          fail(`${lockPath} structural record for unit "${unit}" differs from meta.js field ${JSON.stringify(key)}: lock has ${JSON.stringify(actual[key])}, meta has ${JSON.stringify(expected[key])}`);
+        }
+      }
+    }
   }
 }
 
@@ -595,11 +693,10 @@ export async function validateContentDir(contentDir, options = {}) {
     fail('manifest.js must export a non-empty array of unique non-empty strings');
   }
 
-  if (options.requireSectionInventoryLock || options.sectionInventoryLockPath) {
-    const lockPath = options.sectionInventoryLockPath ||
-      defaultSectionInventoryLockPath(contentDir);
-    validateSectionInventoryLock(manifest, lockPath);
-  }
+  const lockPath = options.requireSectionInventoryLock || options.sectionInventoryLockPath
+    ? options.sectionInventoryLockPath || defaultSectionInventoryLockPath(contentDir)
+    : null;
+  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath);
 
   const manifestSet = new Set(manifest);
 
@@ -779,6 +876,7 @@ export async function validateContentDir(contentDir, options = {}) {
     units.set(unit, { meta, parts });
   }
 
+  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath, units);
   return { manifest, units, readmes };
 }
 
@@ -859,31 +957,72 @@ function createTemporaryOutput(destination) {
   fail(`could not allocate a temporary output beside ${destination}`);
 }
 
-function atomicWriteOutput(destination, data, { renameSync = fs.renameSync } = {}) {
-  let fd = null;
-  let tempPath = null;
-  try {
-    ({ fd, tempPath } = createTemporaryOutput(destination));
-    if (!fs.fstatSync(fd).isFile()) {
-      fail(`temporary output for ${destination} is not a regular file`);
-    }
-    fs.writeFileSync(fd, data);
-    fs.closeSync(fd);
-    fd = null;
-
-    // Recheck immediately before replacement. rename() replaces the
-    // destination atomically and never follows a destination symlink.
-    assertRegularDestination(destination);
-    renameSync(tempPath, destination);
-    tempPath = null;
-  } finally {
-    if (fd !== null) {
-      try { fs.closeSync(fd); } catch { /* preserve the original failure */ }
-    }
-    if (tempPath !== null) {
-      try { fs.unlinkSync(tempPath); } catch { /* best-effort cleanup */ }
+function createAuxiliaryPath(destination, suffix) {
+  const dir = path.dirname(destination);
+  const base = path.basename(destination);
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const auxiliaryPath = path.join(dir,
+      `.${base}.${process.pid}.${Date.now()}.${attempt}.${suffix}`);
+    try {
+      const fd = fs.openSync(auxiliaryPath, 'wx', 0o600);
+      fs.closeSync(fd);
+      fs.unlinkSync(auxiliaryPath);
+      return auxiliaryPath;
+    } catch (e) {
+      if (e.code === 'EEXIST') continue;
+      try { fs.unlinkSync(auxiliaryPath); } catch { /* preserve the original failure */ }
+      throw e;
     }
   }
+  fail(`could not allocate a ${suffix} beside ${destination}`);
+}
+
+function unlinkRegularIfPresent(destination) {
+  let stat;
+  try {
+    stat = fs.lstatSync(destination);
+  } catch (e) {
+    if (e.code === 'ENOENT') return;
+    throw e;
+  }
+  if (!stat.isFile()) {
+    const kind = stat.isSymbolicLink() ? 'symlink' : 'special file';
+    throw new Error(`cannot remove transaction output ${destination}: it is not a regular file (${kind})`);
+  }
+  fs.unlinkSync(destination);
+}
+
+function rollbackOutputTransaction(staged) {
+  const errors = [];
+  for (const item of [...staged].reverse()) {
+    try {
+      if (item.replaced) unlinkRegularIfPresent(item.destination);
+      if (item.backupPath !== null) {
+        // Rollback deliberately uses the real filesystem operation, not the
+        // injected replacement hook. A one-shot test failure must not prevent
+        // restoration of the already staged backups.
+        fs.renameSync(item.backupPath, item.destination);
+        item.backupPath = null;
+      }
+    } catch (e) {
+      errors.push(`${item.destination}: ${e.message}`);
+    }
+  }
+  for (const item of staged) {
+    try {
+      if (item.tempPath !== null) fs.unlinkSync(item.tempPath);
+    } catch (e) {
+      if (e.code !== 'ENOENT') errors.push(`${item.tempPath}: ${e.message}`);
+    }
+    if (item.backupPath !== null) {
+      try {
+        fs.unlinkSync(item.backupPath);
+      } catch (e) {
+        if (e.code !== 'ENOENT') errors.push(`${item.backupPath}: ${e.message}`);
+      }
+    }
+  }
+  return errors;
 }
 
 function resolvedWriteRoot(root, label) {
@@ -937,8 +1076,104 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
 
   // Preflight every destination so a rejected symlink/special file cannot
   // leave a partially regenerated set of outputs behind.
-  for (const [destination] of outputs) assertRegularDestination(destination);
-  for (const [destination, data] of outputs) atomicWriteOutput(destination, data, options);
+  const staged = [];
+  for (const [destination] of outputs) {
+    staged.push({
+      destination,
+      data: null,
+      existed: assertRegularDestination(destination),
+      tempPath: null,
+      fd: null,
+      backupPath: null,
+      replaced: false,
+    });
+  }
+  const { renameSync = fs.renameSync, unlinkSync = fs.unlinkSync } = options;
+  try {
+    // Stage every replacement before touching a destination.
+    for (let i = 0; i < staged.length; i++) {
+      const item = staged[i];
+      item.data = outputs[i][1];
+      const temporary = createTemporaryOutput(item.destination);
+      item.fd = temporary.fd;
+      item.tempPath = temporary.tempPath;
+      if (!fs.fstatSync(item.fd).isFile()) {
+        fail(`temporary output for ${item.destination} is not a regular file`);
+      }
+      fs.writeFileSync(item.fd, item.data);
+      fs.closeSync(item.fd);
+      item.fd = null;
+    }
+
+    // Move all original files aside before the first replacement. This keeps
+    // every original byte recoverable, including metadata and missing-file
+    // state, if a later replacement fails.
+    for (const item of staged) {
+      if (!item.existed) continue;
+      const backupPath = createAuxiliaryPath(item.destination, 'bak');
+      try {
+        renameSync(item.destination, backupPath);
+        item.backupPath = backupPath;
+      } catch (error) {
+        // A custom rename hook may perform the rename and then throw. Keep a
+        // successfully created backup discoverable for rollback in that case.
+        try {
+          if (fs.lstatSync(backupPath).isFile()) item.backupPath = backupPath;
+        } catch { /* the failed rename left no backup */ }
+        throw error;
+      }
+    }
+
+    for (const item of staged) {
+      // Recheck immediately before replacement. rename() never follows a
+      // destination symlink, and this check rejects one before that point.
+      assertRegularDestination(item.destination);
+      // Mark before calling the hook so a hook that performs the rename and
+      // then throws is still rolled back as a completed replacement.
+      item.replaced = true;
+      renameSync(item.tempPath, item.destination);
+      item.tempPath = null;
+    }
+
+  } catch (error) {
+    for (const item of staged) {
+      if (item.fd !== null) {
+        try { fs.closeSync(item.fd); } catch { /* preserve the original failure */ }
+        item.fd = null;
+      }
+    }
+    const rollbackErrors = rollbackOutputTransaction(staged);
+    const detail = rollbackErrors.length
+      ? `; rollback failed: ${rollbackErrors.join('; ')}`
+      : '';
+    const transactionError = new Error(
+      `build output transaction failed: ${error.message}${detail}`,
+      { cause: error }
+    );
+    transactionError.code = error.code;
+    throw transactionError;
+  }
+
+  // All six replacements have committed. Backup cleanup is deliberately
+  // outside the rollback boundary: once any backup is deleted, rollback can
+  // no longer restore every original and must never remove committed outputs.
+  const cleanupErrors = [];
+  for (const item of staged) {
+    if (item.backupPath === null) continue;
+    try {
+      unlinkSync(item.backupPath);
+      item.backupPath = null;
+    } catch (error) {
+      cleanupErrors.push(`${item.backupPath}: ${error.message}`);
+    }
+  }
+  if (cleanupErrors.length) {
+    const cleanupError = new Error(
+      `outputs committed; backup cleanup failed: ${cleanupErrors.join('; ')}`
+    );
+    cleanupError.code = 'KTAV_BACKUP_CLEANUP_FAILED';
+    throw cleanupError;
+  }
 }
 
 function readCheckTarget(destination, fileName, lang, expectedLength) {

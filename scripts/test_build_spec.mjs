@@ -22,6 +22,7 @@ import {
   writeBuildOutputs,
   defaultSectionInventoryLockPath,
   LANGS,
+  OUT_FILES,
   README_FILES,
   README_SOURCE_FILE,
   validateMeta,
@@ -108,6 +109,20 @@ function makeContent(dir, unitDefs, manifestNames) {
     'export default ' + JSON.stringify(manifestNames, null, 2) + '\n');
 }
 
+function lockUnits(unitDefs, manifestNames) {
+  const byName = new Map(unitDefs.map((unit) => [unit.name, unit.meta]));
+  return manifestNames.map((unit) => {
+    const meta = byName.get(unit);
+    return {
+      unit,
+      kind: meta.kind,
+      number: meta.number,
+      level: meta.level,
+      sep: meta.kind === 'numbered' ? meta.sep : null,
+    };
+  });
+}
+
 const LAST = ['end.\n', 'конец.\n', '结束。\n'];
 const MID = ['mid.\n\n', 'середина.\n\n', '中间。\n\n'];
 
@@ -129,7 +144,8 @@ async function validate(fixtures, manifest, mutate, options = {}) {
       const lockPath = path.join(dir, 'section-inventory.lock.json');
       write(lockPath, JSON.stringify({
         format: 'ktav-section-inventory',
-        units: options.lock,
+        units: options.lock.map((unit) => typeof unit === 'string'
+          ? lockUnits(fixtures, [unit])[0] : unit),
         version: '0.7.0',
       }, null, 2) + '\n');
       validateOptions.sectionInventoryLockPath = lockPath;
@@ -237,16 +253,46 @@ test('unit bodies reject injected ATX headings independently in EN, RU and ZH', 
   }
 });
 
+test('unit bodies reject injected Setext H1 and H2 headings', async () => {
+  for (const underline of ['===', '---']) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`Injected title\n${underline}\n\n`])[0]];
+    await assert.rejects(
+      validate(fx),
+      (e) => /unit "named-abstract": en: unit body contains a Setext heading/.test(e.message)
+    );
+  }
+});
+
+test('a Unicode separator is content, not ASCII blank, before a Setext underline', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [sameLanguageBodies(['\u2028\n===\n\n'])[0]];
+  await assert.rejects(
+    validate(fx),
+    /unit "named-abstract": en: unit body contains a Setext heading/
+  );
+});
+
 test('ATX-looking lines inside backtick and tilde fences are accepted', async () => {
   const fenced =
     '```text\n' +
     '# inside backticks\n' +
+    'Setext inside backticks\n' +
+    '---\n' +
     '```\n\n' +
     '~~~text\n' +
     '## inside tildes\n' +
+    'Setext inside tildes\n' +
+    '===\n' +
     '~~~\n\n';
   const fx = baseFixtures();
   fx[1].bodies = [sameLanguageBodies([fenced])[0]];
+  await assert.doesNotReject(validate(fx));
+});
+
+test('a standalone thematic break is not treated as a Setext heading', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [sameLanguageBodies(['---\n\n'])[0]];
   await assert.doesNotReject(validate(fx));
 });
 
@@ -267,7 +313,25 @@ test('frontmatter rejects an extra ATX heading after its intended h1', async () 
   fx[0].bodies = [sameLanguageBodies([body])[0]];
   await assert.rejects(
     validate(fx),
-    /unit "frontmatter": en: frontmatter must contain exactly its intended h1 and no other ATX heading \(found 2\)/
+    /unit "frontmatter": en: frontmatter must contain exactly one ATX level-1 heading and no other ATX\/Setext heading \(found 2\)/
+  );
+});
+
+test('frontmatter rejects an extra Setext heading after its intended h1', async () => {
+  const fx = baseFixtures();
+  fx[0].bodies = [sameLanguageBodies(['# Frontmatter\n\nInjected title\n---\n\n'])[0]];
+  await assert.rejects(
+    validate(fx),
+    /unit "frontmatter": en: frontmatter must contain exactly one ATX level-1 heading and no other ATX\/Setext heading \(found 2\)/
+  );
+});
+
+test('frontmatter rejects a sole Setext H1 in place of its required ATX H1', async () => {
+  const fx = baseFixtures();
+  fx[0].bodies = [sameLanguageBodies(['Frontmatter\n===\n\n'])[0]];
+  await assert.rejects(
+    validate(fx),
+    /unit "frontmatter": en: frontmatter must contain exactly one ATX level-1 heading and no other ATX\/Setext heading \(found 1\)/
   );
 });
 
@@ -336,7 +400,7 @@ test('production-shaped content uses the default section inventory lock under re
     const lockPath = path.join(repoRoot, 'scripts', 'locks', 'section-inventory.0.7.lock.json');
     write(lockPath, JSON.stringify({
       format: 'ktav-section-inventory',
-      units: manifest,
+      units: lockUnits(baseFixtures(), manifest),
       version: '0.7.0',
     }, null, 2) + '\n');
 
@@ -355,6 +419,29 @@ test('section inventory lock rejects deleting a unit and its manifest entry toge
       fs.rmSync(path.join(c, 'sec-1'), { recursive: true }), { lock: original }),
     (e) => /section-inventory\.lock\.json does not match manifest\.js at index 2/.test(e.message)
   );
+});
+
+test('section inventory lock rejects hierarchy metadata mutations', async () => {
+  for (const field of ['level', 'kind', 'number', 'sep']) {
+    const fx = baseFixtures();
+    const records = lockUnits(fx, fx.map((unit) => unit.name));
+    records[2][field] = field === 'level' ? 3
+      : field === 'kind' ? 'named'
+        : field === 'number' ? '3.1' : ' ';
+    await assert.rejects(
+      validate(fx, null, null, { lock: records }),
+      (e) => new RegExp(
+        `(?:structural record for unit "sec-1" differs from meta\\.js field "${field}"|units\\[2\\] has invalid|units\\[2\\] must use null)`
+      ).test(e.message)
+    );
+  }
+});
+
+test('section inventory lock leaves title prose unlocked', async () => {
+  const fx = baseFixtures();
+  const records = lockUnits(fx, fx.map((unit) => unit.name));
+  fx[2].meta.title.en = 'Renamed prose title';
+  await assert.doesNotReject(validate(fx, null, null, { lock: records }));
 });
 
 test('README source object rejects a non-canonical shape', async () => {
@@ -728,7 +815,7 @@ test('write build restores missing generated content READMEs from README.source.
     write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
-        units: manifest,
+        units: lockUnits(fixtures, manifest),
         version: '0.7.0',
       }, null, 2) + '\n');
     for (const lang of LANGS) fs.rmSync(path.join(contentDir, README_FILES[lang]));
@@ -894,6 +981,107 @@ test('failed atomic rename preserves the destination and cleans its temporary fi
       fs.readdirSync(versionDir).filter((name) => name.endsWith('.tmp')),
       []
     );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a later output rename rolls back all six outputs and cleans temps and backups', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-transaction-rollback-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const destinations = LANGS.flatMap((lang) => [
+      path.join(versionDir, OUT_FILES[lang]),
+      path.join(contentDir, README_FILES[lang]),
+    ]);
+    const originals = new Map(destinations.map((destination) => [
+      destination,
+      destination.startsWith(contentDir)
+        ? Buffer.from(`original ${path.basename(destination)}\n`)
+        : null,
+    ]));
+    for (const [destination, bytes] of originals) {
+      if (bytes !== null) write(destination, bytes);
+    }
+
+    const failure = new Error('injected later output rename failure');
+    failure.code = 'EIO';
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        renameSync(source, destination) {
+          if (path.basename(destination) === 'README.ru.md') throw failure;
+          fs.renameSync(source, destination);
+        },
+      }),
+      /build output transaction failed: injected later output rename failure/
+    );
+
+    for (const [destination, bytes] of originals) {
+      if (bytes === null) {
+        assert.equal(fs.existsSync(destination), false, destination);
+      } else {
+        assert.deepEqual(fs.readFileSync(destination), bytes, destination);
+      }
+    }
+    for (const directory of [versionDir, contentDir]) {
+      assert.deepEqual(
+        fs.readdirSync(directory).filter((name) => name.endsWith('.tmp') || name.endsWith('.bak')),
+        []
+      );
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('backup cleanup failure never rolls back committed six-output build', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-cleanup-failure-'));
+  try {
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    for (const lang of LANGS) {
+      write(path.join(versionDir, OUT_FILES[lang]), `old ${OUT_FILES[lang]}\n`);
+      write(path.join(contentDir, README_FILES[lang]), `old ${README_FILES[lang]}\n`);
+    }
+
+    const failure = new Error('injected backup cleanup failure');
+    failure.code = 'EACCES';
+    let cleanupAttempts = 0;
+    let failedBackup = null;
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        unlinkSync(backupPath) {
+          cleanupAttempts++;
+          if (cleanupAttempts === 2) {
+            failedBackup = backupPath;
+            throw failure;
+          }
+          fs.unlinkSync(backupPath);
+        },
+      }),
+      (error) => error.code === 'KTAV_BACKUP_CLEANUP_FAILED' &&
+        /outputs committed; backup cleanup failed: .*injected backup cleanup failure/.test(error.message)
+    );
+    assert.equal(cleanupAttempts, 6);
+
+    for (const lang of LANGS) {
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), build.bufs[lang]);
+      assert.deepEqual(
+        fs.readFileSync(path.join(contentDir, README_FILES[lang])),
+        build.readmeBufs[lang]
+      );
+    }
+    const leftovers = [versionDir, contentDir]
+      .flatMap((directory) => fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.tmp') || name.endsWith('.bak'))
+        .map((name) => path.join(directory, name)))
+      .sort();
+    assert.deepEqual(leftovers, [failedBackup].sort());
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
