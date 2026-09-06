@@ -226,6 +226,17 @@ part: exactly \`en\`, \`ru\`, and \`zh\`, with no executable code. Its three str
 are the sole source for the three README files. The generated files are still
 committed for browsing, but hand-editing any one of them makes \`--check\` fail.
 
+## Markdown safety contract
+
+Unit body text MUST NOT contain a raw HTML block opener outside a confirmed
+fenced code block. This closed-world rule covers all seven CommonMark HTML
+block forms: \`script/pre/style/textarea\` tags, comments, processing instructions,
+declarations, CDATA sections, the block-tag list, and other complete open or
+close tags. Type 7 applies only when the line is a complete valid open or
+closing tag plus optional whitespace, so autolinks,
+malformed tag-like text, and inline-tag prose are not forbidden by that rule.
+HTML-like text inside a confirmed fenced code block remains allowed.
+
 ## How the generator builds a file
 
 \`scripts/build_spec.mjs\` walks the manifest in order. For each unit it reads
@@ -589,6 +600,18 @@ MUST совпадать с соответствующими полями \`meta.
 \`README.md\`, \`README.ru.md\` и \`README.zh.md\`; ручное изменение любого README
 делает \`--check\` ошибочным.
 
+## Контракт безопасности Markdown
+
+Текст тела юнита MUST NOT содержать открывающую строку HTML-блока вне
+подтверждённого fenced code block. Это закрытое правило охватывает все семь
+форм HTML-блоков CommonMark: теги \`script/pre/style/textarea\`, комментарии,
+processing instructions, декларации, секции CDATA, список блочных тегов и
+прочие полные открывающие или закрывающие теги. Тип 7 применяется только когда
+строка целиком состоит из корректного открывающего или закрывающего тега и
+необязательных пробельных символов; autolink, некорректный текст, похожий на
+тег, и проза со встроенными тегами этим правилом не запрещены. HTML-подобный
+текст внутри подтверждённого fenced code block по-прежнему разрешён.
+
 ## Как генератор собирает файл
 
 \`scripts/build_spec.mjs\` идёт по манифесту по порядку. Для каждого
@@ -922,6 +945,15 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 \`README.source.js\` 是本目录三个 README 共用的 \`{ en, ru, zh }\` source
 object。Builder 会静态检查它并据此生成 \`README.md\`、\`README.ru.md\` 和
 \`README.zh.md\`;手动修改任何一个 README 都会使 \`--check\` 失败。
+
+## Markdown 安全契约
+
+单元正文 MUST NOT 在已确认的 fenced code block 之外包含原始 HTML 块
+开启语法。此封闭规则涵盖 CommonMark 的全部七种 HTML 块形式：
+\`script/pre/style/textarea\` 标签、注释、处理指令、声明、CDATA 区段、块级标签
+列表，以及其他完整的开始或结束标签。类型 7 仅在线路完整由有效的开始或结束
+标签及可选空白组成时适用；自动链接、格式错误的类标签文本和含内联标签的正文
+不受该规则禁止。已确认的 fenced code block 内仍允许类似 HTML 的文本。
 
 ## 生成器如何构建文件
 

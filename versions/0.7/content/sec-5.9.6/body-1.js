@@ -9,6 +9,8 @@ MUST test the following branches in order; exactly one branch applies:
   Integer and Float use the canonical bodies of § 5.9.8. This branch is
   selected before every String and compound branch below and is not subject
   to the first-item Array-root safeguards of the bare String branch.
+- **Empty String item:** emit the raw-marker line \`::\` with no body at the
+  current indent.
 - **Bare String item:** \`<bytes>\` on its own line at the current
   indent — when the body satisfies the same conditions as the
   \`key: <bytes>\` form of § 5.9.5 (including: does not start with
@@ -101,6 +103,8 @@ MUST test the following branches in order; exactly one branch applies:
   тела § 5.9.8. Эта ветвь проверяется перед всеми ветвями String и
   составных значений ниже и не подпадает под safeguards для первого
   элемента Array-корня, относящиеся к голой String-ветви.
+- **Пустой String-элемент:** вывести строку raw-маркера \`::\` без тела на
+  текущем отступе.
 - **Голый String-элемент:** \`<bytes>\` на своей строке на
   текущем отступе — когда тело удовлетворяет тем же условиям,
   что и форма \`key: <bytes>\` § 5.9.5 (включая: не начинается с
@@ -190,6 +194,7 @@ MUST test the following branches in order; exactly one branch applies:
   使用 § 5.2 的精确关键词拼写; Integer 与 Float 使用 § 5.9.8 的规范体。
   此分支在下面所有 String 与复合值分支之前选择,不受裸 String 分支的
   Array 根首项 safeguards 约束。
+- **空 String 项:** 在当前缩进输出无体的原始标记行 \`::\`。
 - **裸 String 项:** \`<bytes>\` 在当前缩进的自身行上 —— 当体满足
   § 5.9.5 中 \`key: <bytes>\` 形式的相同条件(包括:不以 \`{\` 或
   \`[\` 开头;不恰好等于 \`(\` 或 \`((\`),并且 —— 由于项行没有

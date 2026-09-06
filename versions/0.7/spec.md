@@ -1941,6 +1941,8 @@ MUST test the following branches in order; exactly one branch applies:
   Integer and Float use the canonical bodies of § 5.9.8. This branch is
   selected before every String and compound branch below and is not subject
   to the first-item Array-root safeguards of the bare String branch.
+- **Empty String item:** emit the raw-marker line `::` with no body at the
+  current indent.
 - **Bare String item:** `<bytes>` on its own line at the current
   indent — when the body satisfies the same conditions as the
   `key: <bytes>` form of § 5.9.5 (including: does not start with

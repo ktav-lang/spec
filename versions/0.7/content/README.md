@@ -225,6 +225,17 @@ part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings
 are the sole source for the three README files. The generated files are still
 committed for browsing, but hand-editing any one of them makes `--check` fail.
 
+## Markdown safety contract
+
+Unit body text MUST NOT contain a raw HTML block opener outside a confirmed
+fenced code block. This closed-world rule covers all seven CommonMark HTML
+block forms: `script/pre/style/textarea` tags, comments, processing instructions,
+declarations, CDATA sections, the block-tag list, and other complete open or
+close tags. Type 7 applies only when the line is a complete valid open or
+closing tag plus optional whitespace, so autolinks,
+malformed tag-like text, and inline-tag prose are not forbidden by that rule.
+HTML-like text inside a confirmed fenced code block remains allowed.
+
 ## How the generator builds a file
 
 `scripts/build_spec.mjs` walks the manifest in order. For each unit it reads

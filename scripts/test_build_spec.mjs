@@ -305,6 +305,33 @@ test('only an empty list marker gets Setext precedence over an active paragraph'
   );
 });
 
+test('Setext precedence applies only to truly empty markers in the active container', async () => {
+  for (const body of [
+    'Root paragraph\n- ## list heading\n\n',
+    'Root paragraph\n  - ## nested list heading\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
+
+  for (const marker of ['+', '*', '1.']) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([
+      `Root paragraph\n${marker}\n===\n\n`,
+    ])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains a Setext heading/,
+      marker
+    );
+  }
+});
+
 test('a Unicode separator is content, not ASCII blank, before a Setext underline', async () => {
   for (const separator of ['\u2028', '\u00a0']) {
     const fx = baseFixtures();
@@ -473,6 +500,14 @@ test('unquoted blank lines end quote fences but quoted blank lines do not', asyn
   await assert.doesNotReject(validate(quotedBlank));
 });
 
+test('a normalized empty blockquote line clears the active paragraph', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [sameLanguageBodies([
+    '> Paragraph\n> \n> ---\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(fx));
+});
+
 test('list padding consumes one to four spaces but leaves five-plus as indented code', async () => {
   for (const spaces of [1, 2, 3, 4]) {
     const fx = baseFixtures();
@@ -571,6 +606,115 @@ test('ordered list interruption follows the CommonMark start-number rule', async
     validate(interrupting),
     /unit "named-abstract": en: unit body contains an ATX heading/
   );
+
+  const sibling = baseFixtures();
+  sibling[1].bodies = [sameLanguageBodies([
+    '1. first\n2. # hidden in the next list item\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(sibling),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
+});
+
+test('Setext and block-start lines do not become lazy continuations after an interrupted list', async () => {
+  const directList = baseFixtures();
+  directList[1].bodies = [sameLanguageBodies([
+    '- item\n===\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(directList));
+
+  const falseRed = baseFixtures();
+  falseRed[1].bodies = [sameLanguageBodies([
+    'text\n+ item\n===\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(falseRed));
+
+  const lazyQuote = baseFixtures();
+  lazyQuote[1].bodies = [sameLanguageBodies([
+    '> Paragraph\n2. lazy continuation\n> ---\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(lazyQuote),
+    /unit "named-abstract": en: unit body contains a Setext heading/
+  );
+});
+
+test('tab-expanded container columns remain absolute and fenced tab content stays opaque', async () => {
+  for (const body of [
+    '  -\t```text\n' +
+      '\t# inside the list fence\n' +
+      '\t```\n' +
+      '  - ## heading after the fence\n\n',
+    '>  -\t```text\n' +
+      '> \t# inside the nested fence\n' +
+      '> \t```\n' +
+      '>  - ## heading after the fence\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
+
+  const fenced = baseFixtures();
+  fenced[1].bodies = [sameLanguageBodies([
+    '```text\n\t# tabbed code\n```\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(fenced));
+});
+
+test('all seven CommonMark HTML block opener families are forbidden outside fences', async () => {
+  for (const [opener, type] of [
+    ['<script>', 1],
+    ['<textarea>', 1],
+    ['<!-- comment -->', 2],
+    ['<?processing-instruction>', 3],
+    ['<!DOCTYPE html>', 4],
+    ['<![CDATA[data]]>', 5],
+    ['<div>', 6],
+    ['<span>', 7],
+    ['<span title=">">', 7],
+    ['<x-widget data-id="42" enabled>', 7],
+    ["<x-widget data-id='42' path=/docs />", 7],
+    ['</x-widget   >', 7],
+    ['<div>type 6 remains prefix-based</div>', 6],
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${opener}\n\n`])[0]];
+    await assert.rejects(
+      validate(fx),
+      new RegExp(
+        `unit "named-abstract": en: unit body contains a raw HTML block opener ` +
+        `\\(CommonMark type ${type}\\)`
+      ),
+      opener
+    );
+  }
+
+  const fenced = baseFixtures();
+  fenced[1].bodies = [sameLanguageBodies([
+    '```html\n<div>allowed in a confirmed fence</div>\n```\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(fenced));
+});
+
+test('CommonMark HTML type 7 requires a standalone syntactically complete tag', async () => {
+  for (const prose of [
+    '<https://example.com>',
+    '<person@example.com>',
+    '<foo.bar>',
+    '<span>inline prose</span>',
+    '<x-widget bad==value>',
+    '<x-widget title="unterminated>',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
+    await assert.doesNotReject(validate(fx), prose);
+  }
 });
 
 test('fence marker lengths follow CommonMark 4-backtick/3-backtick behavior', async () => {

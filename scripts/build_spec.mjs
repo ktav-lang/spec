@@ -281,6 +281,119 @@ function isThematicBreak(line) {
   return /^(?: {0,3})(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
 }
 
+const HTML_BLOCK_TAGS =
+  '(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|' +
+  'colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|' +
+  'form|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|' +
+  'menu|menuitem|nav|ol|p|pre|script|search|section|summary|table|tbody|td|' +
+  'tfoot|th|thead|title|tr|track|ul)';
+
+// The source format is prose plus fenced examples, not arbitrary HTML. Reject
+// each CommonMark HTML-block opener family instead of trying to model its
+// type-specific termination rules while looking for section headings.
+function isAsciiLetter(ch) {
+  const code = ch?.charCodeAt(0);
+  return (code >= 0x41 && code <= 0x5a) || (code >= 0x61 && code <= 0x7a);
+}
+
+function isAsciiDigit(ch) {
+  const code = ch?.charCodeAt(0);
+  return code >= 0x30 && code <= 0x39;
+}
+
+function skipSpaceTabs(line, start) {
+  let pos = start;
+  while (line[pos] === ' ' || line[pos] === '\t') pos++;
+  return pos;
+}
+
+function isAttributeNameStart(ch) {
+  return isAsciiLetter(ch) || ch === '_' || ch === ':';
+}
+
+function isAttributeNameChar(ch) {
+  return isAttributeNameStart(ch) || isAsciiDigit(ch) || ch === '.' || ch === '-';
+}
+
+function isUnquotedAttributeValueChar(ch) {
+  return ch !== undefined && ch !== ' ' && ch !== '\t' &&
+    ch !== '"' && ch !== "'" && ch !== '=' && ch !== '<' &&
+    ch !== '>' && ch !== '`';
+}
+
+// CommonMark type 7 requires the whole line (apart from indentation and
+// trailing whitespace) to be one syntactically complete open or closing tag.
+// This monotonic scanner is linear in the line length and never scans past it.
+function isCompleteType7Tag(line) {
+  let pos = 0;
+  while (pos < 3 && line[pos] === ' ') pos++;
+  if (line[pos] !== '<') return false;
+  pos++;
+
+  const closing = line[pos] === '/';
+  if (closing) pos++;
+  if (!isAsciiLetter(line[pos])) return false;
+  pos++;
+  while (isAsciiLetter(line[pos]) || isAsciiDigit(line[pos]) || line[pos] === '-') pos++;
+
+  if (closing) {
+    pos = skipSpaceTabs(line, pos);
+    if (line[pos] !== '>') return false;
+    return skipSpaceTabs(line, pos + 1) === line.length;
+  }
+
+  while (pos < line.length) {
+    const beforeWhitespace = pos;
+    pos = skipSpaceTabs(line, pos);
+    if (line[pos] === '>') return skipSpaceTabs(line, pos + 1) === line.length;
+    if (line[pos] === '/' && line[pos + 1] === '>') {
+      return skipSpaceTabs(line, pos + 2) === line.length;
+    }
+
+    // Every attribute after the tag name must be separated by whitespace.
+    if (pos === beforeWhitespace || !isAttributeNameStart(line[pos])) return false;
+    pos++;
+    while (isAttributeNameChar(line[pos])) pos++;
+
+    const nameEnd = pos;
+    const equals = skipSpaceTabs(line, pos);
+    if (line[equals] !== '=') {
+      pos = nameEnd;
+      continue;
+    }
+
+    pos = skipSpaceTabs(line, equals + 1);
+    const quote = line[pos] === '"' || line[pos] === "'" ? line[pos] : null;
+    if (quote !== null) {
+      pos++;
+      while (pos < line.length && line[pos] !== quote) pos++;
+      if (pos === line.length) return false;
+      pos++;
+      continue;
+    }
+
+    const valueStart = pos;
+    while (isUnquotedAttributeValueChar(line[pos])) pos++;
+    if (pos === valueStart) return false;
+  }
+  return false;
+}
+
+function parseHtmlBlockOpener(line) {
+  if (/^ {0,3}<(?:script|pre|style|textarea)(?=[ \t>]|$)/iu.test(line)) {
+    return { htmlType: 1 };
+  }
+  if (/^ {0,3}<!--/u.test(line)) return { htmlType: 2 };
+  if (/^ {0,3}<\?/u.test(line)) return { htmlType: 3 };
+  if (/^ {0,3}<![A-Z]/u.test(line)) return { htmlType: 4 };
+  if (/^ {0,3}<!\[CDATA\[/u.test(line)) return { htmlType: 5 };
+  if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[ \\t/>]|$)`, 'iu').test(line)) {
+    return { htmlType: 6 };
+  }
+  if (isCompleteType7Tag(line)) return { htmlType: 7 };
+  return null;
+}
+
 function isSetextParagraphLine(line, isIndentedCode = false) {
   return !isIndentedCode &&
     /[^ \t]/.test(line) &&
@@ -394,7 +507,8 @@ function isEmptyListMarker(line, list) {
 // later Setext underline is still associated with the active paragraph.
 function canContinueParagraph(line) {
   if (/^[ \t]*$/.test(line) || parseAtxHeading(line) !== null ||
-      parseFenceOpener(line) !== null || isThematicBreak(line)) {
+      parseFenceOpener(line) !== null || parseSetextUnderline(line) !== null ||
+      isThematicBreak(line) || parseHtmlBlockOpener(line) !== null) {
     return false;
   }
   const list = parseListMarker(line, 0);
@@ -445,12 +559,17 @@ function normalizeContainerLine(line, state) {
 
     const list = parseListMarker(line, pos);
     if (list === null) break;
-    // Empty list markers cannot interrupt an active paragraph, allowing a
-    // bare dash to remain a Setext underline. "- content" is a real list
-    // item and must be normalized as one.
-    if (state.paragraphContainer !== null &&
-        (isEmptyListMarker(line, list) ||
-         (list.ordered && list.number !== '1'))) break;
+    // Empty markers and ordered markers other than 1 cannot interrupt an
+    // active paragraph in this same container. A list sibling is different:
+    // its marker belongs to the parent of the previous list item and must be
+    // normalized as a new item, including "1. first / 2. # heading".
+    const sameParagraphContainer = state.paragraphContainer === container;
+    const lazyQuoteContinuation = state.paragraphContainer !== null &&
+      state.paragraphContainer.includes('/quote') &&
+      list.ordered && list.number !== '1';
+    if ((sameParagraphContainer &&
+         (isEmptyListMarker(line, list) ||
+          (list.ordered && list.number !== '1'))) || lazyQuoteContinuation) break;
 
     const markerIndent = leadingColumns(line, pos).column;
     const padding = consumeListPadding(line, list);
@@ -471,8 +590,12 @@ function normalizeContainerLine(line, state) {
     consumedContainer = true;
   }
 
+  const lazySetextContainer = !consumedContainer &&
+    state.paragraphContainer !== null && state.allowLazySetext &&
+    parseSetextUnderline(line) !== null ? state.paragraphContainer : null;
   const lazyContainer = !consumedContainer && state.paragraphContainer !== null &&
-    canContinueParagraph(line) ? state.paragraphContainer : null;
+    (canContinueParagraph(line) || lazySetextContainer !== null)
+    ? state.paragraphContainer : null;
   if (/^[ \t]*$/.test(line) && frames.length > 0) {
     container = frames.at(-1).container;
     consumedContainer = true;
@@ -486,10 +609,13 @@ function normalizeContainerLine(line, state) {
   state.activeLists = frames;
 
   const content = line.slice(pos);
-  const contentIndent = leadingColumns(content).column;
+  // Measure indentation from the line's absolute column. Resetting a tab to
+  // column zero here misclassifies content after a space-indented container.
+  const contentIndent = leadingColumns(line, pos).column;
   return {
     content,
     container,
+    consumedContainer,
     // A tab or four visual columns at the normalized block level is code,
     // not a paragraph which can become a Setext heading.
     isIndentedCode: indentedCode || contentIndent >= 4,
@@ -518,7 +644,15 @@ function findHeadings(body) {
   const headings = [];
   let fence = null;
   let paragraphLine = null;
-  const containerState = { activeLists: [], nextListId: 0, paragraphContainer: null };
+  const containerState = {
+    activeLists: [],
+    nextListId: 0,
+    paragraphContainer: null,
+    // A list-item paragraph may receive a lazy Setext underline only after a
+    // non-marker continuation; an earlier paragraph interrupted by that list
+    // marker must not inherit this permission.
+    allowLazySetext: false,
+  };
   const lines = body.split('\n');
   for (let index = 0; index < lines.length; index++) {
     const raw = lines[index];
@@ -558,11 +692,35 @@ function findHeadings(body) {
       containerState.paragraphContainer = null;
       continue;
     }
+    // A blank line after a container marker is still a blank line after
+    // normalization. It terminates the paragraph in that container; keeping
+    // the raw "> " line alive would incorrectly attach a later underline.
+    if (/^[ \t]*$/.test(line)) {
+      paragraphLine = null;
+      containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
+      continue;
+    }
+    const html = normalized.isIndentedCode ? null : parseHtmlBlockOpener(line);
+    if (html !== null) {
+      headings.push({
+        ...html,
+        type: 'HTML',
+        line: index + 1,
+        raw: normalized.raw,
+        container: normalized.container,
+      });
+      paragraphLine = null;
+      containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
+      continue;
+    }
     const heading = parseAtxHeading(line);
     if (heading !== null) {
       headings.push({ ...heading, raw: normalized.raw, container: normalized.container, type: 'ATX', line: index + 1 });
       paragraphLine = null;
       containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
       continue;
     }
     const underline = parseSetextUnderline(line);
@@ -578,10 +736,21 @@ function findHeadings(body) {
       });
       paragraphLine = null;
       containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
       continue;
     }
+    const previousParagraphContainer = paragraphLine?.container ?? null;
+    const previousAllowLazySetext = containerState.allowLazySetext;
     if (isSetextParagraphLine(line, normalized.isIndentedCode)) {
       paragraphLine = { raw: normalized.raw, container: normalized.container, line: index + 1 };
+      if (previousParagraphContainer === null) {
+        containerState.allowLazySetext = false;
+      } else if (previousParagraphContainer === normalized.container) {
+        containerState.allowLazySetext = previousAllowLazySetext ||
+          (normalized.container.includes('/list-') && !normalized.consumedContainer);
+      } else {
+        containerState.allowLazySetext = false;
+      }
     } else if (paragraphLine !== null &&
                paragraphLine.container === normalized.container &&
                canContinueParagraph(raw)) {
@@ -590,6 +759,7 @@ function findHeadings(body) {
       // containers, whose marker is absent from the raw line.
     } else {
       paragraphLine = null;
+      containerState.allowLazySetext = false;
     }
     containerState.paragraphContainer = paragraphLine === null ? null : normalized.container;
   }
@@ -611,6 +781,11 @@ function validateUnitHeadings(unit, meta, parts) {
     }
     if (headings.length) {
       const heading = headings[0];
+      if (heading.type === 'HTML') {
+        failUnit(unit,
+          `${lang}: unit body contains a raw HTML block opener (CommonMark type ${heading.htmlType}) ` +
+          `outside a fenced code block at line ${heading.line}: ${JSON.stringify(heading.raw)}`);
+      }
       if (heading.type === 'Setext') {
         failUnit(unit,
           `${lang}: unit body contains a Setext heading outside a fenced code block ` +

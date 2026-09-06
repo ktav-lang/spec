@@ -205,6 +205,15 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
 `README.zh.md`;手动修改任何一个 README 都会使 `--check` 失败。
 
+## Markdown 安全契约
+
+单元正文 MUST NOT 在已确认的 fenced code block 之外包含原始 HTML 块
+开启语法。此封闭规则涵盖 CommonMark 的全部七种 HTML 块形式：
+`script/pre/style/textarea` 标签、注释、处理指令、声明、CDATA 区段、块级标签
+列表，以及其他完整的开始或结束标签。类型 7 仅在线路完整由有效的开始或结束
+标签及可选空白组成时适用；自动链接、格式错误的类标签文本和含内联标签的正文
+不受该规则禁止。已确认的 fenced code block 内仍允许类似 HTML 的文本。
+
 ## 生成器如何构建文件
 
 `scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它以
