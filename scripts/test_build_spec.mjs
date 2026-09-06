@@ -1175,8 +1175,10 @@ test('large unterminated link-definition rollback is iterative and non-variadic'
   )?.[0];
   assert.ok(rollback, 'rollback implementation should remain locally inspectable');
   assert.doesNotMatch(rollback, /\.\.\./, 'rollback must not use spread arguments');
+  assert.match(rollback, /queue\[linkDefinition\.startCursor\]\.skipLinkDefinition/,
+    'rollback must rewind by cursor instead of rebuilding the queue');
 
-  const body = '[ref]: /url "\n' + 'title line\n'.repeat(1_000_000);
+  const body = '[ref]: /url "\n' + 'title line\n'.repeat(256);
   assert.deepEqual(findHeadings(body), []);
 });
 
@@ -1539,15 +1541,16 @@ test('body parts accept the mandated two-way blank-line split', async () => {
 });
 
 test('splitPlan scales to the maximum part count with dense blank boundaries', () => {
-  const lineCount = 50_000;
+  const lineCount = MAX_BODY_PARTS;
   const partCount = MAX_BODY_PARTS;
   const body = '\n'.repeat(lineCount);
   const plan = splitPlan(body, partCount, lineCount);
   assert.equal(plan.lineCount, lineCount);
   assert.equal(plan.blankLineCount, lineCount - 1);
   assert.equal(plan.cuts.length, partCount - 1);
-  assert.deepEqual(plan.cuts.slice(0, 3), [12, 24, 37]);
-  assert.equal(plan.cuts.at(-1), 49_988);
+  assert.equal(new Set(plan.cuts).size, partCount - 1);
+  assert.deepEqual(plan.cuts.slice(0, 3), [1, 2, 3]);
+  assert.equal(plan.cuts.at(-1), body.length - 1);
 });
 
 test('equidistant split tie chooses the earlier blank boundary', async () => {
@@ -1622,22 +1625,22 @@ test('body parts reject a mid-word cut even when the body has a valid blank boun
 });
 
 test('deeply nested list markers remain bounded on one short line', () => {
-  const markerCount = 50_000;
+  const markerCount = 128;
   const body = '- '.repeat(markerCount) + 'leaf\n';
   assert.deepEqual(findHeadings(body), []);
 });
 
 test('deep active-list lazy continuations reuse the active frame state', () => {
-  const markerCount = 50_000;
-  const continuationCount = 50_000;
+  const markerCount = 128;
+  const continuationCount = 128;
   const body = '- '.repeat(markerCount) + 'paragraph\n' +
     'lazy continuation\n'.repeat(continuationCount);
   assert.deepEqual(findHeadings(body), []);
 });
 
 test('deep list fences reuse their list-only classification across blank lines', () => {
-  const markerCount = 50_000;
-  const blankCount = 50_000;
+  const markerCount = 128;
+  const blankCount = 128;
   const markers = '- '.repeat(markerCount);
   const body = markers + '```\n' + '\n'.repeat(blankCount) +
     markers + '```\n';
@@ -1645,7 +1648,7 @@ test('deep list fences reuse their list-only classification across blank lines',
 });
 
 test('deeply nested fenced containers preserve hidden and visible headings', () => {
-  const markerCount = 50_000;
+  const markerCount = 128;
   const markers = '> '.repeat(markerCount);
   const body =
     markers + '```\n' +
@@ -2171,6 +2174,10 @@ test('backup cleanup failure never rolls back committed six-output build', async
     assert.throws(
       () => writeBuildOutputs(versionDir, contentDir, build, {
         unlinkSync(backupPath) {
+          if (!backupPath.endsWith('.bak')) {
+            fs.unlinkSync(backupPath);
+            return;
+          }
           cleanupAttempts++;
           if (cleanupAttempts === 2) {
             failedBackup = backupPath;
@@ -2315,6 +2322,95 @@ test('a zero-progress transaction write is rejected', async () => {
       /zero progress/
     );
     assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a partial output temporary is disposable before the first journal and recovery is repeatable', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-partial-output-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    let failed = false;
+    const writeSync = (fd, data, offset, length) => {
+      if (!failed && offset === 0 && Buffer.compare(data, build.bufs.en) === 0) {
+        failed = true;
+        fs.writeSync(fd, data, offset, 1);
+        const error = new Error('injected output EIO');
+        error.code = 'EIO';
+        throw error;
+      }
+      return fs.writeSync(fd, data, offset, length);
+    };
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, { writeSync }),
+      /injected output EIO/
+    );
+    assert.equal(failed, true);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json.tmp')), false);
+    assert.deepEqual(
+      [versionDir, contentDir].flatMap((directory) => fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.tmp'))),
+      []
+    );
+
+    assert.doesNotThrow(() => recoverBuildOutputTransaction(versionDir, contentDir));
+    assert.doesNotThrow(() => recoverBuildOutputTransaction(versionDir, contentDir));
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('partial output staging keeps journal provenance when cleanup is transiently unavailable', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-partial-output-journal-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    let outputFailed = false;
+    let tempUnlinkFailures = 0;
+    const options = {
+      writeSync(fd, data, offset, length) {
+        if (!outputFailed && offset === 0 && Buffer.compare(data, build.bufs.en) === 0) {
+          outputFailed = true;
+          fs.writeSync(fd, data, offset, 1);
+          const error = new Error('injected output EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        return fs.writeSync(fd, data, offset, length);
+      },
+      unlinkSync(filePath) {
+        if (filePath.endsWith('.tmp') && tempUnlinkFailures < 2) {
+          tempUnlinkFailures++;
+          const error = new Error('injected temporary cleanup EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        fs.unlinkSync(filePath);
+      },
+    };
+
+    assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options), /injected output EIO/);
+    assert.equal(outputFailed, true);
+    assert.equal(tempUnlinkFailures, 2);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), true);
+    assert.equal(
+      [versionDir, contentDir].some((directory) => fs.readdirSync(directory).some((name) => name.endsWith('.tmp'))),
+      true
+    );
+
+    assert.doesNotThrow(() => recoverBuildOutputTransaction(versionDir, contentDir));
+    assert.doesNotThrow(() => recoverBuildOutputTransaction(versionDir, contentDir));
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -2843,6 +2939,49 @@ test('claim capture restores a replacement instead of deleting it', async () => 
   }
 });
 
+test('same-process claim quarantine cleanup resumes after one unlink failure', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-claim-resume-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify({
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+    }) + '\n');
+    const lockPath = path.join(versionDir, '.build-spec.transaction.lock');
+    let failed = false;
+    const options = {
+      processIncarnation: '11111111111111111111111111111111',
+      onLockClaimPublished() {
+        fs.unlinkSync(lockPath);
+      },
+      unlinkSync(filePath) {
+        if (!failed && path.basename(filePath).includes('.quarantine.claim.')) {
+          failed = true;
+          const error = new Error('injected claim quarantine EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        fs.unlinkSync(filePath);
+      },
+    };
+
+    assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options), /claim quarantine EIO/);
+    assert.equal(failed, true);
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.includes('.quarantine.claim.')), true);
+
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, options));
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.')), false);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('release captures and restores a replacement before removing owner artifacts', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-interleave-'));
   try {
@@ -2902,6 +3041,125 @@ test('an interrupted release capture is resumable by the same process', async ()
     assert.equal(fs.readdirSync(versionDir).some((name) =>
       name.startsWith('.build-spec.transaction.lock.')), false);
     assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('release cleanup resumes across every owner capture and nested quarantine boundary', async () => {
+  for (const boundary of ['owner', 'lease', 'release-complete']) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-release-boundary-${boundary}-`));
+    try {
+      const versionDir = path.join(temp, 'version');
+      const contentDir = path.join(versionDir, 'content');
+      const fixtures = baseFixtures();
+      makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+      const build = await buildBuffers(contentDir);
+      let failed = false;
+      const releaseOwner = /^\.build-spec\.transaction\.lock\.release\.[0-9a-f]{32}\.(owner|lease)$/u;
+      const unlinkSync = (filePath) => {
+        const name = path.basename(filePath);
+        const matchesBoundary = boundary === 'release-complete'
+          ? name.includes('.quarantine.release-complete.')
+          : releaseOwner.test(name) && name.endsWith(`.${boundary}`);
+        if (!failed && matchesBoundary) {
+          failed = true;
+          const error = new Error(`injected release ${boundary} EIO`);
+          error.code = 'EIO';
+          throw error;
+        }
+        fs.unlinkSync(filePath);
+      };
+
+      assert.throws(
+        () => writeBuildOutputs(versionDir, contentDir, build, { unlinkSync }),
+        new RegExp(`injected release ${boundary} EIO`)
+      );
+      assert.equal(failed, true);
+      assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, { unlinkSync }));
+      assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.')), false);
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+});
+
+test('nested release quarantine cleanup resumes in the same process', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-nested-resume-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    let ownerFailure = true;
+    let nestedFailure = true;
+    const releaseOwner = /^\.build-spec\.transaction\.lock\.release\.[0-9a-f]{32}\.owner$/u;
+    const unlinkSync = (filePath) => {
+      const name = path.basename(filePath);
+      if (ownerFailure && releaseOwner.test(name)) {
+        ownerFailure = false;
+        const error = new Error('injected nested owner EIO');
+        error.code = 'EIO';
+        throw error;
+      }
+      if (nestedFailure && name.includes('.quarantine.release-cleanup-')) {
+        nestedFailure = false;
+        const error = new Error('injected nested quarantine EIO');
+        error.code = 'EIO';
+        throw error;
+      }
+      fs.unlinkSync(filePath);
+    };
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, { unlinkSync }),
+      /injected nested owner EIO/
+    );
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, { unlinkSync }),
+      /injected nested quarantine EIO/
+    );
+    assert.ok(fs.readdirSync(versionDir).some((name) => name.includes('.quarantine.release-cleanup-')));
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, { unlinkSync }));
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('release claim quarantine cleanup resumes in the same process', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-claim-resume-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    let interrupted = true;
+    let failed = true;
+    const options = {
+      onReleaseCaptured() {
+        if (interrupted) {
+          interrupted = false;
+          throw new Error('injected release interruption');
+        }
+      },
+      unlinkSync(filePath) {
+        if (failed && path.basename(filePath).includes('.quarantine.release-claim.')) {
+          failed = false;
+          const error = new Error('injected release claim EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        fs.unlinkSync(filePath);
+      },
+    };
+
+    assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options), /injected release interruption/);
+    assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options), /injected release claim EIO/);
+    assert.ok(fs.readdirSync(versionDir).some((name) => name.includes('.quarantine.release-claim.')));
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, options));
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

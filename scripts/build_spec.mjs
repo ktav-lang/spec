@@ -2136,9 +2136,9 @@ function writeAllSync(fd, data, writeSync = fs.writeSync) {
   }
 }
 
-function removeExactRegular(filePath, label, syncDir = null) {
+function removeExactRegular(filePath, label, syncDir = null, unlinkSync = fs.unlinkSync) {
   if (lstatRegularOrMissing(filePath, label) === null) return false;
-  fs.unlinkSync(filePath);
+  unlinkSync(filePath);
   if (syncDir !== null) syncDirectory(syncDir);
   return true;
 }
@@ -2190,13 +2190,14 @@ function journalStateJson(state) {
   return JSON.stringify(state) + '\n';
 }
 
-function writeJournalSnapshot(specDir, state, journalExists, writeSync = fs.writeSync, guard = null) {
+function writeJournalSnapshot(specDir, state, journalExists, writeSync = fs.writeSync,
+                              guard = null, unlinkSync = fs.unlinkSync) {
   const journalPath = transactionJournalPath(specDir);
   const tmpPath = transactionJournalTmpPath(specDir);
   if (guard !== null) guard();
   // A tmp file is never published. It is safe to replace only after lstat has
   // proved that it is a regular file under the already validated root.
-  removeExactRegular(tmpPath, 'unpublished transaction journal temporary', specDir);
+  removeExactRegular(tmpPath, 'unpublished transaction journal temporary', specDir, unlinkSync);
   const fd = fs.openSync(tmpPath, 'wx', 0o600);
   try {
     const data = Buffer.from(journalStateJson(state), 'utf8');
@@ -2346,9 +2347,9 @@ function verifyOld(item, bytes, label) {
   assertDigest(bytes, item.oldLength, item.oldSha256, label);
 }
 
-function cleanJournalTmpIfSafe(specDir) {
+function cleanJournalTmpIfSafe(specDir, unlinkSync = fs.unlinkSync) {
   const tmp = transactionJournalTmpPath(specDir);
-  removeExactRegular(tmp, 'unpublished transaction journal temporary', specDir);
+  removeExactRegular(tmp, 'unpublished transaction journal temporary', specDir, unlinkSync);
 }
 
 function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, guard) {
@@ -2399,8 +2400,31 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   }
   for (const temp of temps) {
     guard();
-    removeExactRegular(temp.filePath, 'unpublished transaction output temporary', path.dirname(temp.filePath));
+    removeExactRegular(temp.filePath, 'unpublished transaction output temporary',
+      path.dirname(temp.filePath), options.unlinkSync || fs.unlinkSync);
   }
+}
+
+function cleanupPreJournalArtifacts(specDir, temporaryPaths, options, guard) {
+  const unlinkSync = options.unlinkSync || fs.unlinkSync;
+  let cleaned = true;
+  for (const temp of temporaryPaths) {
+    try {
+      guard();
+      removeExactRegular(temp, 'transaction temporary', path.dirname(temp), unlinkSync);
+    } catch {
+      // Preserve the original write error; the next owner will retry exact names.
+      cleaned = false;
+    }
+  }
+  try {
+    guard();
+    cleanJournalTmpIfSafe(specDir, unlinkSync);
+  } catch {
+    // Preserve the original write error; the next owner will retry the journal tmp.
+    cleaned = false;
+  }
+  return cleaned;
 }
 
 function cleanReclaimedOwnerMarkers(specDir, options) {
@@ -2426,13 +2450,12 @@ function beginRollback(specDir, contentDir, state, journalExists, writeSync, gua
   writeJournalSnapshot(specDir, state, journalExists, writeSync, guard);
 }
 
-function rollbackOne(specDir, contentDir, state, index, guard) {
+function rollbackOne(specDir, contentDir, state, index, guard, unlinkSync = fs.unlinkSync) {
   const item = state.outputs[index];
   const paths = outputPaths(specDir, contentDir, state, index);
   const destination = readRegularBytes(paths.destination, 'transaction destination');
   const backup = readRegularBytes(paths.backup, 'transaction backup');
-  const temporary = readRegularBytes(paths.temp, 'transaction temporary');
-  if (temporary !== null) verifyNew(item, temporary, 'transaction temporary');
+  const temporary = lstatRegularOrMissing(paths.temp, 'transaction temporary') !== null;
 
   if (backup !== null) {
     verifyOld(item, backup, 'transaction backup');
@@ -2464,14 +2487,14 @@ function rollbackOne(specDir, contentDir, state, index, guard) {
     removeExactRegular(paths.destination, 'installed transaction output', path.dirname(paths.destination));
   }
 
-  if (temporary !== null) {
+  if (temporary) {
     validateWriteRoots(specDir, contentDir);
     guard();
-    removeExactRegular(paths.temp, 'transaction temporary', path.dirname(paths.temp));
+    removeExactRegular(paths.temp, 'transaction temporary', path.dirname(paths.temp), unlinkSync);
   }
 }
 
-function rollbackTransaction(specDir, contentDir, state, writeSync, guard) {
+function rollbackTransaction(specDir, contentDir, state, writeSync, guard, unlinkSync = fs.unlinkSync) {
   const errors = [];
   // Re-checking all six exact derived names makes rollback idempotent after a
   // crash between a restore and its snapshot. The cursor is informational;
@@ -2479,7 +2502,7 @@ function rollbackTransaction(specDir, contentDir, state, writeSync, guard) {
   state.rollbackIndex = 0;
   for (let index = TRANSACTION_OUTPUTS.length - 1; index >= 0; index--) {
     try {
-      rollbackOne(specDir, contentDir, state, index, guard);
+      rollbackOne(specDir, contentDir, state, index, guard, unlinkSync);
       syncOutputDirectories(specDir, contentDir);
       state.rollbackIndex++;
       writeJournalSnapshot(specDir, state, true, writeSync, guard);
@@ -2491,7 +2514,7 @@ function rollbackTransaction(specDir, contentDir, state, writeSync, guard) {
   return errors;
 }
 
-function completeOne(specDir, contentDir, state, index, guard) {
+function completeOne(specDir, contentDir, state, index, guard, unlinkSync = fs.unlinkSync) {
   const item = state.outputs[index];
   const paths = outputPaths(specDir, contentDir, state, index);
   let destination = readRegularBytes(paths.destination, 'transaction destination');
@@ -2515,18 +2538,18 @@ function completeOne(specDir, contentDir, state, index, guard) {
     verifyOld(item, backup, 'transaction backup');
     validateWriteRoots(specDir, contentDir);
     guard();
-    removeExactRegular(paths.backup, 'transaction backup', path.dirname(paths.backup));
+    removeExactRegular(paths.backup, 'transaction backup', path.dirname(paths.backup), unlinkSync);
   }
 }
 
-function recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard) {
+function recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard, unlinkSync = fs.unlinkSync) {
   if (state.phase === 'committed') {
     state.phase = 'cleaning';
     state.cleanupIndex = 0;
     writeJournalSnapshot(specDir, state, true, writeSync, guard);
   }
   for (let index = state.cleanupIndex; index < TRANSACTION_OUTPUTS.length; index++) {
-    completeOne(specDir, contentDir, state, index, guard);
+    completeOne(specDir, contentDir, state, index, guard, unlinkSync);
     syncOutputDirectories(specDir, contentDir);
     state.cleanupIndex = index + 1;
     writeJournalSnapshot(specDir, state, true, writeSync, guard);
@@ -2688,6 +2711,26 @@ function quarantineDescriptor(name) {
     return { type: 'record', kind: record[1], reclaimerNonce: record[2], recordNonce: record[3] };
   }
   return null;
+}
+
+function releaseQuarantineBelongsToOwner(descriptor, owner) {
+  if (descriptor?.type !== 'record') return false;
+  if (descriptor.kind === 'release-claim' || descriptor.kind === 'release-complete') {
+    return descriptor.reclaimerNonce.length === 32 && descriptor.recordNonce === owner.nonce;
+  }
+  const cleanup = /^release-cleanup-(.*)$/u.exec(descriptor.kind);
+  if (cleanup === null) return false;
+  const sourceName = cleanup[1];
+  const source = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `([0-9a-f]{32})\\.(?:candidate|owner|claim|lease|legacy-claim|legacy-lease|temporary)$`, 'u'
+  ).exec(sourceName);
+  const reclaim = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `reclaim\\.([0-9a-f]{32})\\.[0-9a-f]{32}$`, 'u'
+  ).exec(sourceName);
+  return (source !== null && source[1] === owner.nonce) ||
+    (reclaim !== null && reclaim[1] === owner.nonce);
 }
 
 function lockNow(now) {
@@ -3018,7 +3061,8 @@ function captureExactBytes(specDir, sourcePath, expected, quarantinePath, label,
 function discardExactLockClaim(specDir, claimPath, expected, options, phase) {
   const captured = captureExactLockClaim(specDir, claimPath, expected, options, phase);
   if (captured === null) return false;
-  removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+  removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir,
+    options.unlinkSync || fs.unlinkSync);
   return true;
 }
 
@@ -3075,7 +3119,8 @@ function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath, optio
         if (capturedLegacy === null) {
           fail('legacy transaction lock artifact disappeared during cleanup; no transaction mutation was attempted');
         }
-        removeExactRegular(capturedLegacy.quarantinePath, 'transaction quarantine record', specDir);
+        removeExactRegular(capturedLegacy.quarantinePath, 'transaction quarantine record', specDir,
+          options.unlinkSync || fs.unlinkSync);
       }
     } catch {
       // Ambiguous legacy artifacts are left for conservative recovery.
@@ -3110,7 +3155,7 @@ function captureReleaseOwnedArtifact(specDir, sourcePath, owner, kind) {
   return { capturePath, sourcePath };
 }
 
-function removeReleaseOwnerArtifacts(specDir, owner) {
+function removeReleaseOwnerArtifacts(specDir, owner, options = {}) {
   const names = [
     [lockCandidatePath(specDir, owner), 'candidate'],
     [lockOwnerPath(specDir, owner), 'owner'],
@@ -3127,23 +3172,12 @@ function removeReleaseOwnerArtifacts(specDir, owner) {
   for (const name of entries) {
     if (tempRe.test(name)) names.push([path.join(specDir, name), 'temporary']);
   }
-  const captured = [];
-  try {
-    for (const [sourcePath, kind] of names) {
-      const artifact = captureReleaseOwnedArtifact(specDir, sourcePath, owner, kind);
-      if (artifact !== null) captured.push(artifact);
+  for (const [sourcePath, kind] of names) {
+    const artifact = captureReleaseOwnedArtifact(specDir, sourcePath, owner, kind);
+    if (artifact !== null) {
+      removeExactRegular(artifact.capturePath, 'transaction lock release artifact', specDir,
+        options.unlinkSync || fs.unlinkSync);
     }
-  } catch (error) {
-    for (const artifact of captured.reverse()) {
-      if (lstatRegularOrMissing(artifact.capturePath, 'transaction lock release artifact') !== null &&
-          lstatRegularOrMissing(artifact.sourcePath, 'transaction lock owner artifact') === null) {
-        restoreCapturedLock(specDir, artifact.capturePath, artifact.sourcePath);
-      }
-    }
-    throw error;
-  }
-  for (const artifact of captured) {
-    removeExactRegular(artifact.capturePath, 'transaction lock release artifact', specDir);
   }
 }
 
@@ -3283,13 +3317,13 @@ function cleanReleaseOwnerArtifacts(specDir, owner, now, options) {
   if (lockIsActive(specDir, owner, now, options) && !allowCurrentProcess) {
     fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
   }
-  removeReleaseOwnerArtifacts(specDir, owner);
+  removeReleaseOwnerArtifacts(specDir, owner, options);
   for (const filePath of releaseArtifactEntriesForOwner(specDir, owner, options)) {
     const observed = readLock(filePath, 'transaction lock release artifact');
     if (!lockIdentityEqual(observed, owner)) {
       fail('transaction lock release artifact belongs to a different incarnation; ambiguous data was left untouched');
     }
-    if (lockIsActive(specDir, observed, now, options)) {
+    if (lockIsActive(specDir, observed, now, options) && !allowCurrentProcess) {
       fail(`transaction is owned by live process ${observed.pid}; refusing concurrent write`);
     }
     const captured = captureExactLockRecord(
@@ -3297,7 +3331,8 @@ function cleanReleaseOwnerArtifacts(specDir, owner, now, options) {
     if (captured === null) {
       fail('transaction lock release artifact disappeared during cleanup; no transaction mutation was attempted');
     }
-    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir,
+      options.unlinkSync || fs.unlinkSync);
   }
 }
 
@@ -3323,7 +3358,8 @@ function cleanExistingReleaseClaims(specDir, now, options) {
     if (captured === null) {
       fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
     }
-    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir,
+      options.unlinkSync || fs.unlinkSync);
   }
 
   // A crash can leave only owner-specific release captures. They are safe to
@@ -3348,7 +3384,7 @@ function cleanExistingReleaseClaims(specDir, now, options) {
     }
     const preserveMarker = name.startsWith(`${TRANSACTION_LOCK_RELEASE_PREFIX}reclaim.`);
     cleanReleaseOwnerArtifacts(specDir, owner, now, {
-      ...options, preserveReclaimMarker: preserveMarker,
+      ...options, preserveReclaimMarker: preserveMarker, allowCurrentReleaseOwner: true,
     });
   }
   for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
@@ -3374,29 +3410,32 @@ function cleanExistingQuarantines(specDir, now, options) {
       if (claim.target.nonce !== descriptor.targetNonce || claim.nonce !== descriptor.claimNonce) {
         fail('transaction lock claim quarantine name does not match its record; ambiguous data was left untouched');
       }
-      if (lockClaimIsActive(claim, now, options) || lockIsActive(specDir, claim.target, now, options)) {
+      const resumableClaim = ownerIsCurrentProcess(claim, options);
+      if ((lockClaimIsActive(claim, now, options) && !resumableClaim) ||
+          lockIsActive(specDir, claim.target, now, options)) {
         fail('transaction lock claim quarantine belongs to a live process; refusing concurrent write');
       }
       const captured = captureExactLockClaim(specDir, quarantinePath, claim, options, 'quarantine-cleanup');
       if (captured === null) {
         fail('transaction lock claim quarantine disappeared during cleanup; no transaction mutation was attempted');
       }
-      removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+      removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir,
+        options.unlinkSync || fs.unlinkSync);
       continue;
     }
     const record = readLock(quarantinePath, 'transaction lock record quarantine');
     if (record.nonce !== descriptor.recordNonce) {
       fail('transaction lock record quarantine name does not match its record; ambiguous data was left untouched');
     }
-    const resumableRelease = descriptor.kind.startsWith('release-') &&
+    const resumableRelease = releaseQuarantineBelongsToOwner(descriptor, record) &&
       ownerIsCurrentProcess(record, options);
     if (lockIsActive(specDir, record, now, options) && !resumableRelease) {
       fail('transaction lock record quarantine belongs to a live process; refusing concurrent write');
     }
     if (resumableRelease) {
-      cleanReleaseOwnerArtifacts(specDir, record, now, {
-        ...options, allowCurrentReleaseOwner: true,
-      });
+      removeExactRegular(quarantinePath, 'transaction lock record quarantine', specDir,
+        options.unlinkSync || fs.unlinkSync);
+      continue;
     }
     const suffix = hashBytes(Buffer.from(name, 'utf8')).slice(0, 8);
     const cleanupOptions = {
@@ -3407,7 +3446,8 @@ function cleanExistingQuarantines(specDir, now, options) {
     if (captured === null) {
       fail('transaction lock record quarantine disappeared during cleanup; no transaction mutation was attempted');
     }
-    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir,
+      options.unlinkSync || fs.unlinkSync);
   }
 }
 
@@ -3772,7 +3812,8 @@ function releaseTransactionLock(specDir, owner, options = {}) {
     if (capturedRelease === null) {
       fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
     }
-    removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir);
+    removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir,
+      options.unlinkSync || fs.unlinkSync);
     syncDirectory(specDir);
     return;
   }
@@ -3809,22 +3850,15 @@ function releaseTransactionLock(specDir, owner, options = {}) {
   // The fixed alias is now held in the owner-specific release claim. No
   // owner-derived artifact can be confused with a replacement nonce. Each
   // artifact is captured and validated again before its removal.
-  try {
-    removeReleaseOwnerArtifacts(specDir, owner);
-  } catch (error) {
-    if (lstatRegularOrMissing(releasePath, 'transaction lock release claim') !== null &&
-        lstatRegularOrMissing(lockPath, 'replacement transaction lock') === null) {
-      restoreCapturedLock(specDir, releasePath, lockPath);
-    }
-    throw error;
-  }
+  removeReleaseOwnerArtifacts(specDir, owner, options);
   const releaseOptions = { ...options, reclaimerNonce: owner.nonce };
   const capturedRelease = captureExactLockRecord(
     specDir, releasePath, owner, releaseOptions, 'release-complete');
   if (capturedRelease === null) {
     fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
   }
-  removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir);
+  removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir,
+    options.unlinkSync || fs.unlinkSync);
   syncDirectory(specDir);
 }
 
@@ -3848,12 +3882,14 @@ function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) 
   if (journal !== null) {
     const state = readTransactionJournal(specDir, contentDir);
     guard();
-    cleanJournalTmpIfSafe(specDir);
+    cleanJournalTmpIfSafe(specDir, options.unlinkSync || fs.unlinkSync);
     if (state.phase === 'committed' || state.phase === 'cleaning') {
-      recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard);
+      recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard,
+        options.unlinkSync || fs.unlinkSync);
     } else {
       if (state.phase !== 'rollback') beginRollback(specDir, contentDir, state, true, writeSync, guard);
-      const errors = rollbackTransaction(specDir, contentDir, state, writeSync, guard);
+      const errors = rollbackTransaction(specDir, contentDir, state, writeSync, guard,
+        options.unlinkSync || fs.unlinkSync);
       if (errors.length) fail(`transaction recovery rollback failed: ${errors.join('; ')}`);
       guard();
       removeJournal(journalPath, specDir);
@@ -3862,7 +3898,7 @@ function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) 
     return;
   }
   guard();
-  cleanJournalTmpIfSafe(specDir);
+  cleanJournalTmpIfSafe(specDir, options.unlinkSync || fs.unlinkSync);
   const orphans = transactionArtifactPaths(specDir, contentDir)
     .filter((filePath) => ![TRANSACTION_JOURNAL_FILE, TRANSACTION_JOURNAL_TMP_FILE].includes(path.basename(filePath)));
   cleanUnpublishedOutputTemps(specDir, contentDir, orphans, options, guard);
@@ -3947,6 +3983,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
   const writeSync = writeOptions.writeSync || fs.writeSync;
   const guard = transactionLockGuard(resolvedSpecDir, owner, { ...writeOptions, writeSync });
   let state = null;
+  let firstJournalPublished = false;
   const temporaryPaths = [];
   try {
     recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
@@ -4009,6 +4046,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       process.kill(process.pid, 'SIGKILL');
     }
     writeJournalSnapshot(resolvedSpecDir, state, false, writeSync, guard);
+    firstJournalPublished = true;
     cleanReclaimedOwnerMarkers(resolvedSpecDir, writeOptions);
 
     state.phase = 'backing-up';
@@ -4097,21 +4135,38 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
     guard();
     removeJournal(transactionJournalPath(resolvedSpecDir), resolvedSpecDir);
   } catch (error) {
-    if (state === null) {
-      for (const temp of temporaryPaths) {
+    let journalPublished = firstJournalPublished;
+    if (!journalPublished) {
+      try {
+        journalPublished = lstatRegularOrMissing(
+          transactionJournalPath(resolvedSpecDir), 'transaction journal') !== null;
+      } catch { /* preserve the original error */ }
+    }
+    if (!journalPublished) {
+      const cleaned = cleanupPreJournalArtifacts(resolvedSpecDir, temporaryPaths, writeOptions, guard);
+      if (!cleaned && state !== null) {
         try {
-          guard();
-          removeExactRegular(temp, 'transaction temporary', path.dirname(temp));
-        } catch { /* preserve original error */ }
+          // If private staging could not be removed, publish its exact derived
+          // names so the normal rollback/recovery path can dispose of it.
+          writeJournalSnapshot(resolvedSpecDir, state, false, writeSync, guard,
+            writeOptions.unlinkSync || fs.unlinkSync);
+          journalPublished = true;
+        } catch {
+          // A persistent write failure may prevent provenance publication; a
+          // later retry can still remove the exact private names best-effort.
+          cleanupPreJournalArtifacts(resolvedSpecDir, temporaryPaths, writeOptions, guard);
+        }
       }
-      throw error;
+      if (!journalPublished) throw error;
     }
     if (state.phase === 'committed' || state.phase === 'cleaning') throw error;
     const rollbackErrors = [];
     try {
       const journalExists = lstatRegularOrMissing(transactionJournalPath(resolvedSpecDir), 'transaction journal') !== null;
       beginRollback(resolvedSpecDir, resolvedContentDir, state, journalExists, writeSync, guard);
-      rollbackErrors.push(...rollbackTransaction(resolvedSpecDir, resolvedContentDir, state, writeSync, guard));
+      rollbackErrors.push(...rollbackTransaction(
+        resolvedSpecDir, resolvedContentDir, state, writeSync, guard,
+        writeOptions.unlinkSync || fs.unlinkSync));
       if (rollbackErrors.length === 0) {
         guard();
         removeJournal(transactionJournalPath(resolvedSpecDir), resolvedSpecDir);
