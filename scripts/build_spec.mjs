@@ -1967,6 +1967,7 @@ const TRANSACTION_LOCK_OWNER_PREFIX = `${TRANSACTION_LOCK_FILE}.owner.`;
 const TRANSACTION_LOCK_CLAIM_PREFIX = `${TRANSACTION_LOCK_FILE}.claim.`;
 const TRANSACTION_LOCK_LEASE_PREFIX = `${TRANSACTION_LOCK_FILE}.lease.`;
 const TRANSACTION_LOCK_RELEASE_PREFIX = `${TRANSACTION_LOCK_FILE}.release.`;
+const TRANSACTION_LOCK_QUARANTINE_PREFIX = `${TRANSACTION_LOCK_FILE}.quarantine.`;
 const TRANSACTION_FORMAT = 'ktav-build-output-transaction';
 const TRANSACTION_LOCK_FORMAT = 'ktav-build-output-lock';
 const TRANSACTION_LOCK_CLAIM_FORMAT = 'ktav-build-output-lock-claim';
@@ -2013,7 +2014,7 @@ function transactionArtifactName(name) {
   if (name === TRANSACTION_JOURNAL_FILE || name === TRANSACTION_JOURNAL_TMP_FILE) return true;
   return [...TRANSACTION_OUTPUT_NAMES].some((output) => {
     const escaped = output.replaceAll('.', '\\.');
-    return new RegExp(`^\\.${escaped}\\.[0-9a-f]{32}\\.(?:tmp|bak)$`).test(name);
+    return new RegExp(`^\\.${escaped}\\.[0-9a-f]{32}(?:\\.[0-9a-f]{64})?\\.(?:tmp|bak)$`).test(name);
   });
 }
 
@@ -2027,6 +2028,22 @@ function transactionArtifactPaths(specDir, contentDir) {
     }
   }
   return result;
+}
+
+function transactionOutputArtifactInfo(specDir, contentDir, filePath) {
+  const directory = path.dirname(filePath);
+  const name = path.basename(filePath);
+  for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+    const output = TRANSACTION_OUTPUTS[index];
+    const expectedDir = output.root === 'spec' ? specDir : contentDir;
+    if (directory !== expectedDir) continue;
+    const match = new RegExp(`^\\.${output.name.replaceAll('.', '\\.')}` +
+      `\\.([0-9a-f]{32})(?:\\.([0-9a-f]{64}))?\\.(tmp|bak)$`, 'u').exec(name);
+    if (match !== null) {
+      return { index, nonce: match[1], digest: match[2] || null, kind: match[3] };
+    }
+  }
+  return null;
 }
 
 function pendingTransactionPaths(specDir, contentDir) {
@@ -2043,7 +2060,8 @@ function pendingTransactionPaths(specDir, contentDir) {
           name.startsWith(TRANSACTION_LOCK_OWNER_PREFIX) ||
           name.startsWith(TRANSACTION_LOCK_CLAIM_PREFIX) ||
           name.startsWith(TRANSACTION_LOCK_LEASE_PREFIX) ||
-          name.startsWith(TRANSACTION_LOCK_RELEASE_PREFIX) || transactionArtifactName(name)) {
+          name.startsWith(TRANSACTION_LOCK_RELEASE_PREFIX) ||
+          name.startsWith(TRANSACTION_LOCK_QUARANTINE_PREFIX) || transactionArtifactName(name)) {
         result.push(path.join(directory, name));
       }
     }
@@ -2218,11 +2236,15 @@ function validateJournalState(state, specDir, contentDir) {
   }
   // The journal contains no paths. These derived paths are checked here so a
   // later operation cannot accidentally acquire a path from untrusted data.
-  for (const { root, name } of TRANSACTION_OUTPUTS) {
+  for (let i = 0; i < TRANSACTION_OUTPUTS.length; i++) {
+    const { root, name } = TRANSACTION_OUTPUTS[i];
     const directory = root === 'spec' ? specDir : contentDir;
     for (const suffix of ['tmp', 'bak']) {
-      const candidate = path.join(directory, `.${name}.${state.nonce}.${suffix}`);
-      if (path.dirname(candidate) !== directory || path.basename(candidate) !== `.${name}.${state.nonce}.${suffix}`) {
+      const candidateName = suffix === 'tmp'
+        ? `.${name}.${state.nonce}.${state.outputs[i].newSha256}.tmp`
+        : `.${name}.${state.nonce}.bak`;
+      const candidate = path.join(directory, candidateName);
+      if (path.dirname(candidate) !== directory || path.basename(candidate) !== candidateName) {
         fail('transaction journal derived an unexpected artifact path; ambiguous data was left untouched');
       }
     }
@@ -2254,9 +2276,16 @@ function outputPaths(specDir, contentDir, state, index) {
   const directory = root === 'spec' ? specDir : contentDir;
   return {
     destination: path.join(directory, name),
-    temp: path.join(directory, `.${name}.${state.nonce}.tmp`),
+    temp: path.join(directory, `.${name}.${state.nonce}.${state.outputs[index].newSha256}.tmp`),
     backup: path.join(directory, `.${name}.${state.nonce}.bak`),
   };
+}
+
+function transactionOutputBytes(bufs, readmeBufs) {
+  return TRANSACTION_OUTPUTS.map(({ root, name }) => Buffer.from(
+    root === 'spec'
+      ? bufs[LANGS.find((lang) => OUT_FILES[lang] === name)]
+      : readmeBufs[LANGS.find((lang) => README_FILES[lang] === name)]));
 }
 
 function assertDigest(data, length, digest, label) {
@@ -2282,6 +2311,50 @@ function verifyOld(item, bytes, label) {
 function cleanJournalTmpIfSafe(specDir) {
   const tmp = transactionJournalTmpPath(specDir);
   removeExactRegular(tmp, 'unpublished transaction journal temporary', specDir);
+}
+
+function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, guard) {
+  const temps = [];
+  for (const filePath of orphanPaths) {
+    const info = transactionOutputArtifactInfo(specDir, contentDir, filePath);
+    if (info === null) {
+      fail(`found an unrecognized transaction artifact without ${TRANSACTION_JOURNAL_FILE}: ${filePath}; ambiguous data was left untouched`);
+    }
+    if (info.kind === 'bak') {
+      fail(`found transaction backup without ${TRANSACTION_JOURNAL_FILE}: ${filePath}; backups are never removed without a journal`);
+    }
+    temps.push({ filePath, ...info });
+  }
+  if (temps.length === 0) return;
+  const nonces = new Set(temps.map((temp) => temp.nonce));
+  if (nonces.size !== 1) {
+    fail(`unpublished transaction temporaries have ambiguous nonces: ${[...nonces].join(', ')}; data was left untouched`);
+  }
+  if (!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) {
+    fail(`unpublished transaction temporaries have no provably dead owner; data was left untouched`);
+  }
+  for (const owner of options.reclaimedOwners) {
+    if (lockIsActive(specDir, owner, lockNow(options.now), options)) {
+      fail(`unpublished transaction temporary belongs to live process ${owner.pid}; data was left untouched`);
+    }
+  }
+  for (const temp of temps) {
+    if (temp.digest === null) {
+      fail(`unpublished transaction temporary ${temp.filePath} has no derived digest; data was left untouched`);
+    }
+    const actual = readRegularBytes(temp.filePath, 'unpublished transaction output temporary');
+    if (actual === null || hashBytes(actual) !== temp.digest) {
+      fail(`unpublished transaction temporary ${temp.filePath} has an unexpected digest; data was left untouched`);
+    }
+    const expected = options.expectedOutputBytes?.[temp.index];
+    if (expected !== undefined && (!Buffer.isBuffer(expected) || Buffer.compare(actual, expected) !== 0)) {
+      fail(`unpublished transaction temporary ${temp.filePath} does not match the derived output; data was left untouched`);
+    }
+  }
+  for (const temp of temps) {
+    guard();
+    removeExactRegular(temp.filePath, 'unpublished transaction output temporary', path.dirname(temp.filePath));
+  }
 }
 
 function beginRollback(specDir, contentDir, state, journalExists, writeSync, guard) {
@@ -2487,6 +2560,26 @@ function lockClaimPathForTarget(specDir, target) {
   return path.join(specDir, `${TRANSACTION_LOCK_CLAIM_PREFIX}${target.nonce}`);
 }
 
+function lockReclaimerNonce(options = {}) {
+  const nonce = options.reclaimerNonce;
+  if (nonce !== undefined) {
+    if (!TRANSACTION_NONCE_RE.test(nonce)) fail('transaction reclaimer hook returned an invalid token');
+    return nonce;
+  }
+  return randomBytes(16).toString('hex');
+}
+
+function lockClaimQuarantinePath(specDir, claim, options, phase) {
+  return path.join(specDir,
+    `${TRANSACTION_LOCK_QUARANTINE_PREFIX}claim.${lockReclaimerNonce(options)}.` +
+    `${claim.target.nonce}.${claim.nonce}.${phase}`);
+}
+
+function lockRecordQuarantinePath(specDir, record, options, kind) {
+  return path.join(specDir,
+    `${TRANSACTION_LOCK_QUARANTINE_PREFIX}${kind}.${lockReclaimerNonce(options)}.${record.nonce}`);
+}
+
 function lockNow(now) {
   const value = typeof now === 'function' ? now() : now === undefined ? Date.now() : now;
   if (!Number.isSafeInteger(value) || value < 0) fail('transaction lock clock returned an invalid timestamp');
@@ -2500,6 +2593,12 @@ function lockJson(value) {
 function lockIdentityEqual(left, right) {
   return left.format === right.format && left.version === right.version &&
     left.pid === right.pid && left.incarnation === right.incarnation && left.nonce === right.nonce;
+}
+
+function lockClaimEqual(left, right) {
+  return lockIdentityEqual(left.target, right.target) &&
+    left.pid === right.pid && left.incarnation === right.incarnation &&
+    left.nonce === right.nonce && left.createdAt === right.createdAt;
 }
 
 function lockIncarnationForOwner(options = {}, pid = process.pid) {
@@ -2637,10 +2736,10 @@ function publishLockClaim(specDir, target, now, options) {
   const existing = lstatRegularOrMissing(claimPath, 'transaction lock claim');
   if (existing !== null) {
     let claim = null;
+    let legacyOwner = null;
     try {
       claim = readLockClaim(claimPath);
     } catch (error) {
-      let legacyOwner;
       try {
         legacyOwner = readLock(claimPath, 'transaction lock claim');
       } catch {
@@ -2656,7 +2755,12 @@ function publishLockClaim(specDir, target, now, options) {
     if (claim !== null && lockClaimIsActive(claim, now, options)) {
       fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
     }
-    removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+    const captured = claim === null
+      ? captureExactLockRecord(specDir, claimPath, legacyOwner, options, 'stale-claim')
+      : captureExactLockClaim(specDir, claimPath, claim, options, 'stale-claim');
+    if (captured !== null) {
+      removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+    }
   }
 
   const claim = {
@@ -2691,7 +2795,97 @@ function restoreCapturedLock(specDir, capturedPath, targetPath) {
   syncDirectory(specDir);
 }
 
-function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath) {
+function captureExactRecord(specDir, sourcePath, expected, quarantinePath, label,
+                            readRecord, equalRecord, beforeCapture = null, afterCapture = null) {
+  if (lstatRegularOrMissing(sourcePath, label) === null) return null;
+  if (lstatRegularOrMissing(quarantinePath, 'transaction quarantine record') !== null) {
+    fail('transaction quarantine record already exists; ambiguous data was left untouched');
+  }
+  const observed = readRecord(sourcePath, label);
+  if (!equalRecord(observed, expected)) {
+    fail(`${label} changed; refusing to remove another record`);
+  }
+  if (typeof beforeCapture === 'function') beforeCapture({ sourcePath, quarantinePath, record: expected });
+  try {
+    fs.renameSync(sourcePath, quarantinePath);
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  try {
+    const captured = readRecord(quarantinePath, 'transaction quarantine record');
+    if (!equalRecord(captured, expected)) {
+      restoreCapturedLock(specDir, quarantinePath, sourcePath);
+      fail(`${label} replacement was captured; no transaction mutation was attempted`);
+    }
+  } catch (error) {
+    if (lstatRegularOrMissing(quarantinePath, 'transaction quarantine record') !== null &&
+        lstatRegularOrMissing(sourcePath, label) === null) {
+      restoreCapturedLock(specDir, quarantinePath, sourcePath);
+    }
+    throw error;
+  }
+  if (typeof afterCapture === 'function') {
+    afterCapture({ sourcePath, quarantinePath, record: expected });
+  }
+  return { quarantinePath, sourcePath };
+}
+
+function captureExactLockClaim(specDir, claimPath, expected, options, phase) {
+  return captureExactRecord(
+    specDir, claimPath, expected,
+    lockClaimQuarantinePath(specDir, expected, options, phase),
+    'transaction lock claim',
+    readLockClaim, lockClaimEqual,
+    options.onLockClaimBeforeCapture || options.onReclaimerClaimBeforeCapture,
+    options.onLockClaimCaptured || options.onReclaimerClaimCaptured);
+}
+
+function captureExactLockRecord(specDir, recordPath, expected, options, kind) {
+  return captureExactRecord(
+    specDir, recordPath, expected,
+    lockRecordQuarantinePath(specDir, expected, options, kind),
+    'transaction lock record',
+    readLock, lockIdentityEqual,
+    options.onLockRecordBeforeCapture, options.onLockRecordCaptured);
+}
+
+function captureExactBytes(specDir, sourcePath, expected, quarantinePath, label, options) {
+  if (lstatRegularOrMissing(sourcePath, label) === null) return null;
+  if (lstatRegularOrMissing(quarantinePath, 'transaction quarantine record') !== null) {
+    fail('transaction quarantine record already exists; ambiguous data was left untouched');
+  }
+  const before = readRegularBytes(sourcePath, label);
+  if (before === null || Buffer.compare(before, expected) !== 0) {
+    fail(`${label} changed; refusing to remove another record`);
+  }
+  const hook = options.onLockRecordBeforeCapture;
+  if (typeof hook === 'function') hook({ sourcePath, quarantinePath, record: expected });
+  try {
+    fs.renameSync(sourcePath, quarantinePath);
+  } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    throw e;
+  }
+  const captured = readRegularBytes(quarantinePath, 'transaction quarantine record');
+  if (captured === null || Buffer.compare(captured, expected) !== 0) {
+    restoreCapturedLock(specDir, quarantinePath, sourcePath);
+    fail(`${label} replacement was captured; no transaction mutation was attempted`);
+  }
+  if (typeof options.onLockRecordCaptured === 'function') {
+    options.onLockRecordCaptured({ sourcePath, quarantinePath, record: expected });
+  }
+  return { quarantinePath, sourcePath };
+}
+
+function discardExactLockClaim(specDir, claimPath, expected, options, phase) {
+  const captured = captureExactLockClaim(specDir, claimPath, expected, options, phase);
+  if (captured === null) return false;
+  removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+  return true;
+}
+
+function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath, options) {
   const escapedPrefix = TRANSACTION_LOCK_FILE.replaceAll('.', '\\.');
   const escapedNonce = owner.nonce;
   const re = new RegExp(
@@ -2700,11 +2894,35 @@ function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath) {
     `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}${escapedNonce}(?:\\..+)?$`, 'u');
   let entries;
   try { entries = fs.readdirSync(specDir); } catch { return; }
-  for (const name of entries) {
-    if (!re.test(name) && !releaseRe.test(name)) continue;
-    const filePath = path.join(specDir, name);
-    if (filePath === reclaimPath || filePath === claimPath) continue;
-    removeExactRegular(filePath, 'stale transaction lock owner artifact', specDir);
+  const captured = [];
+  try {
+    for (const name of entries) {
+      if (!re.test(name) && !releaseRe.test(name)) continue;
+      const filePath = path.join(specDir, name);
+      if (filePath === reclaimPath || filePath === claimPath) continue;
+      const expected = readLock(filePath, 'stale transaction lock owner artifact');
+      if (!lockIdentityEqual(expected, owner)) {
+        fail('stale transaction lock owner artifact belongs to a different incarnation; ambiguous data was left untouched');
+      }
+      const suffix = hashBytes(Buffer.from(name, 'utf8')).slice(0, 8);
+      const artifact = captureExactLockRecord(
+        specDir, filePath, owner, options, `reclaim-owner-${suffix}`);
+      if (artifact === null) {
+        fail('stale transaction lock owner artifact disappeared during cleanup; no transaction mutation was attempted');
+      }
+      captured.push(artifact);
+    }
+  } catch (error) {
+    for (const artifact of captured.reverse()) {
+      if (lstatRegularOrMissing(artifact.quarantinePath, 'transaction quarantine record') !== null &&
+          lstatRegularOrMissing(artifact.sourcePath, 'stale transaction lock owner artifact') === null) {
+        restoreCapturedLock(specDir, artifact.quarantinePath, artifact.sourcePath);
+      }
+    }
+    throw error;
+  }
+  for (const artifact of captured) {
+    removeExactRegular(artifact.quarantinePath, 'transaction quarantine record', specDir);
   }
   for (const legacyName of [
     `${TRANSACTION_LOCK_FILE}.claim`, `${TRANSACTION_LOCK_FILE}.lease`,
@@ -2714,7 +2932,13 @@ function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath) {
     try {
       const value = readLock(filePath, 'legacy transaction lock artifact');
       if (lockIdentityEqual(value, owner)) {
-        removeExactRegular(filePath, 'legacy transaction lock artifact', specDir);
+        const suffix = hashBytes(Buffer.from(legacyName, 'utf8')).slice(0, 8);
+        const capturedLegacy = captureExactLockRecord(
+          specDir, filePath, owner, options, `reclaim-legacy-${suffix}`);
+        if (capturedLegacy === null) {
+          fail('legacy transaction lock artifact disappeared during cleanup; no transaction mutation was attempted');
+        }
+        removeExactRegular(capturedLegacy.quarantinePath, 'transaction quarantine record', specDir);
       }
     } catch {
       // Ambiguous legacy artifacts are left for conservative recovery.
@@ -2819,11 +3043,7 @@ function cleanStaleLockLeaseTemps(specDir, now, options) {
   }
 }
 
-function ownerHintFromCorruptArtifact(filePath, label) {
-  let source;
-  try { source = fs.readFileSync(filePath).toString('utf8'); } catch (e) {
-    fail(`cannot read ${label}: ${e.message}; ambiguous data was left untouched`);
-  }
+function ownerHintFromCorruptSource(source) {
   const pidMatch = /"pid"\s*:\s*(\d+)/u.exec(source);
   const incarnationMatch = /"incarnation"\s*:\s*"([0-9a-f]{32})"/u.exec(source);
   if (pidMatch === null || incarnationMatch === null) return null;
@@ -2842,24 +3062,41 @@ function ownerHintIsLive(owner, options) {
 function cleanLegacyArtifact(specDir, filePath, label, now, options, claimFreshness = false) {
   const stat = lstatRegularOrMissing(filePath, label);
   if (stat === null) return;
+  let owner;
   try {
-    const owner = readLock(filePath, label);
-    if (claimFreshness && now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
-      fail('transaction lock reclaim is already in progress; refusing concurrent write');
-    }
-    if (lockIsActive(specDir, owner, now, options)) {
-      fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
-    }
-    removeExactRegular(filePath, label, specDir);
+    owner = readLock(filePath, label);
   } catch (error) {
-    if (error.message.includes('already in progress') || error.message.includes('owned by live process')) throw error;
-    const hint = ownerHintFromCorruptArtifact(filePath, label);
+    let source;
+    try { source = fs.readFileSync(filePath); } catch (readError) {
+      fail(`cannot read ${label}: ${readError.message}; ambiguous data was left untouched`);
+    }
+    const hint = ownerHintFromCorruptSource(source.toString('utf8'));
     if (hint !== null && !ownerHintIsLive(hint, options)) {
-      removeExactRegular(filePath, `stale ${label}`, specDir);
+      const quarantinePath = path.join(specDir,
+        `${TRANSACTION_LOCK_QUARANTINE_PREFIX}legacy.${lockReclaimerNonce(options)}.` +
+        `${hashBytes(source).slice(0, 16)}`);
+      const captured = captureExactBytes(
+        specDir, filePath, source, quarantinePath, `stale ${label}`, options);
+      if (captured === null) {
+        fail(`${label} disappeared during cleanup; no transaction mutation was attempted`);
+      }
+      removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
       return;
     }
     fail(`${label} is corrupt; ambiguous data was left untouched`);
   }
+  if (claimFreshness && now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
+    fail('transaction lock reclaim is already in progress; refusing concurrent write');
+  }
+  if (lockIsActive(specDir, owner, now, options)) {
+    fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+  }
+  const captured = captureExactLockRecord(
+    specDir, filePath, owner, options, `legacy-${path.basename(filePath)}`);
+  if (captured === null) {
+    fail(`${label} disappeared during cleanup; no transaction mutation was attempted`);
+  }
+  removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
 }
 
 function cleanLegacyFixedArtifacts(specDir, now, options) {
@@ -2871,13 +3108,115 @@ function cleanLegacyFixedArtifacts(specDir, now, options) {
     'legacy transaction lock lease', now, options);
 }
 
-function cleanExistingReleaseClaims(specDir, now, options) {
-  for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
-    const owner = readLock(releasePath, 'transaction lock release claim');
-    if (lockIsActive(specDir, owner, now, options)) {
-      fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+function releaseArtifactEntriesForOwner(specDir, owner) {
+  const escaped = owner.nonce;
+  const re = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}${escaped}\\.` +
+    `(candidate|owner|claim|lease|temporary)$`, 'u');
+  const reclaimRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `reclaim\\.${escaped}\\.[0-9a-f]{32}$`, 'u');
+  return lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)
+    .filter((filePath) => re.test(path.basename(filePath)) || reclaimRe.test(path.basename(filePath)));
+}
+
+function cleanReleaseOwnerArtifacts(specDir, owner, now, options) {
+  if (lockIsActive(specDir, owner, now, options)) {
+    fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+  }
+  removeReleaseOwnerArtifacts(specDir, owner);
+  for (const filePath of releaseArtifactEntriesForOwner(specDir, owner)) {
+    const observed = readLock(filePath, 'transaction lock release artifact');
+    if (!lockIdentityEqual(observed, owner)) {
+      fail('transaction lock release artifact belongs to a different incarnation; ambiguous data was left untouched');
     }
-    removeExactRegular(releasePath, 'stale transaction lock release claim', specDir);
+    if (lockIsActive(specDir, observed, now, options)) {
+      fail(`transaction is owned by live process ${observed.pid}; refusing concurrent write`);
+    }
+    const captured = captureExactLockRecord(
+      specDir, filePath, owner, options, `release-cleanup-${path.basename(filePath)}`);
+    if (captured === null) {
+      fail('transaction lock release artifact disappeared during cleanup; no transaction mutation was attempted');
+    }
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+  }
+}
+
+function cleanExistingReleaseClaims(specDir, now, options) {
+  const finalRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `([0-9a-f]{32})$`, 'u');
+  const knownRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `(?:[0-9a-f]{32}\\.(?:candidate|owner|claim|lease|legacy-claim|legacy-lease|temporary)|` +
+    `reclaim\\.[0-9a-f]{32}\\.[0-9a-f]{32})$`, 'u');
+  for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
+    const match = finalRe.exec(path.basename(releasePath));
+    if (match === null) continue;
+    const owner = readLock(releasePath, 'transaction lock release claim');
+    if (owner.nonce !== match[1]) {
+      fail('transaction lock release claim name does not match its record; ambiguous data was left untouched');
+    }
+    cleanReleaseOwnerArtifacts(specDir, owner, now, options);
+    const captured = captureExactLockRecord(specDir, releasePath, owner, options, 'release-claim');
+    if (captured === null) {
+      fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
+    }
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+  }
+
+  // A crash can leave only owner-specific release captures. They are safe to
+  // remove only when the captured owner is still the exact dead owner named by
+  // the artifact; a replacement incarnation is never inferred from a nonce.
+  for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
+    const name = path.basename(releasePath);
+    if (finalRe.test(name)) continue;
+    const match = new RegExp(
+      `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+      `([0-9a-f]{32})\\.(candidate|owner|claim|lease|temporary)$`, 'u').exec(name) ||
+      new RegExp(
+        `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+        `reclaim\\.([0-9a-f]{32})\\.([0-9a-f]{32})$`, 'u').exec(name);
+    if (match === null) continue;
+    const owner = readLock(releasePath, 'transaction lock release artifact');
+    if (owner.nonce !== match[1]) {
+      fail('transaction lock release artifact name does not match its record; ambiguous data was left untouched');
+    }
+    cleanReleaseOwnerArtifacts(specDir, owner, now, options);
+  }
+  for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
+    if (!knownRe.test(path.basename(releasePath))) {
+      fail('transaction lock release artifact has an invalid name; ambiguous data was left untouched');
+    }
+  }
+}
+
+function cleanExistingQuarantines(specDir, now, options) {
+  for (const quarantinePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_QUARANTINE_PREFIX)) {
+    const name = path.basename(quarantinePath);
+    if (name.startsWith(`${TRANSACTION_LOCK_QUARANTINE_PREFIX}claim.`)) {
+      const claim = readLockClaim(quarantinePath, 'transaction lock claim quarantine');
+      if (lockClaimIsActive(claim, now, options) || lockIsActive(specDir, claim.target, now, options)) {
+        fail('transaction lock claim quarantine belongs to a live process; refusing concurrent write');
+      }
+      const captured = captureExactLockClaim(specDir, quarantinePath, claim, options, 'quarantine-cleanup');
+      if (captured === null) {
+        fail('transaction lock claim quarantine disappeared during cleanup; no transaction mutation was attempted');
+      }
+      removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
+      continue;
+    }
+    const record = readLock(quarantinePath, 'transaction lock record quarantine');
+    if (lockIsActive(specDir, record, now, options)) {
+      fail('transaction lock record quarantine belongs to a live process; refusing concurrent write');
+    }
+    const suffix = hashBytes(Buffer.from(name, 'utf8')).slice(0, 8);
+    const captured = captureExactLockRecord(
+      specDir, quarantinePath, record, options, `quarantine-cleanup-${suffix}`);
+    if (captured === null) {
+      fail('transaction lock record quarantine disappeared during cleanup; no transaction mutation was attempted');
+    }
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
   }
 }
 
@@ -2899,12 +3238,12 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
   try {
     current = readLock(targetPath, 'transaction lock candidate');
   } catch (error) {
-    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-missing');
     if (error.message.includes('ENOENT')) return false;
     throw error;
   }
   if (!lockIdentityEqual(current, expected) || current.leaseUntil !== expected.leaseUntil) {
-    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-changed');
     return false;
   }
 
@@ -2917,11 +3256,11 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
     fs.renameSync(targetPath, reclaimPath);
   } catch (e) {
     if (e.code === 'ENOENT') {
-      removeExactRegular(claimPath, 'transaction lock claim', specDir);
+      discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-missing');
       return false;
     }
     if (e.code === 'EEXIST') {
-      removeExactRegular(claimPath, 'transaction lock claim', specDir);
+      discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-replaced');
       return false;
     }
     throw e;
@@ -2929,7 +3268,7 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
   const claimed = readLock(reclaimPath, 'transaction lock reclaim record');
   if (!lockIdentityEqual(claimed, expected) || claimed.leaseUntil !== expected.leaseUntil) {
     restoreCapturedLock(specDir, reclaimPath, targetPath);
-    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-replaced');
     const replacement = readLock(targetPath, 'replacement transaction lock');
     if (lockIsActive(specDir, replacement, now, options)) {
       fail(`transaction is owned by live process ${replacement.pid}; refusing concurrent write`);
@@ -2938,13 +3277,18 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
   }
   if (lockIsActive(specDir, claimed, now, options)) {
     restoreCapturedLock(specDir, reclaimPath, targetPath);
-    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    discardExactLockClaim(specDir, claimPath, claim.record, options, 'owner-live');
     fail(`transaction is owned by live process ${claimed.pid}; refusing concurrent write`);
   }
 
-  removeExactOwnerArtifacts(specDir, expected, claimPath, reclaimPath);
+  const capturedClaim = captureExactLockClaim(specDir, claimPath, claim.record, options, 'reclaim-complete');
+  if (capturedClaim === null) {
+    restoreCapturedLock(specDir, reclaimPath, targetPath);
+    fail('transaction lock claim disappeared during reclaim; no transaction mutation was attempted');
+  }
+  removeExactRegular(capturedClaim.quarantinePath, 'transaction quarantine record', specDir);
+  removeExactOwnerArtifacts(specDir, expected, claimPath, reclaimPath, options);
   removeExactRegular(reclaimPath, 'transaction lock reclaim record', specDir);
-  removeExactRegular(claimPath, 'transaction lock claim', specDir);
   syncDirectory(specDir);
   return true;
 }
@@ -3071,21 +3415,16 @@ function cleanExistingClaims(specDir, now, options) {
     const stat = lstatRegularOrMissing(claimPath, 'transaction lock claim');
     if (stat === null) continue;
     let claim;
+    let legacy = null;
     try {
       claim = readLockClaim(claimPath, 'transaction lock claim');
       if (lockClaimIsActive(claim, now, options)) {
         fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
       }
     } catch (error) {
-      let legacy;
       try {
         legacy = readLock(claimPath, 'transaction lock claim');
       } catch {
-        const hint = ownerHintFromCorruptArtifact(claimPath, 'transaction lock claim');
-        if (hint !== null && !ownerHintIsLive(hint, options)) {
-          removeExactRegular(claimPath, 'stale malformed transaction lock claim', specDir);
-          continue;
-        }
         throw error;
       }
       if (now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
@@ -3099,7 +3438,13 @@ function cleanExistingClaims(specDir, now, options) {
     if (claim !== null && lockClaimIsActive(claim, now, options)) {
       fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
     }
-    removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+    const captured = claim === null
+      ? captureExactLockRecord(specDir, claimPath, legacy, options, 'acquisition-cleanup')
+      : captureExactLockClaim(specDir, claimPath, claim, options, 'acquisition-cleanup');
+    if (captured === null) {
+      fail('transaction lock claim disappeared during acquisition cleanup; no transaction mutation was attempted');
+    }
+    removeExactRegular(captured.quarantinePath, 'transaction quarantine record', specDir);
   }
 }
 
@@ -3132,22 +3477,26 @@ function acquireTransactionLock(specDir, options = {}) {
   const owner = { format: TRANSACTION_LOCK_FORMAT, version: TRANSACTION_LOCK_VERSION,
     pid: process.pid, incarnation: lockIncarnationForOwner(options),
     nonce: randomBytes(16).toString('hex'), leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
+  const reclaimedOwners = options.reclaimedOwners || [];
+  const lockOptions = { ...options, reclaimerNonce: owner.nonce, reclaimedOwners };
   let staleClaimed = false;
   for (;;) {
-    cleanStaleLockLeaseTemps(specDir, now, options);
-    cleanStaleLockClaimTemps(specDir, options);
-    cleanStaleCandidateTemps(specDir, now, options);
-    cleanExistingClaims(specDir, now, options);
-    cleanLegacyFixedArtifacts(specDir, now, options);
-    cleanExistingReleaseClaims(specDir, now, options);
+    cleanStaleLockLeaseTemps(specDir, now, lockOptions);
+    cleanStaleLockClaimTemps(specDir, lockOptions);
+    cleanStaleCandidateTemps(specDir, now, lockOptions);
+    cleanExistingQuarantines(specDir, now, lockOptions);
+    cleanExistingClaims(specDir, now, lockOptions);
+    cleanLegacyFixedArtifacts(specDir, now, lockOptions);
+    cleanExistingReleaseClaims(specDir, now, lockOptions);
 
     const finalStat = lstatRegularOrMissing(lockPath, 'transaction lock');
     if (finalStat !== null) {
       const current = readLock(lockPath);
-      if (lockIsActive(specDir, current, now, options)) {
+      if (lockIsActive(specDir, current, now, lockOptions)) {
         fail(`transaction is owned by live process ${current.pid}; refusing concurrent write`);
       }
-      if (!claimExactStaleFile(specDir, lockPath, current, now, options)) continue;
+      if (!claimExactStaleFile(specDir, lockPath, current, now, lockOptions)) continue;
+      reclaimedOwners.push(current);
       staleClaimed = true;
     }
 
@@ -3159,10 +3508,11 @@ function acquireTransactionLock(specDir, options = {}) {
     for (const candidatePath of candidates) {
       if (lstatRegularOrMissing(candidatePath, 'transaction lock candidate') === null) continue;
       const candidate = readLock(candidatePath, 'transaction lock candidate');
-      if (lockIsActive(specDir, candidate, now, options)) {
+      if (lockIsActive(specDir, candidate, now, lockOptions)) {
         fail(`transaction is owned by live process ${candidate.pid}; refusing concurrent write`);
       }
-      if (!claimExactStaleFile(specDir, candidatePath, candidate, now, options)) continue;
+      if (!claimExactStaleFile(specDir, candidatePath, candidate, now, lockOptions)) continue;
+      reclaimedOwners.push(candidate);
       staleClaimed = true;
     }
 
@@ -3233,7 +3583,13 @@ function releaseTransactionLock(specDir, owner, options = {}) {
     }
     throw error;
   }
-  removeExactRegular(releasePath, 'transaction lock release claim', specDir);
+  const releaseOptions = { ...options, reclaimerNonce: owner.nonce };
+  const capturedRelease = captureExactLockRecord(
+    specDir, releasePath, owner, releaseOptions, 'release-complete');
+  if (capturedRelease === null) {
+    fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
+  }
+  removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir);
   syncDirectory(specDir);
 }
 
@@ -3273,9 +3629,7 @@ function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) 
   cleanJournalTmpIfSafe(specDir);
   const orphans = transactionArtifactPaths(specDir, contentDir)
     .filter((filePath) => ![TRANSACTION_JOURNAL_FILE, TRANSACTION_JOURNAL_TMP_FILE].includes(path.basename(filePath)));
-  if (orphans.length) {
-    fail(`found transaction artifact(s) without ${TRANSACTION_JOURNAL_FILE}: ${orphans.join(', ')}; ambiguous data was left untouched`);
-  }
+  cleanUnpublishedOutputTemps(specDir, contentDir, orphans, options, guard);
 }
 
 // Recovery and writing share one cooperative lock. The lock is not a hostile
@@ -3290,15 +3644,16 @@ export function recoverBuildOutputTransaction(specDir, contentDir, options = {})
   const resolvedSpecDir = path.resolve(specDir);
   const resolvedContentDir = path.resolve(contentDir);
   validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+  const recoveryOptions = { ...options, reclaimedOwners: options.reclaimedOwners || [] };
   let owner = null;
-  if (options.lockHeld) owner = options.owner || null;
-  else owner = acquireTransactionLock(resolvedSpecDir, options);
+  if (recoveryOptions.lockHeld) owner = recoveryOptions.owner || null;
+  else owner = acquireTransactionLock(resolvedSpecDir, recoveryOptions);
   try {
     recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
-      ...options, owner,
+      ...recoveryOptions, owner,
     });
   } finally {
-    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, options);
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, recoveryOptions);
   }
 }
 
@@ -3347,17 +3702,19 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
   const resolvedSpecDir = path.resolve(specDir);
   const resolvedContentDir = path.resolve(contentDir);
   validateWriteRoots(resolvedSpecDir, resolvedContentDir);
-  const owner = options.lockHeld
-    ? options.owner || null
-    : acquireTransactionLock(resolvedSpecDir, options);
-  const { renameSync = fs.renameSync, unlinkSync = fs.unlinkSync } = options;
-  const writeSync = options.writeSync || fs.writeSync;
-  const guard = transactionLockGuard(resolvedSpecDir, owner, { ...options, writeSync });
+  const writeOptions = { ...options, reclaimedOwners: options.reclaimedOwners || [] };
+  const owner = writeOptions.lockHeld
+    ? writeOptions.owner || null
+    : acquireTransactionLock(resolvedSpecDir, writeOptions);
+  const { renameSync = fs.renameSync, unlinkSync = fs.unlinkSync } = writeOptions;
+  const writeSync = writeOptions.writeSync || fs.writeSync;
+  const guard = transactionLockGuard(resolvedSpecDir, owner, { ...writeOptions, writeSync });
   let state = null;
   const temporaryPaths = [];
   try {
     recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
-      ...options, owner, writeSync,
+      ...writeOptions, owner, writeSync,
+      expectedOutputBytes: transactionOutputBytes(bufs, readmeBufs),
     });
 
     const nonce = randomBytes(16).toString('hex');
@@ -3408,6 +3765,11 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
         fs.closeSync(fd);
       }
       verifyNew(state.outputs[index], readRegularBytes(paths.temp, 'transaction temporary'), 'transaction temporary');
+    }
+    if (process.env.KTAV_BUILD_SPEC_CRASH_BEFORE_FIRST_JOURNAL === '1' ||
+        process.env.KTAV_BUILD_SPEC_CRASH_BEFORE_JOURNAL === '1' ||
+        process.env.KTAV_BUILD_SPEC_CRASH_POINT === 'before-first-journal') {
+      process.kill(process.pid, 'SIGKILL');
     }
     writeJournalSnapshot(resolvedSpecDir, state, false, writeSync, guard);
 
@@ -3524,7 +3886,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
     transactionError.code = error.code;
     throw transactionError;
   } finally {
-    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, options);
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, writeOptions);
   }
 }
 
@@ -3665,10 +4027,13 @@ async function cli() {
       if (pending.length) {
         fail(`build_spec --check: pending/interrupted transaction artifact(s): ${pending.join(', ')}; --check is read-only and will not recover or remove them`);
       }
-    } else {
-      recoverBuildOutputTransaction(specDir, contentDir);
     }
     build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
+    if (!checkMode) {
+      recoverBuildOutputTransaction(specDir, contentDir, {
+        expectedOutputBytes: transactionOutputBytes(build.bufs, build.readmeBufs),
+      });
+    }
   } catch (e) {
     process.stderr.write(`build_spec: ${e.message}\n`);
     process.exit(1);

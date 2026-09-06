@@ -2631,6 +2631,79 @@ test('a reclaimer cannot remove a replacement lock from a stale-incarnation inte
   }
 });
 
+test('two reclaimers interleave through capture hooks without losing the claim', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-two-reclaimers-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const stale = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      nonce: 'ffffffffffffffffffffffffffffffff', leaseUntil: 0,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(stale) + '\n');
+    let secondRan = false;
+    writeBuildOutputs(versionDir, contentDir, build, {
+      processIncarnation: '11111111111111111111111111111111',
+      onLockClaimPublished() {
+        if (secondRan) return;
+        secondRan = true;
+        writeBuildOutputs(versionDir, contentDir, build, {
+          processIncarnation: '22222222222222222222222222222222',
+        });
+      },
+    });
+    assert.equal(secondRan, true);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.includes('.quarantine.')), false);
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.claim.')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('claim capture restores a replacement instead of deleting it', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-claim-capture-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const owner = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+    };
+    const claimPath = path.join(versionDir, `.build-spec.transaction.lock.claim.${owner.nonce}`);
+    const staleClaim = {
+      format: 'ktav-build-output-lock-claim', version: 1, pid: 999999999,
+      incarnation: 'cccccccccccccccccccccccccccccccc',
+      nonce: 'dddddddddddddddddddddddddddddddd', createdAt: 0, target: owner,
+    };
+    const replacement = {
+      ...staleClaim, pid: process.pid, incarnation: '11111111111111111111111111111111',
+      nonce: '22222222222222222222222222222222',
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(owner) + '\n');
+    write(claimPath, JSON.stringify(staleClaim) + '\n');
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        processIncarnation: '33333333333333333333333333333333',
+        onLockClaimBeforeCapture() {
+          write(claimPath, JSON.stringify(replacement) + '\n');
+        },
+      }),
+      /replacement was captured/
+    );
+    assert.deepEqual(JSON.parse(fs.readFileSync(claimPath, 'utf8')), replacement);
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('release captures and restores a replacement before removing owner artifacts', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-interleave-'));
   try {
@@ -2733,6 +2806,58 @@ test('write mode conservatively removes torn legacy lock artifacts only after ow
       '.build-spec.transaction.lock.claim',
       '.build-spec.transaction.lock.lease',
     ]) assert.equal(fs.existsSync(path.join(versionDir, name)), false, name);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('release recovery removes an orphan final lease after owner capture', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-orphan-final-lease-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const owner = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+    };
+    write(path.join(versionDir, `.build-spec.transaction.lock.release.${owner.nonce}`), JSON.stringify(owner) + '\n');
+    write(path.join(versionDir, `.build-spec.transaction.lock.release.${owner.nonce}.owner`), JSON.stringify(owner) + '\n');
+    write(path.join(versionDir, `.build-spec.transaction.lock.lease.${owner.nonce}`), JSON.stringify(owner) + '\n');
+    writeBuildOutputs(versionDir, contentDir, build);
+    const names = fs.readdirSync(versionDir);
+    assert.equal(names.some((name) => name.includes(owner.nonce)), false);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('crash before first journal publication recovers derived output temporaries immediately', async () => {
+  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-prejournal-recovery-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const source = `
+      import { buildBuffers, writeBuildOutputs } from ${JSON.stringify(scriptUrl)};
+      const versionDir = ${JSON.stringify(versionDir)};
+      const contentDir = ${JSON.stringify(contentDir)};
+      const build = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, build);
+    `;
+    const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_BEFORE_FIRST_JOURNAL: '1' };
+    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    assert.notEqual(crashed.status, 0);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
+    assert.ok(fs.readdirSync(versionDir).some((name) => /^\.spec\.md\.[0-9a-f]{32}\.[0-9a-f]{64}\.tmp$/u.test(name)));
+    recoverBuildOutputTransaction(versionDir, contentDir);
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.endsWith('.tmp')), false);
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

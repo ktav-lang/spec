@@ -9,6 +9,7 @@
 .vscode/
 .vs/
 .zed/
+*.iml
 *.code-workspace
 .history/
 
@@ -27,6 +28,7 @@ __pycache__/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+desktop.ini
 
 # build_spec transaction artifacts
 .build-spec.transaction.json
