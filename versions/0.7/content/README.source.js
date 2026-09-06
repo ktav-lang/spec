@@ -276,7 +276,12 @@ validated nonce, digests, phase indexes, and the six known output identities;
 all temporary and backup paths are derived by the builder. Before its durable
 commit marker, recovery restores the exact old bytes; after it, recovery keeps
 the exact new bytes and only finishes cleanup. A live cooperative lock rejects
-a second writer. If a pending journal, lock, or artifact exists, \`--check\`
+a second writer. Lease expiry alone never reclaims a live matching process
+incarnation: only a proven-dead process or a provably different incarnation
+may be reclaimed. On platforms without a reliable incarnation source, live
+ownership is retained conservatively. Lock claims use owner-specific paths and
+are moved only after complete validation. If a pending journal, lock, or
+artifact exists, \`--check\`
 reports it and performs no recovery or cleanup. Directory fsync is unavailable
 on some platforms (notably Windows), so those builds explicitly provide
 file-only crash durability rather than claiming power-loss durability.
@@ -657,6 +662,11 @@ README. При успехе: код выхода 0 и **полная тишин�
 выводятся самим сборщиком. До durable commit marker восстановление возвращает
 точные старые байты; после него сохраняет точные новые байты и только
 заканчивает очистку. Живой кооперативный lock отклоняет второго писателя.
+Истечение lease само по себе никогда не отбирает lock у живой совпадающей
+инкарнации процесса: reclaim разрешён только после доказанной смерти процесса
+или доказанно другой инкарнации. На платформах без надёжного источника
+инкарнации живая собственность сохраняется консервативно. Claims используют
+пути владельца и перемещаются только после полной валидации.
 Если есть journal, lock или служебный файл незавершённой транзакции, \`--check\`
 сообщает об этом и не выполняет recovery или очистку. На некоторых платформах
 (особенно Windows) fsync каталога недоступен, поэтому сборщик явно сообщает
@@ -1003,7 +1013,10 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 并 fsync 的快照,只包含经过验证的 nonce、digest、阶段索引和六个已知输出
 标识;所有临时文件与备份路径都由构建器派生。durable commit marker 之前,
 恢复会还原精确的旧字节;之后会保留精确的新字节并只完成清理。活跃的协作
-lock 会拒绝第二个写入者。如果存在未完成的 journal、lock 或事务文件,
+lock 会拒绝第二个写入者。仅凭 lease 过期绝不会回收仍在运行且进程
+incarnation 匹配的所有者;只有已证明进程退出或已证明 incarnation 不同才可
+回收。在没有可靠 incarnation 来源的平台上,构建器会保守地保留活跃所有权。
+lock claim 使用所有者专属路径,并且只有在完整验证后才会移动。如果存在未完成的 journal、lock 或事务文件,
 \`--check\` 会报告它们并且不执行恢复或清理。某些平台(尤其 Windows)不支持
 目录 fsync,因此构建器明确提供 file-only crash durability,不会虚假声称
 它能防止断电导致的数据丢失。

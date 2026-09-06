@@ -275,7 +275,12 @@ validated nonce, digests, phase indexes, and the six known output identities;
 all temporary and backup paths are derived by the builder. Before its durable
 commit marker, recovery restores the exact old bytes; after it, recovery keeps
 the exact new bytes and only finishes cleanup. A live cooperative lock rejects
-a second writer. If a pending journal, lock, or artifact exists, `--check`
+a second writer. Lease expiry alone never reclaims a live matching process
+incarnation: only a proven-dead process or a provably different incarnation
+may be reclaimed. On platforms without a reliable incarnation source, live
+ownership is retained conservatively. Lock claims use owner-specific paths and
+are moved only after complete validation. If a pending journal, lock, or
+artifact exists, `--check`
 reports it and performs no recovery or cleanup. Directory fsync is unavailable
 on some platforms (notably Windows), so those builds explicitly provide
 file-only crash durability rather than claiming power-loss durability.
