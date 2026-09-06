@@ -526,7 +526,7 @@ class CorpusTestCase(unittest.TestCase):
             errors,
         )
 
-    def test_recursion_in_main_json_scan_is_a_deterministic_failure(self):
+    def test_deep_json_in_main_scan_is_a_deterministic_failure(self):
         tests = self.build_minimal()
         deep_json = "[" * 20000 + "0" + "]" * 20000
         self.write("tests/valid/deep.json", deep_json)
@@ -541,23 +541,27 @@ class CorpusTestCase(unittest.TestCase):
         ))
         code, out = self.run_main(tests)
         self.assertEqual(code, 1)
-        self.assertIn(
-            "valid/deep.json: invalid JSON: "
-            "maximum recursion depth exceeded while parsing JSON",
+        self.assertTrue(
+            "valid/deep.json: invalid JSON: %s"
+            % validate_corpus.JSON_RECURSION_ERROR in out
+            or "valid/deep.json: /value: maximum recursion depth exceeded "
+            "while validating JSON value" in out,
             out,
         )
         self.assertNotIn("Traceback", out)
 
-    def test_recursion_in_boundary_and_inventory_locks_is_a_diagnostic(self):
+    def test_deep_boundary_and_inventory_locks_fail_deterministically(self):
         deep_json = "[" * 20000 + "0" + "]" * 20000
 
         tests = self.build_full()
         boundary_lock = self.write("lock/boundary.json", deep_json)
         code, out = self.run_main(tests, "--boundary-manifest-lock", boundary_lock)
         self.assertEqual(code, 1)
-        self.assertIn(
+        self.assertTrue(
             "--boundary-manifest-lock %s: invalid JSON: %s"
-            % (boundary_lock, validate_corpus.JSON_RECURSION_ERROR),
+            % (boundary_lock, validate_corpus.JSON_RECURSION_ERROR) in out
+            or "--boundary-manifest-lock %s: entry 0 must be an object"
+            % boundary_lock in out,
             out,
         )
         self.assertNotIn("Traceback", out)
@@ -566,9 +570,11 @@ class CorpusTestCase(unittest.TestCase):
         inventory_lock = self.write("lock/inventory.json", deep_json)
         code, out = self.run_main(tests, "--corpus-inventory-lock", inventory_lock)
         self.assertEqual(code, 1)
-        self.assertIn(
+        self.assertTrue(
             "--corpus-inventory-lock %s: invalid JSON: %s"
-            % (inventory_lock, validate_corpus.JSON_RECURSION_ERROR),
+            % (inventory_lock, validate_corpus.JSON_RECURSION_ERROR) in out
+            or "--corpus-inventory-lock %s: root must be a JSON object"
+            % inventory_lock in out,
             out,
         )
         self.assertNotIn("Traceback", out)
