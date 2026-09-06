@@ -12,8 +12,11 @@ exploit downstream**.
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.1.x   | ✅                 |
-| older   | ❌ — upgrade first |
+| 0.7.x   | ✅                 |
+| 0.6.x and earlier | ❌ — upgrade first |
+
+Because Ktav is pre-1.0, support follows a latest-minor-only policy:
+only the current 0.7.x minor line is supported.
 
 ## Reporting a vulnerability
 
@@ -25,9 +28,10 @@ Email **phpcraftdream@gmail.com** with:
 - A short description of the ambiguity or fixture error.
 - A minimal Ktav snippet that two real implementations disagree on,
   or a fixture whose JSON oracle is wrong.
-- Which implementations you tested against (e.g. `ktav-lang/rust`
-  0.1.0, `ktav-lang/python` 0.1.0, your own reader) and how they
-  disagree.
+- The exact implementation version, release tag, or commit for each
+  implementation you tested (e.g. `ktav-lang/rust` 0.7.0 and
+  `ktav-lang/python` 0.7.0), plus the exact spec version (e.g. `0.7.0`)
+  and how they disagree.
 - Your disclosure timeline preference, if you have one.
 
 You should get an acknowledgement within **72 hours**. A published
@@ -43,7 +47,7 @@ Issues that count as security-relevant for this repo:
   reject the same input differently. An attacker who knows which
   side a consumer is on can smuggle data past a validator written in
   the other.
-- **Oracle errors:** a `.json` oracle in `versions/*/tests/valid/`
+- **Oracle errors:** a `.json` oracle in `versions/0.7/tests/valid/`
   that doesn't match what the spec actually mandates — implementations
   calibrated against it drift from the real grammar.
 - **Under-specified behaviour:** a corner of the grammar the spec

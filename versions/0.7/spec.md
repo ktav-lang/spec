@@ -3332,14 +3332,24 @@ shorter output (§ 10.4).
   `InvalidKey`, no previously-valid document's meaning changes.
 - **Breaking:** § 5.9.0 (new) defines **representable Values** —
   the domain over which the canonical writer's guarantees operate.
-  A bare scalar document root, an Object pair with an empty name, a
-  non-finite Float (NaN / ±Infinity), and any compound containing a
-  non-representable Value at any depth are not representable, and a
-  writer-conforming implementation MUST reject them with an error,
-  emitting no partial output. Previously § 5.9 left these
-  programmatic-only cases undefined. The Rust reference core
-  already rejects scalar roots and `CR`-bearing Strings; closing
-  the remaining gaps there is tracked separately.
+  The bare scalar document root, an Object pair with an empty name, and
+  a non-finite Float (NaN / ±Infinity) are unrepresentable values that
+  can only be constructed programmatically: the parser cannot produce
+  them. Separately, the parser can produce Values that are parseable but
+  unrepresentable under § 5.9.7: a String containing a `CR` byte or
+  one of the multi-line collision cases. The
+  `unrepresentable/` fixtures cover the programmatic-only reason codes
+  `ScalarRoot`, `EmptyKeyName`, and `NonFiniteFloat`; the
+  `parseable-unrepresentable/` fixtures cover parser-produced
+  `CRByte`, `LeadingWhitespaceCollision`,
+  `TrailingWhitespaceCollision`, and `BothFormsRequired`. A
+  compound containing any non-representable Value at any depth is also
+  unrepresentable. A writer-conforming implementation MUST reject every
+  such Value with an error, emitting no partial output; § 8 therefore
+  excludes parser-produced unrepresentable Values from its round-trip
+  identity. The Rust reference core already rejects scalar roots and
+  `CR`-bearing Strings; closing the remaining gaps there is tracked
+  separately.
 - **Changed:** § 5.9.8 — the Float notation threshold now reads
   `0 < abs < 1e-2` (was `abs < 1e-2`), which taken literally would
   have demanded scientific notation for zero. The canonical form of

@@ -74,14 +74,24 @@ export default {
   \`InvalidKey\`, no previously-valid document's meaning changes.
 - **Breaking:** § 5.9.0 (new) defines **representable Values** —
   the domain over which the canonical writer's guarantees operate.
-  A bare scalar document root, an Object pair with an empty name, a
-  non-finite Float (NaN / ±Infinity), and any compound containing a
-  non-representable Value at any depth are not representable, and a
-  writer-conforming implementation MUST reject them with an error,
-  emitting no partial output. Previously § 5.9 left these
-  programmatic-only cases undefined. The Rust reference core
-  already rejects scalar roots and \`CR\`-bearing Strings; closing
-  the remaining gaps there is tracked separately.
+  The bare scalar document root, an Object pair with an empty name, and
+  a non-finite Float (NaN / ±Infinity) are unrepresentable values that
+  can only be constructed programmatically: the parser cannot produce
+  them. Separately, the parser can produce Values that are parseable but
+  unrepresentable under § 5.9.7: a String containing a \`CR\` byte or
+  one of the multi-line collision cases. The
+  \`unrepresentable/\` fixtures cover the programmatic-only reason codes
+  \`ScalarRoot\`, \`EmptyKeyName\`, and \`NonFiniteFloat\`; the
+  \`parseable-unrepresentable/\` fixtures cover parser-produced
+  \`CRByte\`, \`LeadingWhitespaceCollision\`,
+  \`TrailingWhitespaceCollision\`, and \`BothFormsRequired\`. A
+  compound containing any non-representable Value at any depth is also
+  unrepresentable. A writer-conforming implementation MUST reject every
+  such Value with an error, emitting no partial output; § 8 therefore
+  excludes parser-produced unrepresentable Values from its round-trip
+  identity. The Rust reference core already rejects scalar roots and
+  \`CR\`-bearing Strings; closing the remaining gaps there is tracked
+  separately.
 - **Changed:** § 5.9.8 — the Float notation threshold now reads
   \`0 < abs < 1e-2\` (was \`abs < 1e-2\`), which taken literally would
   have demanded scientific notation for zero. The canonical form of
@@ -311,14 +321,23 @@ export default {
   ни одно ранее валидное значение не меняет смысл.
 - **Ломающее:** § 5.9.0 (новый) нормативно определяет
   **представимые Values** — домен, на котором действуют гарантии
-  канонического эмиттера. Голый скалярный корень документа, пара
-  Object с пустым именем, неконечный Float (NaN / ±Infinity) и
-  любое составное Value, содержащее непредставимое Value на любой
-  глубине, непредставимы, и writer-conforming реализация MUST
-  отклонять их с ошибкой, не выпуская частичного вывода. Ранее
-  § 5.9 оставлял эти чисто программные случаи неопределёнными.
-  Эталонное Rust-ядро уже отклоняет скалярные корни и String с
-  \`CR\`; закрытие оставшихся там пробелов отслеживается отдельно.
+  канонического эмиттера. Голый скалярный корень, пара Object с пустым
+  именем и неконечный Float (NaN / ±Infinity) — непредставимые значения,
+  которые можно создать только программно: парсер не может их породить.
+  Отдельно парсер может породить Values, которые парсятся, но
+  непредставимы по § 5.9.7: String с байтом \`CR\` или одним из случаев
+  коллизии многострочной формы. Фикстуры \`unrepresentable/\` покрывают
+  чисто программные коды причин \`ScalarRoot\`, \`EmptyKeyName\` и
+  \`NonFiniteFloat\`; фикстуры \`parseable-unrepresentable/\` покрывают
+  порождённые парсером \`CRByte\`, \`LeadingWhitespaceCollision\`,
+  \`TrailingWhitespaceCollision\` и \`BothFormsRequired\`. Любое
+  составное Value, содержащее непредставимое Value на любой глубине,
+  также непредставимо. Writer-conforming реализация MUST отклонять
+  каждое такое Value с ошибкой, не выпуская частичного вывода; поэтому
+  § 8 исключает порождённые парсером непредставимые Values из своего
+  round-trip тождества. Эталонное Rust-ядро уже отклоняет скалярные
+  корни и String с \`CR\`; закрытие оставшихся там пробелов
+  отслеживается отдельно.
 - **Изменено:** § 5.9.8 — порог формы записи Float теперь читается
   как \`0 < abs < 1e-2\` (было \`abs < 1e-2\`), что при буквальном
   прочтении требовало бы научной записи для нуля. Каноническая
@@ -534,10 +553,17 @@ export default {
   \`InvalidKey\` 的文档,任何此前有效的值含义均不改变。
 - **破坏性:** § 5.9.0(新增)定义**可表示的值** —— 规范 writer
   保证所作用的域。裸标量文档根、名为空的 Object 对、非有限
-  Float(NaN / ±Infinity),以及任意深度包含不可表示 Value 的
-  任何复合值均不可表示,writer-conforming 实现 MUST 以错误拒绝
-  它们,不输出任何部分内容。此前 § 5.9 未定义这些仅经编程方式
-  出现的情形。Rust 参考核心已拒绝标量根与含 \`CR\` 的 String;
+  Float(NaN / ±Infinity)是只能以编程方式构造的不可表示值:解析器
+  无法产生它们。另一方面,解析器可以产生按语法可解析、但按 § 5.9.7
+  不可表示的 Value:包含 \`CR\` 字节的 String,或属于多行形式碰撞
+  情形之一的 String。\`unrepresentable/\` fixtures 覆盖仅限编程
+  的原因码 \`ScalarRoot\`、\`EmptyKeyName\` 与 \`NonFiniteFloat\`;
+  \`parseable-unrepresentable/\` fixtures 覆盖解析器产生的 \`CRByte\`、
+  \`LeadingWhitespaceCollision\`、\`TrailingWhitespaceCollision\` 与
+  \`BothFormsRequired\`。任意深度包含不可表示 Value 的复合值同样不可
+  表示。writer-conforming 实现 MUST 以错误拒绝每一个此类 Value,不输出
+  任何部分内容;因此 § 8 将解析器产生的不可表示 Value 排除在
+  round-trip 恒等式之外。Rust 参考核心已拒绝标量根与含 \`CR\` 的 String;
   弥补其余缺口另行跟踪。
 - **变更:** § 5.9.8 —— Float 表示形式阈值现在为 \`0 < abs < 1e-2\`
   (原为 \`abs < 1e-2\`),按字面理解后者会要求零使用科学形式。零

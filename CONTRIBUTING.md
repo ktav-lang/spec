@@ -81,9 +81,11 @@ Every proposal is weighed against these, in priority order:
    actually two rules.
 3. **No whitespace sensitivity** (other than line breaks). Ktav is
    line-based; column alignment never carries meaning.
-4. **No magic types.** Strings are strings; numbers are strings at
-   the Value level. Typing is the consumer's job (via serde, via
-   schema, via code).
+4. **No magic types.** Unmarked text matching the §5.2 numeric-literal
+   rules and falling within the implementation's numeric domain classifies
+   as Integer or Float, including noncanonical accepted spellings; consumers
+   own domain and schema semantics (via serde, schema, or code), and other
+   text remains String.
 5. **Explicit over clever.** `::` is verbose on purpose — the rare
    case where you need a literal should be the one that costs
    extra characters, not the common case.

@@ -2666,10 +2666,17 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
   `InvalidKey` 的文档,任何此前有效的值含义均不改变。
 - **破坏性:** § 5.9.0(新增)定义**可表示的值** —— 规范 writer
   保证所作用的域。裸标量文档根、名为空的 Object 对、非有限
-  Float(NaN / ±Infinity),以及任意深度包含不可表示 Value 的
-  任何复合值均不可表示,writer-conforming 实现 MUST 以错误拒绝
-  它们,不输出任何部分内容。此前 § 5.9 未定义这些仅经编程方式
-  出现的情形。Rust 参考核心已拒绝标量根与含 `CR` 的 String;
+  Float(NaN / ±Infinity)是只能以编程方式构造的不可表示值:解析器
+  无法产生它们。另一方面,解析器可以产生按语法可解析、但按 § 5.9.7
+  不可表示的 Value:包含 `CR` 字节的 String,或属于多行形式碰撞
+  情形之一的 String。`unrepresentable/` fixtures 覆盖仅限编程
+  的原因码 `ScalarRoot`、`EmptyKeyName` 与 `NonFiniteFloat`;
+  `parseable-unrepresentable/` fixtures 覆盖解析器产生的 `CRByte`、
+  `LeadingWhitespaceCollision`、`TrailingWhitespaceCollision` 与
+  `BothFormsRequired`。任意深度包含不可表示 Value 的复合值同样不可
+  表示。writer-conforming 实现 MUST 以错误拒绝每一个此类 Value,不输出
+  任何部分内容;因此 § 8 将解析器产生的不可表示 Value 排除在
+  round-trip 恒等式之外。Rust 参考核心已拒绝标量根与含 `CR` 的 String;
   弥补其余缺口另行跟踪。
 - **变更:** § 5.9.8 —— Float 表示形式阈值现在为 `0 < abs < 1e-2`
   (原为 `abs < 1e-2`),按字面理解后者会要求零使用科学形式。零
