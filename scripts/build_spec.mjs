@@ -2357,6 +2357,23 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   }
 }
 
+function cleanReclaimedOwnerMarkers(specDir, options) {
+  if (!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) return;
+  const reclaimRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `reclaim\\.([0-9a-f]{32})\\.[0-9a-f]{32}$`, 'u');
+  for (const markerPath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
+    const match = reclaimRe.exec(path.basename(markerPath));
+    if (match === null) continue;
+    const owner = readLock(markerPath, 'transaction lock reclaim record');
+    if (owner.nonce !== match[1]) {
+      fail('transaction lock reclaim record name does not match its record; ambiguous data was left untouched');
+    }
+    if (!options.reclaimedOwners.some((candidate) => lockIdentityEqual(candidate, owner))) continue;
+    cleanReleaseOwnerArtifacts(specDir, owner, lockNow(options.now), options);
+  }
+}
+
 function beginRollback(specDir, contentDir, state, journalExists, writeSync, guard) {
   state.phase = 'rollback';
   state.rollbackIndex = 0;
@@ -2582,7 +2599,8 @@ function lockRecordQuarantinePath(specDir, record, options, kind) {
 
 const TRANSACTION_LOCK_QUARANTINE_PHASES = new Set([
   'stale-claim', 'quarantine-cleanup', 'target-missing', 'target-changed',
-  'reclaim-complete', 'acquisition-cleanup',
+  'target-replaced',
+  'reclaim-complete', 'acquisition-cleanup', 'owner-live',
 ]);
 
 function quarantineRecordKindIsDerived(kind) {
@@ -2598,7 +2616,7 @@ function quarantineRecordKindIsDerived(kind) {
   if (releaseCleanup === null) return false;
   const escapedReleasePrefix = TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.');
   return new RegExp(
-    `^${escapedReleasePrefix}(?:[0-9a-f]{32}\\.(?:candidate|owner|claim|lease|temporary)|` +
+    `^${escapedReleasePrefix}(?:[0-9a-f]{32}\\.(?:candidate|owner|claim|lease|legacy-claim|legacy-lease|temporary)|` +
     `reclaim\\.[0-9a-f]{32}\\.[0-9a-f]{32})$`, 'u').test(releaseCleanup[1]);
 }
 
@@ -2649,6 +2667,18 @@ function lockClaimEqual(left, right) {
 
 function lockIncarnationForOwner(options = {}, pid = process.pid) {
   return observedProcessIncarnation(pid, options) || TRANSACTION_LOCK_UNVERIFIED_INCARNATION;
+}
+
+function ownerIsCurrentProcess(owner, options = {}) {
+  return owner.pid === process.pid &&
+    owner.incarnation === lockIncarnationForOwner(options, process.pid);
+}
+
+function rememberReclaimedOwner(options, owner) {
+  if (!Array.isArray(options.reclaimedOwners)) return;
+  if (!options.reclaimedOwners.some((candidate) => lockIdentityEqual(candidate, owner))) {
+    options.reclaimedOwners.push({ ...owner });
+  }
 }
 
 function pidIsLive(pid) {
@@ -3170,24 +3200,30 @@ function cleanLegacyFixedArtifacts(specDir, now, options) {
     'legacy transaction lock lease', now, options);
 }
 
-function releaseArtifactEntriesForOwner(specDir, owner) {
+function releaseArtifactEntriesForOwner(specDir, owner, options = {}) {
   const escaped = owner.nonce;
   const re = new RegExp(
     `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}${escaped}\\.` +
-    `(candidate|owner|claim|lease|temporary)$`, 'u');
+    `(candidate|owner|claim|lease|legacy-claim|legacy-lease|temporary)$`, 'u');
   const reclaimRe = new RegExp(
     `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
     `reclaim\\.${escaped}\\.[0-9a-f]{32}$`, 'u');
   return lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)
-    .filter((filePath) => re.test(path.basename(filePath)) || reclaimRe.test(path.basename(filePath)));
+    .filter((filePath) => {
+      const name = path.basename(filePath);
+      if (options.preserveReclaimMarker === true && reclaimRe.test(name)) return false;
+      return re.test(name) || reclaimRe.test(name);
+    });
 }
 
 function cleanReleaseOwnerArtifacts(specDir, owner, now, options) {
-  if (lockIsActive(specDir, owner, now, options)) {
+  const allowCurrentProcess = options.allowCurrentReleaseOwner === true &&
+    ownerIsCurrentProcess(owner, options);
+  if (lockIsActive(specDir, owner, now, options) && !allowCurrentProcess) {
     fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
   }
   removeReleaseOwnerArtifacts(specDir, owner);
-  for (const filePath of releaseArtifactEntriesForOwner(specDir, owner)) {
+  for (const filePath of releaseArtifactEntriesForOwner(specDir, owner, options)) {
     const observed = readLock(filePath, 'transaction lock release artifact');
     if (!lockIdentityEqual(observed, owner)) {
       fail('transaction lock release artifact belongs to a different incarnation; ambiguous data was left untouched');
@@ -3219,7 +3255,9 @@ function cleanExistingReleaseClaims(specDir, now, options) {
     if (owner.nonce !== match[1]) {
       fail('transaction lock release claim name does not match its record; ambiguous data was left untouched');
     }
-    cleanReleaseOwnerArtifacts(specDir, owner, now, options);
+    cleanReleaseOwnerArtifacts(specDir, owner, now, {
+      ...options, allowCurrentReleaseOwner: true,
+    });
     const captured = captureExactLockRecord(specDir, releasePath, owner, options, 'release-claim');
     if (captured === null) {
       fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
@@ -3235,7 +3273,7 @@ function cleanExistingReleaseClaims(specDir, now, options) {
     if (finalRe.test(name)) continue;
     const match = new RegExp(
       `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
-      `([0-9a-f]{32})\\.(candidate|owner|claim|lease|temporary)$`, 'u').exec(name) ||
+      `([0-9a-f]{32})\\.(candidate|owner|claim|lease|legacy-claim|legacy-lease|temporary)$`, 'u').exec(name) ||
       new RegExp(
         `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
         `reclaim\\.([0-9a-f]{32})\\.([0-9a-f]{32})$`, 'u').exec(name);
@@ -3244,7 +3282,13 @@ function cleanExistingReleaseClaims(specDir, now, options) {
     if (owner.nonce !== match[1]) {
       fail('transaction lock release artifact name does not match its record; ambiguous data was left untouched');
     }
-    cleanReleaseOwnerArtifacts(specDir, owner, now, options);
+    if (name.startsWith(`${TRANSACTION_LOCK_RELEASE_PREFIX}reclaim.`)) {
+      rememberReclaimedOwner(options, owner);
+    }
+    const preserveMarker = name.startsWith(`${TRANSACTION_LOCK_RELEASE_PREFIX}reclaim.`);
+    cleanReleaseOwnerArtifacts(specDir, owner, now, {
+      ...options, preserveReclaimMarker: preserveMarker,
+    });
   }
   for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
     if (!knownRe.test(path.basename(releasePath))) {
@@ -3283,12 +3327,22 @@ function cleanExistingQuarantines(specDir, now, options) {
     if (record.nonce !== descriptor.recordNonce) {
       fail('transaction lock record quarantine name does not match its record; ambiguous data was left untouched');
     }
-    if (lockIsActive(specDir, record, now, options)) {
+    const resumableRelease = descriptor.kind.startsWith('release-') &&
+      ownerIsCurrentProcess(record, options);
+    if (lockIsActive(specDir, record, now, options) && !resumableRelease) {
       fail('transaction lock record quarantine belongs to a live process; refusing concurrent write');
     }
+    if (resumableRelease) {
+      cleanReleaseOwnerArtifacts(specDir, record, now, {
+        ...options, allowCurrentReleaseOwner: true,
+      });
+    }
     const suffix = hashBytes(Buffer.from(name, 'utf8')).slice(0, 8);
+    const cleanupOptions = {
+      ...options, onLockRecordBeforeCapture: undefined, onLockRecordCaptured: undefined,
+    };
     const captured = captureExactLockRecord(
-      specDir, quarantinePath, record, options, `quarantine-cleanup-${suffix}`);
+      specDir, quarantinePath, record, cleanupOptions, `quarantine-cleanup-${suffix}`);
     if (captured === null) {
       fail('transaction lock record quarantine disappeared during cleanup; no transaction mutation was attempted');
     }
@@ -3357,6 +3411,11 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
     fail(`transaction is owned by live process ${claimed.pid}; refusing concurrent write`);
   }
 
+  // Keep the reclaim marker durable before removing any owner-derived
+  // artifacts. A crash after this point must leave enough provenance for a
+  // later process to authorize pre-journal temporary cleanup.
+  syncDirectory(specDir);
+
   const capturedClaim = captureExactLockClaim(specDir, claimPath, claim.record, options, 'reclaim-complete');
   if (capturedClaim === null) {
     restoreCapturedLock(specDir, reclaimPath, targetPath);
@@ -3364,7 +3423,6 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
   }
   removeExactRegular(capturedClaim.quarantinePath, 'transaction quarantine record', specDir);
   removeExactOwnerArtifacts(specDir, expected, claimPath, reclaimPath, options);
-  removeExactRegular(reclaimPath, 'transaction lock reclaim record', specDir);
   syncDirectory(specDir);
   return true;
 }
@@ -3614,8 +3672,31 @@ function acquireTransactionLock(specDir, options = {}) {
 function releaseTransactionLock(specDir, owner, options = {}) {
   const lockPath = transactionLockPath(specDir);
   const releasePath = lockReleasePath(specDir, owner);
-  if (lstatRegularOrMissing(releasePath, 'transaction lock release claim') !== null) {
-    fail('transaction lock release claim already exists; ambiguous data was left untouched');
+  const releaseExists = lstatRegularOrMissing(releasePath, 'transaction lock release claim') !== null;
+  if (releaseExists) {
+    const captured = readLock(releasePath, 'transaction lock release claim');
+    if (!lockIdentityEqual(captured, owner)) {
+      fail('transaction lock release claim belongs to a different incarnation; ambiguous data was left untouched');
+    }
+    const current = lstatRegularOrMissing(lockPath, 'replacement transaction lock');
+    if (current !== null) {
+      const replacement = readLock(lockPath, 'replacement transaction lock');
+      if (lockIdentityEqual(replacement, owner)) {
+        fail('transaction lock release claim and fixed alias have the same owner; ambiguous data was left untouched');
+      }
+    }
+    cleanReleaseOwnerArtifacts(specDir, owner, lockNow(options.now), {
+      ...options, allowCurrentReleaseOwner: true,
+    });
+    const releaseOptions = { ...options, reclaimerNonce: owner.nonce };
+    const capturedRelease = captureExactLockRecord(
+      specDir, releasePath, owner, releaseOptions, 'release-complete');
+    if (capturedRelease === null) {
+      fail('transaction lock release claim disappeared during cleanup; no transaction mutation was attempted');
+    }
+    removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir);
+    syncDirectory(specDir);
+    return;
   }
   const current = readLock(lockPath);
   if (!lockIdentityEqual(current, owner)) {
@@ -3706,6 +3787,7 @@ function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) 
   const orphans = transactionArtifactPaths(specDir, contentDir)
     .filter((filePath) => ![TRANSACTION_JOURNAL_FILE, TRANSACTION_JOURNAL_TMP_FILE].includes(path.basename(filePath)));
   cleanUnpublishedOutputTemps(specDir, contentDir, orphans, options, guard);
+  cleanReclaimedOwnerMarkers(specDir, options);
 }
 
 // Recovery and writing share one cooperative lock. The lock is not a hostile
@@ -3848,6 +3930,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       process.kill(process.pid, 'SIGKILL');
     }
     writeJournalSnapshot(resolvedSpecDir, state, false, writeSync, guard);
+    cleanReclaimedOwnerMarkers(resolvedSpecDir, writeOptions);
 
     state.phase = 'backing-up';
     writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
@@ -4103,13 +4186,13 @@ async function cli() {
       if (pending.length) {
         fail(`build_spec --check: pending/interrupted transaction artifact(s): ${pending.join(', ')}; --check is read-only and will not recover or remove them`);
       }
+    } else {
+      // Recovery must run before content validation. Its own derived output
+      // artifacts are outside the closed-world content namespace and may be
+      // the only evidence needed to make the next validation possible.
+      recoverBuildOutputTransaction(specDir, contentDir);
     }
     build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
-    if (!checkMode) {
-      recoverBuildOutputTransaction(specDir, contentDir, {
-        expectedOutputBytes: transactionOutputBytes(build.bufs, build.readmeBufs),
-      });
-    }
   } catch (e) {
     process.stderr.write(`build_spec: ${e.message}\n`);
     process.exit(1);
