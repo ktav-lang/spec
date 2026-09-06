@@ -604,6 +604,25 @@ test('ordered list interruption follows the CommonMark start-number rule', async
     /unit "named-abstract": en: unit body contains an ATX heading/
   );
 
+  for (const body of [
+    'paragraph remains active\n01. ## injected list heading\n\n',
+    'paragraph remains active\n000000001. ## injected list heading\n\n',
+  ]) {
+    const leadingZero = baseFixtures();
+    leadingZero[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(leadingZero),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
+
+  const nonOneWithLeadingZero = baseFixtures();
+  nonOneWithLeadingZero[1].bodies = [sameLanguageBodies([
+    'paragraph remains active\n000000002. ## paragraph content\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(nonOneWithLeadingZero));
+
   const sibling = baseFixtures();
   sibling[1].bodies = [sameLanguageBodies([
     '1. first\n2. # hidden in the next list item\n\n',
@@ -674,6 +693,31 @@ test('tab-expanded container columns remain absolute and fenced tab content stay
   await assert.doesNotReject(validate(fenced));
 });
 
+test('tabs after blockquote markers preserve CommonMark heading boundaries', async () => {
+  for (const body of [
+    '>\t# injected heading\n\n',
+    '> \tTitle\n> \t---\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains (?:an ATX|a Setext) heading/,
+      body
+    );
+  }
+
+  for (const body of [
+    '>\tordinary continuation\n\n',
+    '> \t---\n\n',
+    '> -\t```text\n> \t# nested fence content\n> \t```\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx), body);
+  }
+});
+
 test('all seven CommonMark HTML block opener families are forbidden outside fences', async () => {
   for (const [opener, type] of [
     ['<script>', 1],
@@ -681,9 +725,11 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
     ['<!-- comment -->', 2],
     ['<?processing-instruction>', 3],
     ['<!DOCTYPE html>', 4],
-    ['<!doctype html>', 4],
     ['<![CDATA[data]]>', 5],
     ['<div>', 6],
+    ['<div', 6],
+    ['</table', 6],
+    ['<h1', 6],
     ['<frame>', 6],
     ['<frameset>', 6],
     ['<noframes>', 6],
@@ -717,11 +763,20 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
   ])[0]];
   await assert.doesNotReject(validate(fenced));
 
-  for (const prose of ['<div/extra>', '<param/extra>']) {
+  for (const prose of ['<div/x', '<div/extra>', '<param/extra>', '<!doctype html>']) {
     const fx = baseFixtures();
     fx[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
     await assert.doesNotReject(validate(fx), prose);
   }
+
+  const multiline = baseFixtures();
+  multiline[1].bodies = [sameLanguageBodies([
+    '<h1\n# hidden heading\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(multiline),
+    /unit "named-abstract": en: unit body contains a raw HTML block opener \(CommonMark type 6\)/
+  );
 });
 
 test('CommonMark HTML type 7 requires a standalone syntactically complete tag', async () => {

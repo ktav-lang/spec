@@ -386,9 +386,9 @@ function parseHtmlBlockOpener(line) {
   }
   if (/^ {0,3}<!--/u.test(line)) return { htmlType: 2 };
   if (/^ {0,3}<\?/u.test(line)) return { htmlType: 3 };
-  if (/^ {0,3}<![A-Za-z]/u.test(line)) return { htmlType: 4 };
+  if (/^ {0,3}<![A-Z]/u.test(line)) return { htmlType: 4 };
   if (/^ {0,3}<!\[CDATA\[/u.test(line)) return { htmlType: 5 };
-  if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[\\t-\\r >]|/>)`, 'iu').test(line)) {
+  if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[ \\t]|$|>|/>)`, 'iu').test(line)) {
     return { htmlType: 6 };
   }
   if (isCompleteType7Tag(line)) return { htmlType: 7 };
@@ -406,6 +406,25 @@ function isSetextParagraphLine(line, isIndentedCode = false) {
 function advanceColumn(column, ch) {
   if (ch === '\t') return column + (4 - (column % 4));
   return column + 1;
+}
+
+// Expand tabs before container parsing. This preserves the spaces left by a
+// tab after a consumed blockquote/list marker, including when the tab crosses
+// the marker's indentation boundary.
+function expandTabs(line) {
+  let column = 0;
+  let expanded = '';
+  for (const ch of line) {
+    if (ch === '\t') {
+      const spaces = 4 - (column % 4);
+      expanded += ' '.repeat(spaces);
+      column += spaces;
+    } else {
+      expanded += ch;
+      column++;
+    }
+  }
+  return expanded;
 }
 
 function columnAt(line, end) {
@@ -462,6 +481,7 @@ function parseListMarker(line, start) {
     marker: text,
     ordered: /^\d/.test(text),
     number: /^\d/.test(text) ? text.slice(0, -1) : null,
+    start: /^\d/.test(text) ? Number(text.slice(0, -1)) : null,
   };
 }
 
@@ -515,7 +535,7 @@ function canContinueParagraph(line) {
   }
   const list = parseListMarker(line, 0);
   if (list !== null && !isEmptyListMarker(line, list) &&
-      (!list.ordered || list.number === '1')) {
+      (!list.ordered || list.start === 1)) {
     return false;
   }
   return true;
@@ -524,7 +544,8 @@ function canContinueParagraph(line) {
 // Normalize a line by repeatedly consuming blockquote and list containers.
 // List frames retain the relative content indent needed to recognize a later
 // continuation, while their unique item paths keep sibling paragraphs apart.
-function normalizeContainerLine(line, state) {
+function normalizeContainerLine(raw, state) {
+  const line = expandTabs(raw);
   let pos = 0;
   let container = 'root';
   let indentedCode = false;
@@ -568,7 +589,7 @@ function normalizeContainerLine(line, state) {
     const sameParagraphContainer = state.paragraphContainer === container;
     if ((sameParagraphContainer &&
          (isEmptyListMarker(line, list) ||
-          (list.ordered && list.number !== '1')))) break;
+          (list.ordered && list.start !== 1)))) break;
 
     const markerIndent = leadingColumns(line, pos).column;
     const padding = consumeListPadding(line, list);
@@ -619,11 +640,13 @@ function normalizeContainerLine(line, state) {
     // not a paragraph which can become a Setext heading.
     isIndentedCode: indentedCode || contentIndent >= 4,
     containerFrames,
-    raw: line,
+    raw,
+    expanded: line,
   };
 }
 
 function matchFenceContainer(line, frames) {
+  line = expandTabs(line);
   let pos = 0;
   for (const frame of frames) {
     if (frame.kind === 'quote') {
@@ -754,7 +777,7 @@ function findHeadings(body) {
       }
     } else if (paragraphLine !== null &&
                paragraphLine.container === normalized.container &&
-               canContinueParagraph(raw)) {
+               canContinueParagraph(normalized.expanded)) {
       // Indented code and other non-interrupting lines do not end the active
       // paragraph. This also covers lazy continuation in list and quote
       // containers, whose marker is absent from the raw line.
