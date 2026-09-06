@@ -4307,6 +4307,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       }
       if (!journalPublished) throw error;
     }
+    if (state === null) throw error;
     if (state.phase === 'committed' || state.phase === 'cleaning') throw error;
     const rollbackErrors = [];
     try {

@@ -40,7 +40,7 @@ export default {
   and keys); not processed in multi-line scalars, multi-line string
   content, or comments. Purely additive to the escape table — no
   existing escape sequence's meaning changes.
-- **Added:** § 3.1 — leading byte-order mark handling is
+- **Breaking:** § 3.1 — leading byte-order mark handling is
   deterministic: a parser-conforming implementation MUST skip exactly
   one leading U+FEFF if it is the very first code point of the
   document, before any other byte; the canonical writer (§ 5.9)
@@ -282,7 +282,7 @@ export default {
   обрабатывается в многострочных скалярах, содержимом многострочных
   строк или комментариях. Чисто аддитивное дополнение таблицы escape
   — смысл ни одной существующей escape-последовательности не меняется.
-- **Добавлено:** § 3.1 — обработка ведущего маркера порядка байтов
+- **Ломающее:** § 3.1 — обработка ведущего маркера порядка байтов
   детерминирована: parser-conforming реализация MUST пропускать
   ровно один ведущий U+FEFF, если он является самой первой кодовой
   точкой документа, перед любым другим байтом; канонический писатель
@@ -525,7 +525,7 @@ export default {
   \`BadEscapeSequence\`。在已有十个 escape 被识别之处(inline 标量
   与键)同样被识别;不在多行标量、多行字符串内容或注释中处理。
   对 escape 表纯属新增 —— 已有任何一个 escape 序列的含义均未改变。
-- **新增:** § 3.1 —— 前导字节顺序标记的处理是确定性的:
+- **破坏性:** § 3.1 —— 前导字节顺序标记的处理是确定性的:
   parser-conforming 实现 MUST 跳过恰好一个前导 U+FEFF(若它是文档
   的第一个码点、位于任何其他字节之前);规范写入器(§ 5.9)MUST NOT
   输出前导字节顺序标记。文档中任何其他位置的 U+FEFF 码点都是普通

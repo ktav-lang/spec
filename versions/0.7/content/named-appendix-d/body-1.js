@@ -68,9 +68,6 @@ wider semantics.
    scan recognizes the whole item directly, so the raw marker is no longer
    needed: \`"a: b"\` has the same literal String meaning.
 
-Additionally, \`\\uXXXX\` is a new, purely additive escape (§ 3.7.1) —
-no existing document's meaning changes because of it.
-
 4. **A recognised escape in an inline scalar now forces String before
    keyword or numeric classification (§ 3.7, § 5.2).** In 0.6.x, a
    body such as \`1\\.0\` could decode and then classify as Float; in
@@ -81,6 +78,9 @@ no existing document's meaning changes because of it.
    falls back to String (§ 5.2 rule 14).** In 0.6.x, a literal such as
    \`1e9999\` could become a non-finite Float on a binary64 backend; in
    0.7.0 it is String. Finite underflow to signed zero remains Float.
+
+Additionally, \`\\uXXXX\` is a new, purely additive escape (§ 3.7.1) —
+no existing document's meaning changes because of it.
 `,
   ru: `
 Эталонная Rust-реализация уже обрезала полный набор из 25 кодовых точек
@@ -154,10 +154,6 @@ no existing document's meaning changes because of it.
    поэтому raw-маркер больше не нужен: \`"a: b"\` имеет то же значение
    литеральной String.
 
-Кроме того, \`\\uXXXX\` — новая, чисто аддитивная escape-последовательность
-(§ 3.7.1) — смысл ни одного существующего документа из-за неё не
-меняется.
-
 4. **Распознанный escape в inline-скаляре теперь фиксирует String до
    классификации ключевого слова или числа (§ 3.7, § 5.2).** В 0.6.x
    тело вроде \`1\\.0\` могло декодироваться, а затем классифицироваться
@@ -170,6 +166,10 @@ no existing document's meaning changes because of it.
    \`1e9999\` на binary64-бэкенде мог стать неконечным Float; в 0.7.0
    это String. Конечный underflow в знаковый ноль по-прежнему остаётся
    Float.
+
+Кроме того, \`\\uXXXX\` — новая, чисто аддитивная escape-последовательность
+(§ 3.7.1) — смысл ни одного существующего документа из-за неё не
+меняется.
 `,
   zh: `
 Rust 参考实现在每个 0.6.x 版本中就已在键段边缘修剪完整的 25 码点
@@ -222,17 +222,17 @@ binary64 的范围与精度以及 \`roundTiesToEven\`。因此,在 0.6.x 中以
    分隔空白。在 0.7.0 中,匹配 quoted 段扫描会直接识别整个项,因此
    不再需要 raw marker:\`"a: b"\` 具有相同的字面 String 含义。
 
-此外,\`\\uXXXX\` 是一个纯新增的 escape(§ 3.7.1)—— 不会因此改变任何
-现有文档的含义。
-
 4. **inline 标量中的已识别 escape 现在会在关键字或数字分类之前强制
    为 String(§ 3.7、§ 5.2)。** 在 0.6.x 中,像 \`1\\.0\` 这样的体可以先
    解码再分类为 Float;在 0.7.0 中它是 String。该规则适用于每个已
-   识别的 escape,包括 \`\\.\`、\`\\:\` 以及三个引号 escape(三者)
+   识别的 escape,包括 \`\\.\`、\`\\:\` 以及三个引号 escape
    \`\\"\`、\`\\'\` 与 \`\` \\\` \`\`,即使解码出的字节不具有结构性作用。
 5. **在声明 Float 域中非有限的浮点字面量现在回退为 String
    (§ 5.2 规则 14)。** 在 0.6.x 中,binary64 后端上的 \`1e9999\` 之类
    字面量可能成为非有限 Float;在 0.7.0 中它是 String。下溢到有限的
    带符号零仍然是 Float。
+
+此外,\`\\uXXXX\` 是一个纯新增的 escape(§ 3.7.1)—— 不会因此改变任何
+现有文档的含义。
 `,
 };

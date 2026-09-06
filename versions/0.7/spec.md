@@ -3298,7 +3298,7 @@ shorter output (§ 10.4).
   and keys); not processed in multi-line scalars, multi-line string
   content, or comments. Purely additive to the escape table — no
   existing escape sequence's meaning changes.
-- **Added:** § 3.1 — leading byte-order mark handling is
+- **Breaking:** § 3.1 — leading byte-order mark handling is
   deterministic: a parser-conforming implementation MUST skip exactly
   one leading U+FEFF if it is the very first code point of the
   document, before any other byte; the canonical writer (§ 5.9)
@@ -3708,9 +3708,6 @@ wider semantics.
    scan recognizes the whole item directly, so the raw marker is no longer
    needed: `"a: b"` has the same literal String meaning.
 
-Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
-no existing document's meaning changes because of it.
-
 4. **A recognised escape in an inline scalar now forces String before
    keyword or numeric classification (§ 3.7, § 5.2).** In 0.6.x, a
    body such as `1\.0` could decode and then classify as Float; in
@@ -3721,3 +3718,6 @@ no existing document's meaning changes because of it.
    falls back to String (§ 5.2 rule 14).** In 0.6.x, a literal such as
    `1e9999` could become a non-finite Float on a binary64 backend; in
    0.7.0 it is String. Finite underflow to signed zero remains Float.
+
+Additionally, `\uXXXX` is a new, purely additive escape (§ 3.7.1) —
+no existing document's meaning changes because of it.

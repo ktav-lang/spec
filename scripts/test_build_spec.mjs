@@ -2598,6 +2598,7 @@ test('published transaction journal contains only exact derived records and reje
     const versionDir = path.join(temp, 'version');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
     const manifestPath = path.join(contentDir, 'manifest.js');
     const manifestBefore = fs.readFileSync(manifestPath);
     write(path.join(versionDir, '.build-spec.transaction.json'), JSON.stringify({
@@ -2607,8 +2608,9 @@ test('published transaction journal contains only exact derived records and reje
     }) + '\n');
 
     assert.throws(
-      () => recoverBuildOutputTransaction(versionDir, contentDir),
-      /invalid schema|invalid header|unsupported/
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      (error) => /invalid schema|invalid header|unsupported/.test(error.message) &&
+        !(error instanceof TypeError)
     );
     assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
     assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
@@ -3603,7 +3605,7 @@ test('distinct-byte crash matrix covers backup and install offsets, including mi
   await runCase('install-missing', 'install:3', [0, 3]);
 });
 
-test('pre-commit recovery rejects a missing backup without mutating the remaining outputs', async () => {
+test('write build preserves the missing-backup recovery error without mutating the remaining outputs', async () => {
   const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-missing-backup-'));
   try {
@@ -3631,8 +3633,9 @@ test('pre-commit recovery rejects a missing backup without mutating the remainin
     assert.ok(backup);
     fs.unlinkSync(path.join(versionDir, backup));
     assert.throws(
-      () => recoverBuildOutputTransaction(versionDir, contentDir),
-      /missing transaction backup|ambiguous/
+      () => writeBuildOutputs(versionDir, contentDir, initial),
+      (error) => /missing transaction backup|ambiguous/.test(error.message) &&
+        !(error instanceof TypeError)
     );
     assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
   } finally {
