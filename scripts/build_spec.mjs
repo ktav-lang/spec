@@ -523,6 +523,86 @@ function isEmptyListMarker(line, list) {
   return /^[ \t]*$/.test(line.slice(list.markerEnd));
 }
 
+// Recognize the single-line subset of CommonMark link reference definitions.
+// Multi-line definitions cannot make the following physical line a new block,
+// so the heading guard only needs this form to avoid inventing paragraph
+// context before a standalone type 7 HTML tag.
+function isLinkReferenceDefinition(line) {
+  let pos = 0;
+  while (pos < 3 && line[pos] === ' ') pos++;
+  if (line[pos] !== '[') return false;
+
+  pos++;
+  let labelLength = 0;
+  let labelHasContent = false;
+  while (pos < line.length && line[pos] !== ']') {
+    if (line[pos] === '[') return false;
+    if (line[pos] === '\\') {
+      if (pos + 1 === line.length) return false;
+      pos += 2;
+      labelLength++;
+      labelHasContent = true;
+      continue;
+    }
+    labelHasContent ||= line[pos] !== ' ' && line[pos] !== '\t';
+    labelLength++;
+    pos++;
+  }
+  if (line[pos] !== ']' || line[pos + 1] !== ':' ||
+      !labelHasContent || labelLength > 999) return false;
+
+  pos = skipSpaceTabs(line, pos + 2);
+  if (line[pos] === '<') {
+    pos++;
+    let closed = false;
+    while (pos < line.length) {
+      if (line[pos] === '\\' && pos + 1 < line.length) {
+        pos += 2;
+      } else if (line[pos] === '<') {
+        return false;
+      } else if (line[pos] === '>') {
+        pos++;
+        closed = true;
+        break;
+      } else {
+        pos++;
+      }
+    }
+    if (!closed) return false;
+  } else {
+    const destinationStart = pos;
+    let parenDepth = 0;
+    while (pos < line.length && line[pos] !== ' ') {
+      if (line[pos] === '\\' && pos + 1 < line.length) {
+        pos += 2;
+        continue;
+      }
+      if (line[pos] === '\t' || line.charCodeAt(pos) < 0x20) return false;
+      if (line[pos] === '(') parenDepth++;
+      if (line[pos] === ')' && --parenDepth < 0) return false;
+      pos++;
+    }
+    if (pos === destinationStart || parenDepth !== 0) return false;
+  }
+
+  const titleSeparator = pos;
+  pos = skipSpaceTabs(line, pos);
+  if (pos === line.length) return true;
+  if (pos === titleSeparator) return false;
+
+  const opener = line[pos];
+  const closer = opener === '(' ? ')' : opener;
+  if (opener !== '"' && opener !== "'" && opener !== '(') return false;
+  pos++;
+  while (pos < line.length && line[pos] !== closer) {
+    if (line[pos] === '\\' && pos + 1 < line.length) pos += 2;
+    else if (opener === '(' && line[pos] === '(') return false;
+    else pos++;
+  }
+  if (line[pos] !== closer) return false;
+  return skipSpaceTabs(line, pos + 1) === line.length;
+}
+
 // A block that cannot interrupt a paragraph may continue a list or quote
 // paragraph without repeating its container marker. Keep that container so a
 // later Setext underline is still associated with the active paragraph.
@@ -610,9 +690,10 @@ function normalizeContainerLine(raw, state) {
     consumedContainer = true;
   }
 
-  const lazySetextContainer = !consumedContainer &&
-    state.paragraphContainer !== null && state.allowLazySetext &&
-    parseSetextUnderline(line) !== null ? state.paragraphContainer : null;
+  const lazyListSetext = !consumedContainer &&
+    state.paragraphContainer?.includes('/list-') &&
+    parseSetextUnderline(line) !== null;
+  const lazySetextContainer = lazyListSetext ? state.paragraphContainer : null;
   const lazyContainer = !consumedContainer && state.paragraphContainer !== null &&
     (canContinueParagraph(line) || lazySetextContainer !== null)
     ? state.paragraphContainer : null;
@@ -640,6 +721,7 @@ function normalizeContainerLine(raw, state) {
     // not a paragraph which can become a Setext heading.
     isIndentedCode: indentedCode || contentIndent >= 4,
     containerFrames,
+    suppressSetext: lazyListSetext && !state.allowLazySetext,
     raw,
     expanded: line,
   };
@@ -723,6 +805,14 @@ function findHeadings(body) {
       containerState.allowLazySetext = false;
       continue;
     }
+    const paragraphIsActiveHere = paragraphLine !== null &&
+      paragraphLine.container === normalized.container;
+    if (!paragraphIsActiveHere && !normalized.isIndentedCode &&
+        isLinkReferenceDefinition(line)) {
+      containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
+      continue;
+    }
     const html = normalized.isIndentedCode ? null : parseHtmlBlockOpener(line);
     const inlineHtmlContinuation = html?.htmlType === 7 &&
       paragraphLine !== null && paragraphLine.container === normalized.container;
@@ -748,7 +838,7 @@ function findHeadings(body) {
       continue;
     }
     const underline = parseSetextUnderline(line);
-    if (underline !== null && paragraphLine !== null &&
+    if (underline !== null && !normalized.suppressSetext && paragraphLine !== null &&
         paragraphLine.container === normalized.container) {
       headings.push({
         ...underline,
@@ -765,7 +855,10 @@ function findHeadings(body) {
     }
     const previousParagraphContainer = paragraphLine?.container ?? null;
     const previousAllowLazySetext = containerState.allowLazySetext;
-    if (isSetextParagraphLine(line, normalized.isIndentedCode)) {
+    if (normalized.suppressSetext) {
+      // This is paragraph text lazily continuing a list, not a Setext block;
+      // retain both the paragraph and list frame for the following line.
+    } else if (isSetextParagraphLine(line, normalized.isIndentedCode)) {
       paragraphLine = { raw: normalized.raw, container: normalized.container, line: index + 1 };
       if (previousParagraphContainer === null) {
         containerState.allowLazySetext = false;

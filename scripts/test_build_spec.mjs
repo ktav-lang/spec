@@ -666,6 +666,23 @@ test('Setext and block-start lines do not become lazy continuations after an int
   }
 });
 
+test('Setext-looking lazy continuation preserves its open list container', async () => {
+  const hiddenHeading = baseFixtures();
+  hiddenHeading[1].bodies = [sameLanguageBodies([
+    '- text\n===\n    # injected heading\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(hiddenHeading),
+    /unit "named-abstract": en: unit body contains an ATX heading/
+  );
+
+  const indentedCode = baseFixtures();
+  indentedCode[1].bodies = [sameLanguageBodies([
+    '- text\n===\n      # list-item indented code\n\n',
+  ])[0]];
+  await assert.doesNotReject(validate(indentedCode));
+});
+
 test('tab-expanded container columns remain absolute and fenced tab content stays opaque', async () => {
   for (const body of [
     '  -\t```text\n' +
@@ -819,6 +836,41 @@ test('CommonMark HTML type 7 continues an active paragraph but interrupts at blo
     const continuation = baseFixtures();
     continuation[1].bodies = [sameLanguageBodies([body])[0]];
     await assert.doesNotReject(validate(continuation), body);
+  }
+});
+
+test('link reference definitions do not create type 7 paragraph context', async () => {
+  for (const definition of [
+    '[ref]: /url',
+    ' [with-title]: <https://example.com/a b> "title"',
+    '[escaped\\]]: /url',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${definition}\n<span>\n\n`])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains a raw HTML block opener \(CommonMark type 7\)/,
+      definition
+    );
+  }
+
+  const listDefinition = baseFixtures();
+  listDefinition[1].bodies = [sameLanguageBodies([
+    '- paragraph\n- [ref]: /url\n  <span>\n\n',
+  ])[0]];
+  await assert.rejects(
+    validate(listDefinition),
+    /unit "named-abstract": en: unit body contains a raw HTML block opener \(CommonMark type 7\)/
+  );
+
+  for (const prose of [
+    'inline [ref]: /url',
+    '[]: /url',
+    '[ref]: /url trailing prose',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${prose}\n<span>\n\n`])[0]];
+    await assert.doesNotReject(validate(fx), prose);
   }
 });
 
