@@ -523,84 +523,206 @@ function isEmptyListMarker(line, list) {
   return /^[ \t]*$/.test(line.slice(list.markerEnd));
 }
 
-// Recognize the single-line subset of CommonMark link reference definitions.
-// Multi-line definitions cannot make the following physical line a new block,
-// so the heading guard only needs this form to avoid inventing paragraph
-// context before a standalone type 7 HTML tag.
-function isLinkReferenceDefinition(line) {
-  let pos = 0;
-  while (pos < 3 && line[pos] === ' ') pos++;
-  if (line[pos] !== '[') return false;
+function isAsciiPunctuation(ch) {
+  const code = ch?.codePointAt(0);
+  return (code >= 0x21 && code <= 0x2f) ||
+    (code >= 0x3a && code <= 0x40) ||
+    (code >= 0x5b && code <= 0x60) ||
+    (code >= 0x7b && code <= 0x7e);
+}
 
-  pos++;
-  let labelLength = 0;
-  let labelHasContent = false;
-  while (pos < line.length && line[pos] !== ']') {
-    if (line[pos] === '[') return false;
-    if (line[pos] === '\\') {
-      if (pos + 1 === line.length) return false;
-      pos += 2;
-      labelLength++;
-      labelHasContent = true;
-      continue;
+function isAsciiControl(ch) {
+  const code = ch?.codePointAt(0);
+  return (code >= 0x01 && code <= 0x1f) || code === 0x7f;
+}
+
+function codePointWidth(line, pos) {
+  return line.codePointAt(pos) > 0xffff ? 2 : 1;
+}
+
+function isBlankLinkContinuation(line) {
+  return /^[ \t]*$/.test(line);
+}
+
+// The scanner follows the link-label rules in CommonMark 0.31.2. In
+// particular, the limit is in Unicode code points, not UTF-16 code units.
+function scanLinkLabel(line, start, state = null) {
+  let pos = start;
+  let length = state?.length ?? 0;
+  let hasContent = state?.hasContent ?? false;
+
+  while (pos < line.length) {
+    const ch = line[pos];
+    if (ch === ']') {
+      if (!hasContent || line[pos + 1] !== ':') return { invalid: true };
+      return { kind: 'after-label', pos: pos + 2, length, hasContent };
     }
-    labelHasContent ||= line[pos] !== ' ' && line[pos] !== '\t';
-    labelLength++;
-    pos++;
-  }
-  if (line[pos] !== ']' || line[pos + 1] !== ':' ||
-      !labelHasContent || labelLength > 999) return false;
+    if (ch === '[') return { invalid: true };
 
-  pos = skipSpaceTabs(line, pos + 2);
+    if (ch === '\\') {
+      length++;
+      hasContent = true;
+      pos++;
+      if (pos < line.length) {
+        length++;
+        pos += codePointWidth(line, pos);
+      }
+    } else {
+      const width = codePointWidth(line, pos);
+      if (ch !== ' ' && ch !== '\t') hasContent = true;
+      length++;
+      pos += width;
+    }
+    if (length > 999) return { invalid: true };
+  }
+
+  // A physical line ending is a character inside a multiline label.
+  length++;
+  if (length > 999) return { invalid: true };
+  return { kind: 'label', length, hasContent };
+}
+
+function scanLinkDestination(line, start) {
+  let pos = start;
   if (line[pos] === '<') {
     pos++;
-    let closed = false;
     while (pos < line.length) {
-      if (line[pos] === '\\' && pos + 1 < line.length) {
-        pos += 2;
-      } else if (line[pos] === '<') {
-        return false;
-      } else if (line[pos] === '>') {
-        pos++;
-        closed = true;
-        break;
-      } else {
-        pos++;
-      }
-    }
-    if (!closed) return false;
-  } else {
-    const destinationStart = pos;
-    let parenDepth = 0;
-    while (pos < line.length && line[pos] !== ' ') {
-      if (line[pos] === '\\' && pos + 1 < line.length) {
-        pos += 2;
+      const ch = line[pos];
+      if (ch === '\\' && pos + 1 < line.length && isAsciiPunctuation(line[pos + 1])) {
+        pos += 1 + codePointWidth(line, pos + 1);
         continue;
       }
-      if (line[pos] === '\t' || line.charCodeAt(pos) < 0x20) return false;
-      if (line[pos] === '(') parenDepth++;
-      if (line[pos] === ')' && --parenDepth < 0) return false;
-      pos++;
+      if (ch === '<') return { invalid: true };
+      if (ch === '>') return { kind: 'destination', pos: pos + 1 };
+      pos += codePointWidth(line, pos);
     }
-    if (pos === destinationStart || parenDepth !== 0) return false;
+    return { invalid: true };
   }
 
-  const titleSeparator = pos;
+  const destinationStart = pos;
+  let parenDepth = 0;
+  while (pos < line.length) {
+    const ch = line[pos];
+    if (ch === ' ' || ch === '\t') break;
+    if (isAsciiControl(ch)) return { invalid: true };
+    if (ch === '\\' && pos + 1 < line.length && isAsciiPunctuation(line[pos + 1])) {
+      pos += 1 + codePointWidth(line, pos + 1);
+      continue;
+    }
+    if (ch === '(') {
+      parenDepth++;
+      if (parenDepth > 32) return { invalid: true };
+    } else if (ch === ')' && --parenDepth < 0) {
+      return { invalid: true };
+    }
+    pos += codePointWidth(line, pos);
+  }
+  if (pos === destinationStart || parenDepth !== 0) return { invalid: true };
+  return { kind: 'destination', pos };
+}
+
+function scanLinkTitle(line, start, delimiter = null) {
+  let pos = start;
+  if (delimiter === null) {
+    pos = skipSpaceTabs(line, pos);
+    delimiter = line[pos];
+    if (delimiter !== '"' && delimiter !== "'" && delimiter !== '(') {
+      return { invalid: true };
+    }
+    pos++;
+  }
+  const closer = delimiter === '(' ? ')' : delimiter;
+  while (pos < line.length) {
+    const ch = line[pos];
+    if (ch === '\\' && pos + 1 < line.length && isAsciiPunctuation(line[pos + 1])) {
+      pos += 1 + codePointWidth(line, pos + 1);
+      continue;
+    }
+    if (ch === closer) {
+      const end = skipSpaceTabs(line, pos + 1);
+      return end === line.length
+        ? { kind: 'complete' }
+        : { invalid: true };
+    }
+    if (delimiter === '(' && ch === '(') return { invalid: true };
+    pos += codePointWidth(line, pos);
+  }
+  return { kind: 'title', delimiter };
+}
+
+function scanLinkReferenceSuffix(line, pos) {
+  if (pos < line.length && line[pos] !== ' ' && line[pos] !== '\t') {
+    return null;
+  }
   pos = skipSpaceTabs(line, pos);
-  if (pos === line.length) return true;
-  if (pos === titleSeparator) return false;
+  if (pos === line.length) return { phase: 'maybe-title' };
+  const title = scanLinkTitle(line, pos);
+  if (title.invalid) return null;
+  return title.kind === 'complete'
+    ? { phase: 'complete' }
+    : { phase: 'title', delimiter: title.delimiter };
+}
 
-  const opener = line[pos];
-  const closer = opener === '(' ? ')' : opener;
-  if (opener !== '"' && opener !== "'" && opener !== '(') return false;
-  pos++;
-  while (pos < line.length && line[pos] !== closer) {
-    if (line[pos] === '\\' && pos + 1 < line.length) pos += 2;
-    else if (opener === '(' && line[pos] === '(') return false;
-    else pos++;
+function startsLinkTitle(line) {
+  const pos = skipSpaceTabs(line, 0);
+  return line[pos] === '"' || line[pos] === "'" || line[pos] === '(';
+}
+
+function scanLinkReferenceAfterLabel(line, pos) {
+  pos = skipSpaceTabs(line, pos);
+  if (pos === line.length) return { phase: 'destination' };
+  const destination = scanLinkDestination(line, pos);
+  if (destination.invalid) return null;
+  return scanLinkReferenceSuffix(line, destination.pos);
+}
+
+function scanLinkReferenceStart(line, sourceLine = line) {
+  line = sourceLine;
+  let pos = 0;
+  while (pos < 3 && line[pos] === ' ') pos++;
+  if (line[pos] !== '[') return null;
+  const label = scanLinkLabel(line, pos + 1);
+  if (label.invalid) return null;
+  if (label.kind === 'label') {
+    return {
+      phase: 'label',
+      length: label.length,
+      hasContent: label.hasContent,
+    };
   }
-  if (line[pos] !== closer) return false;
-  return skipSpaceTabs(line, pos + 1) === line.length;
+  const suffix = scanLinkReferenceAfterLabel(line, label.pos);
+  return suffix === null ? null : suffix;
+}
+
+function continueLinkReference(line, definition) {
+  if (isBlankLinkContinuation(line)) return null;
+  if (definition.phase === 'label') {
+    const label = scanLinkLabel(line, 0, definition);
+    if (label.invalid) return null;
+    if (label.kind === 'label') {
+      return { ...definition, length: label.length, hasContent: label.hasContent };
+    }
+    const suffix = scanLinkReferenceAfterLabel(line, label.pos);
+    return suffix === null ? null : suffix;
+  }
+  if (definition.phase === 'destination') {
+    const destination = scanLinkDestination(line, skipSpaceTabs(line, 0));
+    if (destination.invalid) return null;
+    return scanLinkReferenceSuffix(line, destination.pos);
+  }
+  if (definition.phase === 'maybe-title') {
+    const title = scanLinkTitle(line, 0);
+    if (title.invalid) return null;
+    return title.kind === 'complete'
+      ? { phase: 'complete' }
+      : { phase: 'title', delimiter: title.delimiter };
+  }
+  if (definition.phase === 'title') {
+    const title = scanLinkTitle(line, 0, definition.delimiter);
+    if (title.invalid) return null;
+    return title.kind === 'complete' ? { phase: 'complete' } : title;
+  }
+  return null;
 }
 
 // A block that cannot interrupt a paragraph may continue a list or quote
@@ -631,6 +753,7 @@ function normalizeContainerLine(raw, state) {
   let indentedCode = false;
   let consumedContainer = false;
   let frames = state.activeLists;
+  let thematicBreak = false;
   const containerFrames = [];
 
   while (true) {
@@ -658,6 +781,11 @@ function normalizeContainerLine(raw, state) {
       consumedContainer = true;
       containerFrames.push({ kind: 'quote' });
       continue;
+    }
+
+    if (isThematicBreak(line.slice(pos))) {
+      thematicBreak = true;
+      break;
     }
 
     const list = parseListMarker(line, pos);
@@ -690,14 +818,19 @@ function normalizeContainerLine(raw, state) {
     consumedContainer = true;
   }
 
-  const lazyListSetext = !consumedContainer &&
+  const lazyListSetext = !consumedContainer && !thematicBreak &&
     state.paragraphContainer?.includes('/list-') &&
     parseSetextUnderline(line) !== null;
   const lazySetextContainer = lazyListSetext ? state.paragraphContainer : null;
   const lazyContainer = !consumedContainer && state.paragraphContainer !== null &&
     (canContinueParagraph(line) || lazySetextContainer !== null)
     ? state.paragraphContainer : null;
-  if (/^[ \t]*$/.test(line) && frames.length > 0) {
+  if (!consumedContainer && thematicBreak) {
+    // A thematic break is a block start, not a lazy Setext continuation of
+    // the list item that preceded it.
+    container = 'root';
+    frames = [];
+  } else if (/^[ \t]*$/.test(line) && frames.length > 0) {
     container = frames.at(-1).container;
     consumedContainer = true;
   } else if (lazyContainer !== null) {
@@ -713,8 +846,10 @@ function normalizeContainerLine(raw, state) {
   // Measure indentation from the line's absolute column. Resetting a tab to
   // column zero here misclassifies content after a space-indented container.
   const contentIndent = leadingColumns(line, pos).column;
+  const sourceContent = sourceSliceAtExpandedPosition(raw, pos);
   return {
     content,
+    sourceContent,
     container,
     consumedContainer,
     // A tab or four visual columns at the normalized block level is code,
@@ -744,10 +879,90 @@ function matchFenceContainer(line, frames) {
   return line.slice(pos);
 }
 
-function findHeadings(body) {
+function sourceSliceAtExpandedPosition(raw, target) {
+  let rawPos = 0;
+  let expandedPos = 0;
+  let column = 0;
+  while (rawPos < raw.length) {
+    const ch = raw[rawPos];
+    const width = codePointWidth(raw, rawPos);
+    if (ch === '\t') {
+      const spaces = 4 - (column % 4);
+      const next = expandedPos + spaces;
+      if (target < next) return ' '.repeat(next - target) + raw.slice(rawPos + 1);
+      expandedPos = next;
+      column += spaces;
+      rawPos += width;
+      continue;
+    }
+    const next = expandedPos + width;
+    if (target < next) return raw.slice(rawPos);
+    expandedPos = next;
+    column++;
+    rawPos += width;
+  }
+  return '';
+}
+
+function cloneHeadingState(state, paragraphLine) {
+  return {
+    activeLists: state.activeLists.map((frame) => ({ ...frame })),
+    nextListId: state.nextListId,
+    paragraphContainer: state.paragraphContainer,
+    allowLazySetext: state.allowLazySetext,
+    paragraphLine: paragraphLine === null ? null : { ...paragraphLine },
+  };
+}
+
+function restoreHeadingState(state, snapshot) {
+  state.activeLists = snapshot.activeLists.map((frame) => ({ ...frame }));
+  state.nextListId = snapshot.nextListId;
+  state.paragraphContainer = snapshot.paragraphContainer;
+  state.allowLazySetext = snapshot.allowLazySetext;
+  return snapshot.paragraphLine === null ? null : { ...snapshot.paragraphLine };
+}
+
+// A reference definition may continue lazily inside an already-open list or
+// block quote. Normalize against a cloned state so a failed candidate cannot
+// mutate the real container stack before its speculative lines are replayed.
+function resolveLinkDefinitionLine(raw, definition, state) {
+  if (isBlankLinkContinuation(raw)) return null;
+  const working = {
+    activeLists: state.activeLists.map((frame) => ({ ...frame })),
+    nextListId: state.nextListId,
+    paragraphContainer: definition.container,
+    allowLazySetext: false,
+  };
+  const normalized = normalizeContainerLine(raw, working);
+  if (normalized.container !== definition.container) return null;
+  const html = normalized.isIndentedCode ? null : parseHtmlBlockOpener(normalized.content);
+  // Only an unfinished destination or title is interrupted: labels may span
+  // lines, while a completed destination leaves a following underline as text.
+  const interruptsParagraph = !normalized.isIndentedCode &&
+    (parseAtxHeading(normalized.content) !== null ||
+     parseFenceOpener(normalized.content) !== null ||
+     isThematicBreak(normalized.content) ||
+     (definition.phase !== 'maybe-title' && !normalized.suppressSetext &&
+      parseSetextUnderline(normalized.content) !== null) ||
+     (html !== null && html.htmlType !== 7));
+  if (interruptsParagraph) {
+    return null;
+  }
+  return {
+    content: normalized.content,
+    sourceContent: normalized.sourceContent,
+    state: working,
+  };
+}
+
+export function findHeadings(body) {
+  // CommonMark replaces NUL with U+FFFD before block parsing. This also means
+  // NUL is not treated as a forbidden bare-destination control character.
+  body = body.replaceAll('\u0000', '\uFFFD');
   const headings = [];
   let fence = null;
   let paragraphLine = null;
+  let linkDefinition = null;
   const containerState = {
     activeLists: [],
     nextListId: 0,
@@ -757,15 +972,32 @@ function findHeadings(body) {
     // marker must not inherit this permission.
     allowLazySetext: false,
   };
-  const lines = body.split('\n');
-  for (let index = 0; index < lines.length; index++) {
-    const raw = lines[index];
+  const queue = body.split('\n').map((raw, index) => ({ raw, index, skipLinkDefinition: false }));
+  let cursor = 0;
+  const rollbackLinkDefinition = () => {
+    paragraphLine = restoreHeadingState(containerState, linkDefinition.snapshot);
+    // The speculative records already remain in queue. Rewind the cursor and
+    // suppress only the original candidate so replay cannot re-enter here.
+    queue[linkDefinition.startCursor].skipLinkDefinition = true;
+    cursor = linkDefinition.startCursor;
+    linkDefinition = null;
+  };
+
+  while (cursor < queue.length || linkDefinition !== null) {
+    if (cursor >= queue.length) {
+      if (linkDefinition.phase === 'maybe-title') linkDefinition = null;
+      else rollbackLinkDefinition();
+      continue;
+    }
+    const record = queue[cursor];
+    const { raw, index } = record;
     if (fence !== null) {
       const line = matchFenceContainer(raw, fence.containerFrames);
       if (line !== null) {
         if (isFenceCloser(line, fence)) fence = null;
         paragraphLine = null;
         containerState.paragraphContainer = null;
+        cursor++;
         continue;
       }
       // A root fence and a list-only fence may span an unindented blank line.
@@ -776,6 +1008,7 @@ function findHeadings(body) {
           (fence.containerFrames.length === 0 || listOnlyFence)) {
         paragraphLine = null;
         containerState.paragraphContainer = null;
+        cursor++;
         continue;
       }
       // A container fence ends when its required continuation frames are
@@ -783,8 +1016,48 @@ function findHeadings(body) {
       fence = null;
     }
 
+    if (linkDefinition !== null) {
+      const definitionLine = resolveLinkDefinitionLine(raw, linkDefinition, containerState);
+      if (linkDefinition.phase === 'maybe-title' &&
+          (definitionLine === null || !startsLinkTitle(definitionLine.sourceContent))) {
+        // The destination already completed a definition. A following line
+        // only belongs to it when it actually starts an optional title.
+        linkDefinition = null;
+        continue;
+      }
+      if (definitionLine !== null) {
+        const next = continueLinkReference(definitionLine.sourceContent, linkDefinition);
+        if (next !== null) {
+          containerState.activeLists = definitionLine.state.activeLists;
+          containerState.nextListId = definitionLine.state.nextListId;
+          if (next.phase === 'complete') linkDefinition = null;
+          else linkDefinition = { ...linkDefinition, ...next };
+          cursor++;
+          continue;
+        }
+        if (linkDefinition.phase === 'maybe-title') {
+          // The destination already committed a definition. A title-looking
+          // line that fails its own grammar is ordinary following content;
+          // replay only this line instead of rolling back the definition.
+          linkDefinition = null;
+          continue;
+        }
+      }
+      rollbackLinkDefinition();
+      continue;
+    }
+
+    const beforeLine = cloneHeadingState(containerState, paragraphLine);
     const normalized = normalizeContainerLine(raw, containerState);
     const line = normalized.content;
+
+    if (paragraphLine !== null && paragraphLine.container !== normalized.container) {
+      // A paragraph belongs to exactly one container. Keeping it alive after
+      // normalization changes containers creates false lazy continuations.
+      paragraphLine = null;
+      containerState.paragraphContainer = null;
+      containerState.allowLazySetext = false;
+    }
     const opener = normalized.isIndentedCode ? null : parseFenceOpener(line);
     if (opener !== null) {
       fence = {
@@ -794,6 +1067,7 @@ function findHeadings(body) {
       };
       paragraphLine = null;
       containerState.paragraphContainer = null;
+      cursor++;
       continue;
     }
     // A blank line after a container marker is still a blank line after
@@ -803,15 +1077,38 @@ function findHeadings(body) {
       paragraphLine = null;
       containerState.paragraphContainer = null;
       containerState.allowLazySetext = false;
+      cursor++;
       continue;
     }
     const paragraphIsActiveHere = paragraphLine !== null &&
       paragraphLine.container === normalized.container;
-    if (!paragraphIsActiveHere && !normalized.isIndentedCode &&
-        isLinkReferenceDefinition(line)) {
-      containerState.paragraphContainer = null;
-      containerState.allowLazySetext = false;
-      continue;
+    if (!paragraphIsActiveHere && !normalized.isIndentedCode) {
+      const definition = record.skipLinkDefinition
+        ? null
+        : scanLinkReferenceStart(line, normalized.sourceContent);
+      if (definition !== null) {
+        if (definition.phase === 'complete') {
+          paragraphLine = null;
+          containerState.paragraphContainer = null;
+          containerState.allowLazySetext = false;
+          cursor++;
+          continue;
+        }
+        linkDefinition = {
+          ...definition,
+          raw: normalized.raw,
+          container: normalized.container,
+          containerFrames: normalized.containerFrames,
+          line: index + 1,
+          startCursor: cursor,
+          snapshot: beforeLine,
+        };
+        paragraphLine = null;
+        containerState.paragraphContainer = null;
+        containerState.allowLazySetext = false;
+        cursor++;
+        continue;
+      }
     }
     const html = normalized.isIndentedCode ? null : parseHtmlBlockOpener(line);
     const inlineHtmlContinuation = html?.htmlType === 7 &&
@@ -827,6 +1124,7 @@ function findHeadings(body) {
       paragraphLine = null;
       containerState.paragraphContainer = null;
       containerState.allowLazySetext = false;
+      cursor++;
       continue;
     }
     const heading = parseAtxHeading(line);
@@ -835,6 +1133,7 @@ function findHeadings(body) {
       paragraphLine = null;
       containerState.paragraphContainer = null;
       containerState.allowLazySetext = false;
+      cursor++;
       continue;
     }
     const underline = parseSetextUnderline(line);
@@ -851,6 +1150,7 @@ function findHeadings(body) {
       paragraphLine = null;
       containerState.paragraphContainer = null;
       containerState.allowLazySetext = false;
+      cursor++;
       continue;
     }
     const previousParagraphContainer = paragraphLine?.container ?? null;
@@ -879,6 +1179,7 @@ function findHeadings(body) {
       containerState.allowLazySetext = false;
     }
     containerState.paragraphContainer = paragraphLine === null ? null : normalized.container;
+    cursor++;
   }
   return headings;
 }
