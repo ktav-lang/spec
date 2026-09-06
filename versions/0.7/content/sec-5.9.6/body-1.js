@@ -56,7 +56,10 @@ MUST test the following branches in order; exactly one branch applies:
   applies there.
 - **Raw-marker String item:** \`:: <bytes>\` — after \`::\`, \`<sep-end>\` consumes
   the maximal contiguous run of line-bounded whitespace before the body;
-  thus \`::  x\` has body \`x\`, not \` x\`. The body would otherwise
+  thus \`::  x\` has body \`x\`, not \` x\`. This branch applies only when the
+  body is a physically safe non-empty one-line String under § 5.9.7 — with
+  no \`LF\` or \`CR\`, leading/trailing whitespace, or ASCII control byte other
+  than \`TAB\`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly \`(\` or
   \`((\`), or (via § 5.7's shortcuts) the empty String, or would
@@ -154,7 +157,10 @@ MUST test the following branches in order; exactly one branch applies:
 - **Raw-маркерный String-элемент:** \`:: <bytes>\` — после \`::\` \`<sep-end>\`
   поглощает максимальную непрерывную последовательность ограниченных
   строкой пробельных кодовых точек перед телом; поэтому \`::  x\` имеет
-  тело \`x\`, а не \` x\`. Когда тело иначе было
+  тело \`x\`, а не \` x\`. Эта ветвь применяется только к физически безопасной
+  по § 5.9.7 непустой однострочной String без \`LF\` или \`CR\`,
+  ведущего/хвостового пробела и ASCII управляющих байтов, кроме \`TAB\`.
+  Когда тело иначе было
   бы переинтерпретировано по § 5.2 как число, ключевое слово,
   inline-составное, опенер многострочной строки (тело в точности
   \`(\` или \`((\`), либо (через shortcut'ы § 5.7) как пустая String,
@@ -228,7 +234,9 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
 条件在那里都不适用。
 - **原始标记 String 项:** \`:: <bytes>\` —— \`::\` 之后的 \`<sep-end>\` 吸收
   体之前最大连续的行边界内空白序列;因此 \`::  x\` 的体是 \`x\`,而
-  不是 \` x\`。当体本应被 § 5.2 重解释为数字、
+  不是 \` x\`。此分支仅适用于 § 5.9.7 所定义的物理安全非空单行
+  String:不含 \`LF\` 或 \`CR\`、前后空白,也不含除 \`TAB\` 外的 ASCII
+  控制字节。当体本应被 § 5.2 重解释为数字、
   关键词、inline 复合值、多行字符串开启符(体恰好为 \`(\` 或
   \`((\`),或(通过 § 5.7 的 shortcut)空 String,或本会与行级别的
   结构性 token 冲突(体恰好为 \`}\` 或 \`]\`,或以 \`##\` 或两字节

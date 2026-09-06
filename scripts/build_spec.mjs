@@ -1065,7 +1065,7 @@ function resolveLinkDefinitionLine(raw, definition, state) {
   };
 }
 
-export function findHeadings(body) {
+function scanHeadings(body) {
   // CommonMark replaces NUL with U+FFFD before block parsing. This also means
   // NUL is not treated as a forbidden bare-destination control character.
   body = body.replaceAll('\u0000', '\uFFFD');
@@ -1171,6 +1171,7 @@ export function findHeadings(body) {
     if (opener !== null) {
       fence = {
         ...opener,
+        line: index + 1,
         container: normalized.container,
         containerFrames: normalized.containerFrames,
         listOnly: normalized.containerFrames.length > 0 &&
@@ -1292,13 +1293,22 @@ export function findHeadings(body) {
     containerState.paragraphContainer = paragraphLine === null ? null : normalized.container;
     cursor++;
   }
-  return headings;
+  return { headings, unclosedFence: fence };
+}
+
+export function findHeadings(body) {
+  return scanHeadings(body).headings;
 }
 
 function validateUnitHeadings(unit, meta, parts) {
   for (const lang of LANGS) {
     const body = parts.map((part) => part[lang]).join('');
-    const headings = findHeadings(body);
+    const { headings, unclosedFence } = scanHeadings(body);
+    if (unclosedFence !== null) {
+      failUnit(unit,
+        `${lang}: unit body ends with an unclosed fenced code block opened at line ` +
+        `${unclosedFence.line}`);
+    }
     if (meta.kind === 'frontmatter') {
       if (headings.length !== 1 || headings[0].container !== 'root' ||
           headings[0].type !== 'ATX' || headings[0].level !== 1) {
@@ -2438,12 +2448,15 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   if (nonces.size !== 1) {
     fail(`unpublished transaction temporaries have ambiguous nonces: ${[...nonces].join(', ')}; data was left untouched`);
   }
+  const tempNonce = nonces.values().next().value;
   const currentOwner = options.owner;
   const currentOwnerTemps = currentOwner !== null && currentOwner !== undefined &&
     ownerIsCurrentProcess(currentOwner, options)
     ? temps.filter((temp) => temp.nonce === currentOwner.nonce) : [];
-  if ((!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) &&
-      currentOwnerTemps.length === 0) {
+  const reclaimedOwners = Array.isArray(options.reclaimedOwners)
+    ? options.reclaimedOwners : [];
+  const reclaimedTempOwners = reclaimedOwners.filter((owner) => owner.nonce === tempNonce);
+  if (reclaimedTempOwners.length === 0 && currentOwnerTemps.length === 0) {
     fail(`unpublished transaction temporaries have no provably dead owner; data was left untouched`);
   }
   const reclaimRe = new RegExp(
@@ -2456,13 +2469,13 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
       const owner = (() => {
         try { return readLock(markerPath, 'transaction lock reclaim record'); } catch { return null; }
       })();
-      return owner !== null && owner.nonce === match[1] &&
-        options.reclaimedOwners.some((candidate) => lockIdentityEqual(candidate, owner));
+      return owner !== null && owner.nonce === tempNonce && owner.nonce === match[1] &&
+        reclaimedTempOwners.some((candidate) => lockIdentityEqual(candidate, owner));
     });
-  if (!hasReclaimIntent && currentOwnerTemps.length === 0) {
+  if (reclaimedTempOwners.length > 0 && !hasReclaimIntent && currentOwnerTemps.length === 0) {
     fail(`unpublished transaction temporaries have no matching reclaim intent; data was left untouched`);
   }
-  for (const owner of options.reclaimedOwners) {
+  for (const owner of reclaimedTempOwners) {
     if (lockIsActive(specDir, owner, lockNow(options.now), options)) {
       fail(`unpublished transaction temporary belongs to live process ${owner.pid}; data was left untouched`);
     }
@@ -2861,10 +2874,9 @@ function pidIsLive(pid) {
 }
 
 function readLock(lockPath, label = 'transaction lock') {
-  let source;
+  const source = readLockMetadataBytes(lockPath, label);
   let value;
   try {
-    source = fs.readFileSync(lockPath);
     value = JSON.parse(utf8Strict.decode(source));
   } catch (e) {
     fail(`${label} is corrupt: ${e.message}; no transaction mutation was attempted`);
@@ -2881,11 +2893,28 @@ function readLock(lockPath, label = 'transaction lock') {
   return value;
 }
 
+function readLockMetadataBytes(filePath, label) {
+  if (lstatRegularOrMissing(filePath, label) === null) {
+    const error = new Error(
+      `${label} disappeared before it could be read; no transaction mutation was attempted`);
+    error.code = 'ENOENT';
+    throw error;
+  }
+  try {
+    return fs.readFileSync(filePath);
+  } catch (e) {
+    const error = new Error(
+      `${label} cannot be read: ${e.message}; no transaction mutation was attempted`,
+      { cause: e });
+    error.code = e.code;
+    throw error;
+  }
+}
+
 function readLockClaim(claimPath, label = 'transaction lock claim') {
-  let source;
+  const source = readLockMetadataBytes(claimPath, label);
   let value;
   try {
-    source = fs.readFileSync(claimPath);
     value = JSON.parse(utf8Strict.decode(source));
   } catch (e) {
     fail(`${label} is corrupt: ${e.message}; no transaction mutation was attempted`);
@@ -3561,7 +3590,7 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
     current = readLock(targetPath, 'transaction lock candidate');
   } catch (error) {
     discardExactLockClaim(specDir, claimPath, claim.record, options, 'target-missing');
-    if (error.message.includes('ENOENT')) return false;
+    if (error.code === 'ENOENT') return false;
     throw error;
   }
   if (!lockIdentityEqual(current, expected) || current.leaseUntil !== expected.leaseUntil) {

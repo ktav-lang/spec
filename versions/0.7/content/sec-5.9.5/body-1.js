@@ -40,8 +40,10 @@ MUST test the following branches in order; exactly one branch applies:
   same-kind guarantee, § 5.2, is about domain-*consistent*
   classification; the canonical writer of a String must not
   depend on which domain happens to be doing the writing).
-- **\`key:: <bytes>\` (raw-marker String pair):** when the bytes are a non-empty
-  one-line String that would otherwise be reinterpreted by § 5.2
+- **\`key:: <bytes>\` (raw-marker String pair):** when the bytes are a physically
+  safe non-empty one-line String under § 5.9.7 — with no \`LF\` or \`CR\`,
+  leading/trailing whitespace, or ASCII control byte other than \`TAB\` —
+  that would otherwise be reinterpreted by § 5.2
   if emitted with plain \`:\` — either as matching the integer or
   float literal grammar of § 3.6 (regardless of whether the value
   fits the writer's own numeric domain), as exactly \`null\` /
@@ -96,8 +98,10 @@ MUST test the following branches in order; exactly one branch applies:
   молча (гарантия одинакового kind из § 5.2 — про
   домен-*согласованную* классификацию; каноническая форма String
   не должна зависеть от того, какой именно домен её пишет).
-- **\`key:: <bytes>\` (raw-маркер String-пары):** когда байты — непустая
-  однострочная String, которая иначе была бы переинтерпретирована
+- **\`key:: <bytes>\` (raw-маркер String-пары):** когда байты — физически
+  безопасная по § 5.9.7 непустая однострочная String без \`LF\` или \`CR\`,
+  ведущего/хвостового пробела и ASCII управляющих байтов, кроме \`TAB\`,
+  которая иначе была бы переинтерпретирована
   по § 5.2 при выводе с обычным \`:\` — либо как совпадающая с
   грамматикой integer- или float-литерала § 3.6 (независимо от
   того, помещается ли значение в собственный числовой домен
@@ -142,8 +146,10 @@ MUST test the following branches in order; exactly one branch applies:
   仍然需要下面的原始标记,正是为了让持有不同数值域的读者不会
   悄悄地重新分类它(§ 5.2 自身的同 kind 保证针对的是域*内部*
   一致的分类;String 的规范形式不应取决于写出它的究竟是哪个域)。
-- **\`key:: <bytes>\`(原始标记 String 对)** 当字节是非空单行 String,若以
-  普通 \`:\` 输出会被 § 5.2 重解释 —— 或作为匹配 § 3.6 integer /
+- **\`key:: <bytes>\`(原始标记 String 对)** 当字节是 § 5.9.7 所定义的物理
+  安全非空单行 String —— 不含 \`LF\` 或 \`CR\`、前后空白,也不含除 \`TAB\`
+  外的 ASCII 控制字节 —— 且若以普通 \`:\` 输出会被 § 5.2 重解释 ——
+  或作为匹配 § 3.6 integer /
   float 字面量语法(无论其值是否落在 writer 自身的数值域内),
   或恰好等于 \`null\` /
   \`true\` / \`false\`,或作为 inline 复合值(以 \`{\` 或 \`[\` 开头的

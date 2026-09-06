@@ -1664,6 +1664,35 @@ test('deeply nested fenced containers preserve hidden and visible headings', () 
   }]);
 });
 
+test('adjacent content units reject an unclosed fence at every container depth', async () => {
+  for (const body of [
+    '~~~\ncode\n\n',
+    '- ~~~\n  code\n\n',
+    '- - ~~~\n    code\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body ends with an unclosed fenced code block/,
+      body
+    );
+  }
+});
+
+test('closed fences remain valid at every content-unit container depth', async () => {
+  for (const body of [
+    '~~~\ncode\n~~~\n\n',
+    '- ~~~\n  code\n  ~~~\n\n',
+    '> ~~~\n> code\n> ~~~\n\n',
+    '> - ~~~\n>   code\n>   ~~~\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(fx), body);
+  }
+});
+
 test('legacy en.md/ru.md/zh.md without body files', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) => {
@@ -2761,7 +2790,7 @@ test('a dead owner lock is reclaimed before deterministic recovery and write', a
   }
 });
 
-test('reclaim intent survives a crash before the next journal publication', async () => {
+test('same-nonce reclaim intent authorizes pre-journal temporary cleanup', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-reclaim-intent-'));
   try {
     const versionDir = path.join(temp, 'version');
@@ -2794,6 +2823,59 @@ test('reclaim intent survives a crash before the next journal publication', asyn
     assert.equal(fs.readdirSync(versionDir).some((name) =>
       name.startsWith('.build-spec.transaction.lock.release.')), false);
     assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), data);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('reclaim intent for one owner never authorizes another nonce temporary', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-reclaim-nonce-mismatch-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const stale = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', leaseUntil: 0,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(stale) + '\n');
+    const data = Buffer.from('unrelated temporary bytes', 'utf8');
+    const otherNonce = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const tempPath = path.join(versionDir,
+      `.${OUT_FILES.en}.${otherNonce}.${createHash('sha256').update(data).digest('hex')}.tmp`);
+    write(tempPath, data);
+
+    assert.throws(
+      () => recoverBuildOutputTransaction(versionDir, contentDir),
+      /no provably dead owner|no matching reclaim intent/
+    );
+    assert.deepEqual(fs.readFileSync(tempPath), data);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('legacy pre-journal temporary with unknown provenance fails conservatively', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-reclaim-legacy-provenance-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const stale = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(stale) + '\n');
+    const tempPath = path.join(versionDir, `.${OUT_FILES.en}.${stale.nonce}.tmp`);
+    write(tempPath, 'legacy temporary bytes');
+
+    assert.throws(
+      () => recoverBuildOutputTransaction(versionDir, contentDir),
+      /has no derived digest/
+    );
+    assert.equal(fs.existsSync(tempPath), true);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
@@ -3442,6 +3524,104 @@ test('release and quarantine namespace accepts every emitted legacy family', asy
     assert.equal(fs.readdirSync(versionDir).some((name) =>
       name.startsWith('.build-spec.transaction.lock.')), false);
     assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('release and quarantine metadata symlinks are rejected before their targets are read', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable; this test MUST run on POSIX CI');
+    return;
+  }
+  const cases = [
+    {
+      artifact(owner) {
+        return `.build-spec.transaction.lock.release.${owner.nonce}`;
+      },
+      contents(owner) { return owner; },
+      diagnostic: /transaction lock release claim .*not a regular file \(symlink/,
+    },
+    {
+      artifact(owner, claim) {
+        return `.build-spec.transaction.lock.quarantine.claim.dddddddddddddddddddddddddddddddd.` +
+          `${owner.nonce}.${claim.nonce}.stale-claim`;
+      },
+      contents(_owner, claim) { return claim; },
+      diagnostic: /transaction lock claim quarantine .*not a regular file \(symlink/,
+    },
+  ];
+  for (const [index, fixture] of cases.entries()) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-metadata-symlink-${index}-`));
+    try {
+      const versionDir = path.join(temp, 'version');
+      const contentDir = path.join(versionDir, 'content');
+      makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+      const owner = {
+        format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+        incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+      };
+      const claim = {
+        format: 'ktav-build-output-lock-claim', version: 1, pid: 999999999,
+        incarnation: 'cccccccccccccccccccccccccccccccc',
+        nonce: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', createdAt: 0, target: owner,
+      };
+      const targetPath = path.join(temp, `outside-${index}.json`);
+      const artifactPath = path.join(versionDir, fixture.artifact(owner, claim));
+      write(targetPath, JSON.stringify(fixture.contents(owner, claim)) + '\n');
+      fs.symlinkSync(targetPath, artifactPath, 'file');
+      const originalReadFileSync = fs.readFileSync;
+      let artifactOpened = false;
+      fs.readFileSync = function (filePath, ...args) {
+        if (path.resolve(filePath) === path.resolve(artifactPath)) artifactOpened = true;
+        return originalReadFileSync.call(this, filePath, ...args);
+      };
+      try {
+        assert.throws(
+          () => recoverBuildOutputTransaction(versionDir, contentDir),
+          fixture.diagnostic
+        );
+      } finally {
+        fs.readFileSync = originalReadFileSync;
+      }
+      assert.equal(artifactOpened, false);
+      assert.equal(fs.lstatSync(artifactPath).isSymbolicLink(), true);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+});
+
+test('release metadata FIFO is rejected without opening it', async (t) => {
+  if (process.platform === 'win32') {
+    t.skip('POSIX-only FIFO regression');
+    return;
+  }
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-metadata-fifo-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const artifactPath = path.join(versionDir,
+      '.build-spec.transaction.lock.release.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    const made = spawnSync('mkfifo', [artifactPath], { encoding: 'utf8' });
+    assert.equal(made.status, 0, made.stderr);
+    const originalReadFileSync = fs.readFileSync;
+    let artifactOpened = false;
+    fs.readFileSync = function (filePath, ...args) {
+      if (path.resolve(filePath) === path.resolve(artifactPath)) artifactOpened = true;
+      return originalReadFileSync.call(this, filePath, ...args);
+    };
+    try {
+      assert.throws(
+        () => recoverBuildOutputTransaction(versionDir, contentDir),
+        /transaction lock release claim .*not a regular file \(special file/
+      );
+    } finally {
+      fs.readFileSync = originalReadFileSync;
+    }
+    assert.equal(artifactOpened, false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

@@ -1277,7 +1277,7 @@ def check_boundary_manifest_lock(results, rpath, leaves, lock_path):
     try:
         with open(lock_path, "r", encoding="utf-8") as f:
             lock_text = f.read()
-    except OSError as e:
+    except (OSError, UnicodeError) as e:
         results.fail(category, "--boundary-manifest-lock %s: unreadable: %s"
                      % (lock_path, e))
         return

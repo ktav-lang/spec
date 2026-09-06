@@ -1913,8 +1913,10 @@ MUST test the following branches in order; exactly one branch applies:
   same-kind guarantee, § 5.2, is about domain-*consistent*
   classification; the canonical writer of a String must not
   depend on which domain happens to be doing the writing).
-- **`key:: <bytes>` (raw-marker String pair):** when the bytes are a non-empty
-  one-line String that would otherwise be reinterpreted by § 5.2
+- **`key:: <bytes>` (raw-marker String pair):** when the bytes are a physically
+  safe non-empty one-line String under § 5.9.7 — with no `LF` or `CR`,
+  leading/trailing whitespace, or ASCII control byte other than `TAB` —
+  that would otherwise be reinterpreted by § 5.2
   if emitted with plain `:` — either as matching the integer or
   float literal grammar of § 3.6 (regardless of whether the value
   fits the writer's own numeric domain), as exactly `null` /
@@ -1988,7 +1990,10 @@ MUST test the following branches in order; exactly one branch applies:
   applies there.
 - **Raw-marker String item:** `:: <bytes>` — after `::`, `<sep-end>` consumes
   the maximal contiguous run of line-bounded whitespace before the body;
-  thus `::  x` has body `x`, not ` x`. The body would otherwise
+  thus `::  x` has body `x`, not ` x`. This branch applies only when the
+  body is a physically safe non-empty one-line String under § 5.9.7 — with
+  no `LF` or `CR`, leading/trailing whitespace, or ASCII control byte other
+  than `TAB`. The body would otherwise
   be reinterpreted by § 5.2 as a number, keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would

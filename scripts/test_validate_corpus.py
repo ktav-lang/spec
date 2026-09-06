@@ -841,6 +841,20 @@ class CorpusTestCase(unittest.TestCase):
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
 
+    def test_boundary_manifest_lock_invalid_utf8_is_aggregated(self):
+        tests, _leaves = self.build_two_leaf_corpus()
+        lock_path = os.path.join(self.tmp, "lock", "boundary-invalid-utf8.json")
+        os.makedirs(os.path.dirname(lock_path), exist_ok=True)
+        with open(lock_path, "wb") as stream:
+            stream.write(b"[\x80]\n")
+        code, out = self.run_main(tests, "--boundary-manifest-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("[FAIL] boundary-fixtures.json", out)
+        self.assertIn("--boundary-manifest-lock", out)
+        self.assertIn("unreadable", out)
+        self.assertIn("OVERALL: FAIL", out)
+        self.assertNotIn("Traceback", out)
+
     def test_boundary_manifest_lock_catches_deleted_entry(self):
         tests, leaves = self.build_two_leaf_corpus()
         lock_path = self.write("lock/boundary-fixtures.lock.json", json.dumps(leaves))
