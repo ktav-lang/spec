@@ -386,7 +386,7 @@ function parseHtmlBlockOpener(line) {
   }
   if (/^ {0,3}<!--/u.test(line)) return { htmlType: 2 };
   if (/^ {0,3}<\?/u.test(line)) return { htmlType: 3 };
-  if (/^ {0,3}<![A-Z]/u.test(line)) return { htmlType: 4 };
+  if (/^ {0,3}<![A-Za-z]/u.test(line)) return { htmlType: 4 };
   if (/^ {0,3}<!\[CDATA\[/u.test(line)) return { htmlType: 5 };
   if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[ \\t]|$|>|/>)`, 'iu').test(line)) {
     return { htmlType: 6 };

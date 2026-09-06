@@ -725,6 +725,7 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
     ['<!-- comment -->', 2],
     ['<?processing-instruction>', 3],
     ['<!DOCTYPE html>', 4],
+    ['<!doctype html>', 4],
     ['<![CDATA[data]]>', 5],
     ['<div>', 6],
     ['<div', 6],
@@ -763,7 +764,7 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
   ])[0]];
   await assert.doesNotReject(validate(fenced));
 
-  for (const prose of ['<div/x', '<div/extra>', '<param/extra>', '<!doctype html>']) {
+  for (const prose of ['<div/x', '<div/extra>', '<param/extra>']) {
     const fx = baseFixtures();
     fx[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
     await assert.doesNotReject(validate(fx), prose);
