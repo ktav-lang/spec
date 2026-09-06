@@ -2580,6 +2580,52 @@ function lockRecordQuarantinePath(specDir, record, options, kind) {
     `${TRANSACTION_LOCK_QUARANTINE_PREFIX}${kind}.${lockReclaimerNonce(options)}.${record.nonce}`);
 }
 
+const TRANSACTION_LOCK_QUARANTINE_PHASES = new Set([
+  'stale-claim', 'quarantine-cleanup', 'target-missing', 'target-changed',
+  'reclaim-complete', 'acquisition-cleanup',
+]);
+
+function quarantineRecordKindIsDerived(kind) {
+  if (new Set([
+    'stale-claim', 'acquisition-cleanup', 'release-claim', 'release-complete',
+    `legacy-${TRANSACTION_LOCK_LEGACY_CANDIDATE_FILE}`,
+    `legacy-${TRANSACTION_LOCK_FILE}.claim`,
+    `legacy-${TRANSACTION_LOCK_FILE}.lease`,
+  ]).has(kind)) return true;
+  if (/^reclaim-(?:owner|legacy)-[0-9a-f]{8}$/u.test(kind) ||
+      /^quarantine-cleanup-[0-9a-f]{8}$/u.test(kind)) return true;
+  const releaseCleanup = /^release-cleanup-(.*)$/u.exec(kind);
+  if (releaseCleanup === null) return false;
+  const escapedReleasePrefix = TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.');
+  return new RegExp(
+    `^${escapedReleasePrefix}(?:[0-9a-f]{32}\\.(?:candidate|owner|claim|lease|temporary)|` +
+    `reclaim\\.[0-9a-f]{32}\\.[0-9a-f]{32})$`, 'u').test(releaseCleanup[1]);
+}
+
+function quarantineDescriptor(name) {
+  const escapedPrefix = TRANSACTION_LOCK_QUARANTINE_PREFIX.replaceAll('.', '\\.');
+  const claim = new RegExp(
+    `^${escapedPrefix}claim\\.([0-9a-f]{32})\\.([0-9a-f]{32})\\.([0-9a-f]{32})\\.` +
+    `(${[...TRANSACTION_LOCK_QUARANTINE_PHASES].join('|')})$`, 'u').exec(name);
+  if (claim !== null) {
+    return {
+      type: 'claim', reclaimerNonce: claim[1], targetNonce: claim[2], claimNonce: claim[3],
+      phase: claim[4],
+    };
+  }
+  const legacy = new RegExp(
+    `^${escapedPrefix}legacy\\.([0-9a-f]{32})\\.([0-9a-f]{16})$`, 'u').exec(name);
+  if (legacy !== null) {
+    return { type: 'legacy', reclaimerNonce: legacy[1], digest: legacy[2] };
+  }
+  const record = new RegExp(
+    `^${escapedPrefix}(.+)\\.([0-9a-f]{32})\\.([0-9a-f]{32})$`, 'u').exec(name);
+  if (record !== null && quarantineRecordKindIsDerived(record[1])) {
+    return { type: 'record', kind: record[1], reclaimerNonce: record[2], recordNonce: record[3] };
+  }
+  return null;
+}
+
 function lockNow(now) {
   const value = typeof now === 'function' ? now() : now === undefined ? Date.now() : now;
   if (!Number.isSafeInteger(value) || value < 0) fail('transaction lock clock returned an invalid timestamp');
@@ -3059,6 +3105,22 @@ function ownerHintIsLive(owner, options) {
     observed === null || observed === owner.incarnation;
 }
 
+function cleanMalformedLegacyQuarantine(specDir, quarantinePath, descriptor, options) {
+  const source = readRegularBytes(quarantinePath, 'legacy transaction lock quarantine');
+  if (source === null) return;
+  if (hashBytes(source).slice(0, 16) !== descriptor.digest) {
+    fail('legacy transaction lock quarantine name does not match its bytes; ambiguous data was left untouched');
+  }
+  const hint = ownerHintFromCorruptSource(source.toString('utf8'));
+  if (hint === null) {
+    fail('legacy transaction lock quarantine has no safe owner provenance; ambiguous data was left untouched');
+  }
+  if (ownerHintIsLive(hint, options)) {
+    fail(`legacy transaction lock quarantine belongs to live process ${hint.pid}; refusing concurrent write`);
+  }
+  removeExactRegular(quarantinePath, 'legacy transaction lock quarantine', specDir);
+}
+
 function cleanLegacyArtifact(specDir, filePath, label, now, options, claimFreshness = false) {
   const stat = lstatRegularOrMissing(filePath, label);
   if (stat === null) return;
@@ -3194,8 +3256,19 @@ function cleanExistingReleaseClaims(specDir, now, options) {
 function cleanExistingQuarantines(specDir, now, options) {
   for (const quarantinePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_QUARANTINE_PREFIX)) {
     const name = path.basename(quarantinePath);
-    if (name.startsWith(`${TRANSACTION_LOCK_QUARANTINE_PREFIX}claim.`)) {
+    const descriptor = quarantineDescriptor(name);
+    if (descriptor === null) {
+      fail('transaction quarantine record has an invalid derived name; ambiguous data was left untouched');
+    }
+    if (descriptor.type === 'legacy') {
+      cleanMalformedLegacyQuarantine(specDir, quarantinePath, descriptor, options);
+      continue;
+    }
+    if (descriptor.type === 'claim') {
       const claim = readLockClaim(quarantinePath, 'transaction lock claim quarantine');
+      if (claim.target.nonce !== descriptor.targetNonce || claim.nonce !== descriptor.claimNonce) {
+        fail('transaction lock claim quarantine name does not match its record; ambiguous data was left untouched');
+      }
       if (lockClaimIsActive(claim, now, options) || lockIsActive(specDir, claim.target, now, options)) {
         fail('transaction lock claim quarantine belongs to a live process; refusing concurrent write');
       }
@@ -3207,6 +3280,9 @@ function cleanExistingQuarantines(specDir, now, options) {
       continue;
     }
     const record = readLock(quarantinePath, 'transaction lock record quarantine');
+    if (record.nonce !== descriptor.recordNonce) {
+      fail('transaction lock record quarantine name does not match its record; ambiguous data was left untouched');
+    }
     if (lockIsActive(specDir, record, now, options)) {
       fail('transaction lock record quarantine belongs to a live process; refusing concurrent write');
     }

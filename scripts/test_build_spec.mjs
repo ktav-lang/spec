@@ -6,6 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -2806,6 +2807,47 @@ test('write mode conservatively removes torn legacy lock artifacts only after ow
       '.build-spec.transaction.lock.claim',
       '.build-spec.transaction.lock.lease',
     ]) assert.equal(fs.existsSync(path.join(versionDir, name)), false, name);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a crash after capturing malformed legacy bytes is recovered by the next write', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-legacy-quarantine-recovery-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const source = Buffer.from(
+      'garbage {"pid":999999999,"incarnation":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"', 'utf8');
+    const legacyPath = path.join(versionDir, '.build-spec.transaction.lock.candidate');
+    write(legacyPath, source);
+    let quarantinePath;
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        onLockRecordCaptured({ quarantinePath: capturedPath }) {
+          quarantinePath = capturedPath;
+          throw new Error('simulated interruption');
+        },
+      }),
+      /simulated interruption/
+    );
+    const digest = createHash('sha256').update(source).digest('hex').slice(0, 16);
+    assert.ok(quarantinePath);
+    assert.equal(path.dirname(quarantinePath), versionDir);
+    assert.match(
+      path.basename(quarantinePath),
+      new RegExp(`^\\.build-spec\\.transaction\\.lock\\.quarantine\\.legacy\\.[0-9a-f]{32}\\.${digest}$`, 'u')
+    );
+    assert.equal(fs.existsSync(legacyPath), false);
+    assert.deepEqual(fs.readFileSync(quarantinePath), source);
+
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build));
+    assert.equal(fs.existsSync(quarantinePath), false);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build));
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

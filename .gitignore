@@ -42,6 +42,10 @@ desktop.ini
 .build-spec.transaction.lock.lease
 .build-spec.transaction.lock.lease.*
 .build-spec.transaction.lock.release.*
+.build-spec.transaction.lock.quarantine.*
+.build-spec.transaction.lock.quarantine.legacy.*
+.build-spec.transaction.lock.quarantine.claim.*
+.build-spec.transaction.lock.quarantine.owner.*
 .spec.md.*.tmp
 .spec.md.*.bak
 .spec.ru.md.*.tmp
