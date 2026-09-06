@@ -129,7 +129,8 @@ JSON（`JSON.parse`）解析的，**不是**作为 JavaScript 对象字面量求
   抽取脚本强制同一单元的三种语言使用相同的 `sep`。
 - `bodyParts` —— 该单元 `body-*.js` 文件的整数个数(`body-1.js` ..
   `body-N.js` 中的 N)。总是 >= 1。所有单元(包括 `frontmatter`)都
-  有,且总是排在**最后**。
+  有,且总是排在**最后**。构建器每个单元最多接受 4096 个部分，并在
+  读取正文文件前拒绝更大的值。
 
 ### `body-<k>.js`
 
@@ -240,9 +241,14 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
 退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
 信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。写入模式
-会先准备全部六个临时文件和可恢复的备份,再替换目标;替换阶段发生可捕获
-的 I/O 错误时,会恢复所有目标(包括原本不存在的文件)并清理临时文件。
-这不保证进程被终止时的原子性。
+会先准备全部六个临时文件和可恢复的备份。事务 journal 是一个原子替换
+并 fsync 的快照,只包含经过验证的 nonce、digest、阶段索引和六个已知输出
+标识;所有临时文件与备份路径都由构建器派生。durable commit marker 之前,
+恢复会还原精确的旧字节;之后会保留精确的新字节并只完成清理。活跃的协作
+lock 会拒绝第二个写入者。如果存在未完成的 journal、lock 或事务文件,
+`--check` 会报告它们并且不执行恢复或清理。某些平台(尤其 Windows)不支持
+目录 fsync,因此构建器明确提供 file-only crash durability,不会虚假声称
+它能防止断电导致的数据丢失。
 
 `node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
 (负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条

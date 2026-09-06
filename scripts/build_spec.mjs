@@ -22,6 +22,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createHash, randomBytes } from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const LANGS = ['en', 'ru', 'zh'];
@@ -35,6 +36,10 @@ const UNICODE_WORD_CODE_POINT_RE = /^[\p{L}\p{N}_]/u;
 
 const BODY_LINE_LIMIT = 120;
 const BODY_TARGET_LINES = 100;
+// The split rule targets roughly 100 lines per file. This cap still permits
+// about 409,600 body lines, but prevents metadata from driving an unbounded
+// body-file loop before the files themselves have been inspected.
+export const MAX_BODY_PARTS = 4096;
 
 export function defaultSectionInventoryLockPath(contentDir) {
   return path.resolve(
@@ -99,8 +104,9 @@ export function validateMeta(unit, meta) {
   if (meta.kind !== 'frontmatter' && meta.kind !== 'numbered' && meta.kind !== 'named') {
     failUnit(unit, `bad kind ${JSON.stringify(meta.kind)}`);
   }
-  if (!Number.isInteger(meta.bodyParts) || meta.bodyParts < 1) {
-    failUnit(unit, `bad bodyParts ${JSON.stringify(meta.bodyParts)}`);
+  if (!Number.isSafeInteger(meta.bodyParts) || meta.bodyParts < 1 || meta.bodyParts > MAX_BODY_PARTS) {
+    failUnit(unit,
+      `bad bodyParts ${JSON.stringify(meta.bodyParts)} (must be a safe integer between 1 and ${MAX_BODY_PARTS})`);
   }
   const allowedKeys = meta.kind === 'numbered'
     ? ['kind', 'number', 'sep', 'level', 'title', 'bodyParts']
@@ -281,6 +287,42 @@ function isThematicBreak(line) {
   return /^(?: {0,3})(?:(?:-[ \t]*){3,}|(?:\*[ \t]*){3,}|(?:_[ \t]*){3,})$/.test(line);
 }
 
+function buildThematicBreakSuffix(line) {
+  const markers = new Uint8Array(line.length);
+  const counts = new Uint32Array(line.length);
+  let marker = 0;
+  let count = 0;
+  let valid = true;
+  for (let pos = line.length - 1; pos >= 0; pos--) {
+    const code = line.charCodeAt(pos);
+    if (code === 0x20 || code === 0x09) continue;
+    if (code === 0x2d || code === 0x2a || code === 0x5f) {
+      if (marker === 0) marker = code;
+      else if (marker !== code) valid = false;
+      if (valid) count++;
+    } else {
+      valid = false;
+    }
+    if (valid) {
+      markers[pos] = marker;
+      counts[pos] = count;
+    }
+  }
+  return { markers, counts };
+}
+
+function isThematicBreakAt(line, pos, suffix) {
+  let start = pos;
+  let indent = 0;
+  while (start < line.length && (line[start] === ' ' || line[start] === '\t')) {
+    start++;
+    indent++;
+  }
+  if (indent > 3 || start === line.length) return false;
+  const code = line.charCodeAt(start);
+  return suffix.markers[start] === code && suffix.counts[start] >= 3;
+}
+
 const HTML_BLOCK_TAGS =
   '(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|' +
   'colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|' +
@@ -433,8 +475,8 @@ function columnAt(line, end) {
   return column;
 }
 
-function leadingColumns(line, start = 0) {
-  const startColumn = columnAt(line, start);
+function leadingColumns(line, start = 0, expanded = false) {
+  const startColumn = expanded ? start : columnAt(line, start);
   let column = startColumn;
   let pos = start;
   while (pos < line.length && (line[pos] === ' ' || line[pos] === '\t')) {
@@ -444,8 +486,8 @@ function leadingColumns(line, start = 0) {
   return { column: column - startColumn, pos };
 }
 
-function consumeIndent(line, start, columns) {
-  const startColumn = columnAt(line, start);
+function consumeIndent(line, start, columns, expanded = false) {
+  const startColumn = expanded ? start : columnAt(line, start);
   let column = startColumn;
   let pos = start;
   while (pos < line.length && column - startColumn < columns &&
@@ -456,28 +498,32 @@ function consumeIndent(line, start, columns) {
   return column - startColumn >= columns ? pos : null;
 }
 
-function consumeBlockquoteMarker(line, start) {
-  const leading = leadingColumns(line, start);
+function consumeBlockquoteMarker(line, start, expanded = false) {
+  const leading = leadingColumns(line, start, expanded);
   if (leading.column > 3 || line[leading.pos] !== '>') return null;
   let pos = leading.pos + 1;
   if (line[pos] === ' ' || line[pos] === '\t') pos++;
   return pos;
 }
 
-function hasContainerPrefix(container, ancestor) {
-  return container === ancestor || container.startsWith(`${ancestor}/`);
-}
-
-function parseListMarker(line, start) {
-  const leading = leadingColumns(line, start);
+function parseListMarker(line, start, expanded = false) {
+  const leading = leadingColumns(line, start, expanded);
   if (leading.column > 3) return null;
   const markerStart = leading.pos;
-  const match = line.slice(markerStart).match(/^(?:[*+-]|\d{1,9}[.)])(?=$|[ \t])/);
-  if (match === null) return null;
-  const text = match[0];
+  const first = line[markerStart];
+  let markerEnd = markerStart + 1;
+  if (first !== '*' && first !== '+' && first !== '-') {
+    if (first < '0' || first > '9') return null;
+    while (markerEnd < line.length && markerEnd - markerStart < 9 &&
+           line[markerEnd] >= '0' && line[markerEnd] <= '9') markerEnd++;
+    if (line[markerEnd] !== '.' && line[markerEnd] !== ')') return null;
+    markerEnd++;
+  }
+  if (markerEnd < line.length && line[markerEnd] !== ' ' && line[markerEnd] !== '\t') return null;
+  const text = line.slice(markerStart, markerEnd);
   return {
     markerStart,
-    markerEnd: markerStart + text.length,
+    markerEnd,
     marker: text,
     ordered: /^\d/.test(text),
     number: /^\d/.test(text) ? text.slice(0, -1) : null,
@@ -485,13 +531,13 @@ function parseListMarker(line, start) {
   };
 }
 
-function consumeListPadding(line, list) {
+function consumeListPadding(line, list, expanded = false) {
   let pos = list.markerEnd;
   if (pos === line.length || (line[pos] !== ' ' && line[pos] !== '\t')) {
     return { pos, indent: list.markerEnd - list.markerStart + 1, indentedCode: false };
   }
 
-  const markerEndColumn = columnAt(line, list.markerEnd);
+  const markerEndColumn = expanded ? list.markerEnd : columnAt(line, list.markerEnd);
   let whitespaceColumns = 0;
   let scanColumn = markerEndColumn;
   let scan = pos;
@@ -520,7 +566,10 @@ function consumeListPadding(line, list) {
 }
 
 function isEmptyListMarker(line, list) {
-  return /^[ \t]*$/.test(line.slice(list.markerEnd));
+  for (let pos = list.markerEnd; pos < line.length; pos++) {
+    if (line[pos] !== ' ' && line[pos] !== '\t') return false;
+  }
+  return true;
 }
 
 function isAsciiPunctuation(ch) {
@@ -743,52 +792,89 @@ function canContinueParagraph(line) {
   return true;
 }
 
+const quoteChildren = new WeakMap();
+
+function newContainer(kind, parent = null) {
+  return {
+    kind,
+    parent,
+    containsList: kind === 'list' || parent?.containsList === true,
+  };
+}
+
+function quoteChild(container) {
+  let child = quoteChildren.get(container);
+  if (child === undefined) {
+    child = newContainer('quote', container);
+    quoteChildren.set(container, child);
+  }
+  return child;
+}
+
+function containerLabel(container) {
+  const parts = [];
+  for (let current = container; current.parent !== null; current = current.parent) {
+    parts.push(current.kind === 'list' ? `list-${current.id}` : 'quote');
+  }
+  return ['root', ...parts.reverse()].join('/');
+}
+
 // Normalize a line by repeatedly consuming blockquote and list containers.
-// List frames retain the relative content indent needed to recognize a later
-// continuation, while their unique item paths keep sibling paragraphs apart.
+// Container identity is a compact object graph rather than a cumulative path
+// string. The active list path is truncated by index, so nested markers do not
+// repeatedly scan or copy all ancestor frames.
 function normalizeContainerLine(raw, state) {
   const line = expandTabs(raw);
   let pos = 0;
-  let container = 'root';
+  let container = state.root;
   let indentedCode = false;
   let consumedContainer = false;
+  // The active path is immutable between lines. Copy it only when this line
+  // actually adds or removes a frame; lazy continuation lines keep the same
+  // reference instead of copying the entire nesting depth.
   let frames = state.activeLists;
+  let framesChanged = false;
+  let activeFrameIndex = 0;
   let thematicBreak = false;
   const containerFrames = [];
+  let checkThematicBreak = true;
+  let thematicBreakSuffix = null;
 
   while (true) {
-    const continuationIndent = leadingColumns(line, pos);
-    const frame = frames
-      .filter((candidate) => candidate.parent === container &&
-        continuationIndent.column >= candidate.indent)
-      .at(-1);
-    if (frame !== undefined) {
-      const end = consumeIndent(line, pos, frame.indent);
+    const continuationIndent = leadingColumns(line, pos, true);
+    const frame = frames[activeFrameIndex];
+    if (frame !== undefined && frame.parent === container &&
+        continuationIndent.column >= frame.indent) {
+      const end = consumeIndent(line, pos, frame.indent, true);
       if (end !== null) {
         pos = end;
         container = frame.container;
         consumedContainer = true;
         containerFrames.push({ kind: 'list', indent: frame.indent });
-        frames = frames.slice(0, frames.indexOf(frame) + 1);
+        activeFrameIndex++;
         continue;
       }
     }
 
-    const quoteEnd = consumeBlockquoteMarker(line, pos);
+    const quoteEnd = consumeBlockquoteMarker(line, pos, true);
     if (quoteEnd !== null) {
       pos = quoteEnd;
-      container += '/quote';
+      container = quoteChild(container);
       consumedContainer = true;
       containerFrames.push({ kind: 'quote' });
+      checkThematicBreak = true;
       continue;
     }
 
-    if (isThematicBreak(line.slice(pos))) {
+    const isBreak = thematicBreakSuffix === null
+      ? isThematicBreak(line.slice(pos))
+      : isThematicBreakAt(line, pos, thematicBreakSuffix);
+    if (checkThematicBreak && isBreak) {
       thematicBreak = true;
       break;
     }
 
-    const list = parseListMarker(line, pos);
+    const list = parseListMarker(line, pos, true);
     if (list === null) break;
     // Empty markers and ordered markers other than 1 cannot interrupt an
     // active paragraph in this same container. A list sibling is different:
@@ -799,27 +885,37 @@ function normalizeContainerLine(raw, state) {
          (isEmptyListMarker(line, list) ||
           (list.ordered && list.start !== 1)))) break;
 
-    const markerIndent = leadingColumns(line, pos).column;
-    const padding = consumeListPadding(line, list);
-    const item = `${container}/list-${state.nextListId++}`;
-    frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
-    frames.push({
+    const markerIndent = leadingColumns(line, pos, true).column;
+    const padding = consumeListPadding(line, list, true);
+    if (!framesChanged) {
+      frames = frames.slice(0, activeFrameIndex);
+      framesChanged = true;
+    } else {
+      frames.length = activeFrameIndex;
+    }
+    const item = newContainer('list', container);
+    item.id = state.nextListId++;
+    const frameForItem = {
       parent: container,
       container: item,
       indent: markerIndent + padding.indent,
-    });
+    };
+    frames.push(frameForItem);
     containerFrames.push({
       kind: 'list',
       indent: markerIndent + padding.indent,
     });
     container = item;
+    activeFrameIndex++;
     pos = padding.pos;
     indentedCode ||= padding.indentedCode;
     consumedContainer = true;
+    checkThematicBreak = true;
+    if (thematicBreakSuffix === null) thematicBreakSuffix = buildThematicBreakSuffix(line);
   }
 
   const lazyListSetext = !consumedContainer && !thematicBreak &&
-    state.paragraphContainer?.includes('/list-') &&
+    state.paragraphContainer?.containsList === true &&
     parseSetextUnderline(line) !== null;
   const lazySetextContainer = lazyListSetext ? state.paragraphContainer : null;
   const lazyContainer = !consumedContainer && state.paragraphContainer !== null &&
@@ -828,24 +924,34 @@ function normalizeContainerLine(raw, state) {
   if (!consumedContainer && thematicBreak) {
     // A thematic break is a block start, not a lazy Setext continuation of
     // the list item that preceded it.
-    container = 'root';
+    container = state.root;
     frames = [];
-  } else if (/^[ \t]*$/.test(line) && frames.length > 0) {
+    framesChanged = true;
+    activeFrameIndex = 0;
+  } else if (/^[ \t]*$/.test(line) && state.activeLists.length > 0) {
+    frames = state.activeLists;
+    activeFrameIndex = frames.length;
     container = frames.at(-1).container;
     consumedContainer = true;
   } else if (lazyContainer !== null) {
     container = lazyContainer;
-    frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
+    frames = state.activeLists;
+    activeFrameIndex = frames.length;
   } else if (!consumedContainer) {
     frames = [];
+    framesChanged = true;
+    activeFrameIndex = 0;
   }
-  frames = frames.filter((candidate) => hasContainerPrefix(container, candidate.container));
+  if (frames.length > activeFrameIndex) {
+    if (framesChanged) frames.length = activeFrameIndex;
+    else frames = frames.slice(0, activeFrameIndex);
+  }
   state.activeLists = frames;
 
   const content = line.slice(pos);
   // Measure indentation from the line's absolute column. Resetting a tab to
   // column zero here misclassifies content after a space-indented container.
-  const contentIndent = leadingColumns(line, pos).column;
+  const contentIndent = leadingColumns(line, pos, true).column;
   const sourceContent = sourceSliceAtExpandedPosition(raw, pos);
   return {
     content,
@@ -867,11 +973,11 @@ function matchFenceContainer(line, frames) {
   let pos = 0;
   for (const frame of frames) {
     if (frame.kind === 'quote') {
-      const end = consumeBlockquoteMarker(line, pos);
+      const end = consumeBlockquoteMarker(line, pos, true);
       if (end === null) return null;
       pos = end;
     } else {
-      const end = consumeIndent(line, pos, frame.indent);
+      const end = consumeIndent(line, pos, frame.indent, true);
       if (end === null) return null;
       pos = end;
     }
@@ -906,7 +1012,8 @@ function sourceSliceAtExpandedPosition(raw, target) {
 
 function cloneHeadingState(state, paragraphLine) {
   return {
-    activeLists: state.activeLists.map((frame) => ({ ...frame })),
+    root: state.root,
+    activeLists: state.activeLists,
     nextListId: state.nextListId,
     paragraphContainer: state.paragraphContainer,
     allowLazySetext: state.allowLazySetext,
@@ -915,7 +1022,8 @@ function cloneHeadingState(state, paragraphLine) {
 }
 
 function restoreHeadingState(state, snapshot) {
-  state.activeLists = snapshot.activeLists.map((frame) => ({ ...frame }));
+  state.root = snapshot.root;
+  state.activeLists = snapshot.activeLists;
   state.nextListId = snapshot.nextListId;
   state.paragraphContainer = snapshot.paragraphContainer;
   state.allowLazySetext = snapshot.allowLazySetext;
@@ -923,12 +1031,13 @@ function restoreHeadingState(state, snapshot) {
 }
 
 // A reference definition may continue lazily inside an already-open list or
-// block quote. Normalize against a cloned state so a failed candidate cannot
-// mutate the real container stack before its speculative lines are replayed.
+// block quote. Normalize against a copy-on-write state so a failed candidate
+// cannot mutate the real container stack before its speculative lines replay.
 function resolveLinkDefinitionLine(raw, definition, state) {
   if (isBlankLinkContinuation(raw)) return null;
   const working = {
-    activeLists: state.activeLists.map((frame) => ({ ...frame })),
+    root: state.root,
+    activeLists: state.activeLists,
     nextListId: state.nextListId,
     paragraphContainer: definition.container,
     allowLazySetext: false,
@@ -964,6 +1073,7 @@ export function findHeadings(body) {
   let paragraphLine = null;
   let linkDefinition = null;
   const containerState = {
+    root: newContainer('root'),
     activeLists: [],
     nextListId: 0,
     paragraphContainer: null,
@@ -1002,10 +1112,8 @@ export function findHeadings(body) {
       }
       // A root fence and a list-only fence may span an unindented blank line.
       // An unquoted blank ends every fence with a blockquote frame.
-      const listOnlyFence = fence.containerFrames.length > 0 &&
-        fence.containerFrames.every((frame) => frame.kind === 'list');
       if (/^[ \t]*$/.test(raw) &&
-          (fence.containerFrames.length === 0 || listOnlyFence)) {
+          (fence.containerFrames.length === 0 || fence.listOnly)) {
         paragraphLine = null;
         containerState.paragraphContainer = null;
         cursor++;
@@ -1064,6 +1172,8 @@ export function findHeadings(body) {
         ...opener,
         container: normalized.container,
         containerFrames: normalized.containerFrames,
+        listOnly: normalized.containerFrames.length > 0 &&
+          normalized.containerFrames.every((frame) => frame.kind === 'list'),
       };
       paragraphLine = null;
       containerState.paragraphContainer = null;
@@ -1119,7 +1229,7 @@ export function findHeadings(body) {
         type: 'HTML',
         line: index + 1,
         raw: normalized.raw,
-        container: normalized.container,
+        container: containerLabel(normalized.container),
       });
       paragraphLine = null;
       containerState.paragraphContainer = null;
@@ -1129,7 +1239,7 @@ export function findHeadings(body) {
     }
     const heading = parseAtxHeading(line);
     if (heading !== null) {
-      headings.push({ ...heading, raw: normalized.raw, container: normalized.container, type: 'ATX', line: index + 1 });
+      headings.push({ ...heading, raw: normalized.raw, container: containerLabel(normalized.container), type: 'ATX', line: index + 1 });
       paragraphLine = null;
       containerState.paragraphContainer = null;
       containerState.allowLazySetext = false;
@@ -1144,7 +1254,7 @@ export function findHeadings(body) {
         type: 'Setext',
         line: index + 1,
         raw: normalized.raw,
-        container: normalized.container,
+        container: containerLabel(normalized.container),
         paragraph: paragraphLine.raw,
       });
       paragraphLine = null;
@@ -1164,7 +1274,7 @@ export function findHeadings(body) {
         containerState.allowLazySetext = false;
       } else if (previousParagraphContainer === normalized.container) {
         containerState.allowLazySetext = previousAllowLazySetext ||
-          (normalized.container.includes('/list-') && !normalized.consumedContainer);
+          (normalized.container.containsList && !normalized.consumedContainer);
       } else {
         containerState.allowLazySetext = false;
       }
@@ -1463,7 +1573,7 @@ function readReadmeSource(contentDir) {
 // Return the exact cut offsets prescribed by content/README.md for one
 // language body. Offsets are JavaScript string offsets, matching the offsets
 // used when the decoded body parts are concatenated below.
-function splitPlan(body, partCount, targetLineCount) {
+export function splitPlan(body, partCount, targetLineCount) {
   const lines = body.split('\n');
   const lineCount = lines.length - 1;
   const offsets = [0];
@@ -1482,15 +1592,22 @@ function splitPlan(body, partCount, targetLineCount) {
   for (let i = 1; i < partCount; i++) {
     const target = i * targetLineCount / partCount;
     const laterCutsNeeded = cutCount - i;
-    let bestBlankIndex;
-    for (let blankIndex = previousBlankIndex + 1;
-      blankIndex < blankLines.length - laterCutsNeeded;
-      blankIndex++) {
-      const blank = blankLines[blankIndex];
-      if (bestBlankIndex === undefined ||
-          Math.abs((blank + 1) - target) <
-            Math.abs((blankLines[bestBlankIndex] + 1) - target)) {
-        bestBlankIndex = blankIndex;
+    const firstAllowed = previousBlankIndex + 1;
+    const endAllowed = blankLines.length - laterCutsNeeded;
+    if (firstAllowed >= endAllowed) break;
+    let low = firstAllowed;
+    let high = endAllowed;
+    while (low < high) {
+      const middle = low + Math.floor((high - low) / 2);
+      if (blankLines[middle] + 1 < target) low = middle + 1;
+      else high = middle;
+    }
+    let bestBlankIndex = low < endAllowed ? low : endAllowed - 1;
+    if (bestBlankIndex > firstAllowed) {
+      const previous = bestBlankIndex - 1;
+      if (Math.abs((blankLines[previous] + 1) - target) <=
+          Math.abs((blankLines[bestBlankIndex] + 1) - target)) {
+        bestBlankIndex = previous;
       }
     }
     if (bestBlankIndex === undefined) break;
@@ -1829,95 +1946,815 @@ function assertRegularDestination(destination) {
   return true;
 }
 
-function createTemporaryOutput(destination) {
-  const dir = path.dirname(destination);
-  const base = path.basename(destination);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const tempPath = path.join(dir,
-      `.${base}.${process.pid}.${Date.now()}.${attempt}.tmp`);
-    try {
-      const fd = fs.openSync(tempPath, 'wx', 0o666);
-      return { fd, tempPath };
-    } catch (e) {
-      if (e.code !== 'EEXIST') throw e;
-    }
-  }
-  fail(`could not allocate a temporary output beside ${destination}`);
+const TRANSACTION_JOURNAL_FILE = '.build-spec.transaction.json';
+const TRANSACTION_JOURNAL_TMP_FILE = '.build-spec.transaction.json.tmp';
+const TRANSACTION_LOCK_FILE = '.build-spec.transaction.lock';
+const TRANSACTION_LOCK_CANDIDATE_FILE = `${TRANSACTION_LOCK_FILE}.candidate`;
+const TRANSACTION_LOCK_CLAIM_FILE = `${TRANSACTION_LOCK_FILE}.claim`;
+const TRANSACTION_LOCK_LEASE_FILE = `${TRANSACTION_LOCK_FILE}.lease`;
+const TRANSACTION_FORMAT = 'ktav-build-output-transaction';
+const TRANSACTION_LOCK_FORMAT = 'ktav-build-output-lock';
+const TRANSACTION_VERSION = 2;
+const TRANSACTION_LOCK_VERSION = 3;
+const TRANSACTION_LOCK_LEASE_MS = 60_000;
+const TRANSACTION_NONCE_RE = /^[0-9a-f]{32}$/u;
+const TRANSACTION_DIGEST_RE = /^[0-9a-f]{64}$/u;
+const TRANSACTION_OUTPUTS = LANGS.flatMap((lang) => [
+  { root: 'spec', name: OUT_FILES[lang] },
+  { root: 'content', name: README_FILES[lang] },
+]);
+const TRANSACTION_OUTPUT_NAMES = new Set(TRANSACTION_OUTPUTS.map(({ name }) => name));
+const TRANSACTION_STATE_KEYS = [
+  'format', 'version', 'nonce', 'durability', 'phase',
+  'backupIndex', 'installIndex', 'cleanupIndex', 'rollbackIndex', 'outputs',
+];
+const TRANSACTION_OUTPUT_KEYS = [
+  'root', 'name', 'existed', 'oldLength', 'oldSha256', 'newLength', 'newSha256',
+];
+const TRANSACTION_LOCK_KEYS = ['format', 'version', 'pid', 'incarnation', 'nonce', 'leaseUntil'];
+const PROCESS_INCARNATION = randomBytes(16).toString('hex');
+
+function transactionJournalPath(specDir) {
+  return path.join(specDir, TRANSACTION_JOURNAL_FILE);
 }
 
-function createAuxiliaryPath(destination, suffix) {
-  const dir = path.dirname(destination);
-  const base = path.basename(destination);
-  for (let attempt = 0; attempt < 100; attempt++) {
-    const auxiliaryPath = path.join(dir,
-      `.${base}.${process.pid}.${Date.now()}.${attempt}.${suffix}`);
-    try {
-      const fd = fs.openSync(auxiliaryPath, 'wx', 0o600);
-      fs.closeSync(fd);
-      fs.unlinkSync(auxiliaryPath);
-      return auxiliaryPath;
-    } catch (e) {
-      if (e.code === 'EEXIST') continue;
-      try { fs.unlinkSync(auxiliaryPath); } catch { /* preserve the original failure */ }
-      throw e;
-    }
-  }
-  fail(`could not allocate a ${suffix} beside ${destination}`);
+function transactionLockPath(specDir) {
+  return path.join(specDir, TRANSACTION_LOCK_FILE);
 }
 
-function unlinkRegularIfPresent(destination) {
+function transactionJournalTmpPath(specDir) {
+  return path.join(specDir, TRANSACTION_JOURNAL_TMP_FILE);
+}
+
+function transactionArtifactName(name) {
+  if (name === TRANSACTION_JOURNAL_FILE || name === TRANSACTION_JOURNAL_TMP_FILE) return true;
+  return [...TRANSACTION_OUTPUT_NAMES].some((output) => {
+    const escaped = output.replaceAll('.', '\\.');
+    return new RegExp(`^\\.${escaped}\\.[0-9a-f]{32}\\.(?:tmp|bak)$`).test(name);
+  });
+}
+
+function transactionArtifactPaths(specDir, contentDir) {
+  const result = [];
+  for (const directory of [specDir, contentDir]) {
+    let entries;
+    try { entries = fs.readdirSync(directory); } catch { continue; }
+    for (const name of entries) {
+      if (transactionArtifactName(name)) result.push(path.join(directory, name));
+    }
+  }
+  return result;
+}
+
+function pendingTransactionPaths(specDir, contentDir) {
+  const result = [];
+  for (const directory of [specDir, contentDir]) {
+    let entries;
+    try { entries = fs.readdirSync(directory); } catch { continue; }
+    for (const name of entries) {
+      if ([TRANSACTION_LOCK_FILE, TRANSACTION_LOCK_CANDIDATE_FILE,
+        TRANSACTION_LOCK_CLAIM_FILE, TRANSACTION_LOCK_LEASE_FILE].includes(name) ||
+          name.startsWith(`${TRANSACTION_LOCK_LEASE_FILE}.`) || transactionArtifactName(name)) {
+        result.push(path.join(directory, name));
+      }
+    }
+  }
+  return result;
+}
+
+function hashBytes(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+function lstatRegularOrMissing(filePath, label) {
   let stat;
-  try {
-    stat = fs.lstatSync(destination);
-  } catch (e) {
-    if (e.code === 'ENOENT') return;
-    throw e;
+  try { stat = fs.lstatSync(filePath); } catch (e) {
+    if (e.code === 'ENOENT') return null;
+    fail(`cannot inspect ${label} ${filePath}: ${e.message}`);
   }
   if (!stat.isFile()) {
     const kind = stat.isSymbolicLink() ? 'symlink' : 'special file';
-    throw new Error(`cannot remove transaction output ${destination}: it is not a regular file (${kind})`);
+    fail(`cannot use ${label} ${filePath}: it is not a regular file (${kind})`);
   }
-  fs.unlinkSync(destination);
+  return stat;
 }
 
-function rollbackOutputTransaction(staged) {
-  const errors = [];
-  for (const item of [...staged].reverse()) {
-    try {
-      if (item.replaced) unlinkRegularIfPresent(item.destination);
-      if (item.backupPath !== null) {
-        // Rollback deliberately uses the real filesystem operation, not the
-        // injected replacement hook. A one-shot test failure must not prevent
-        // restoration of the already staged backups.
-        fs.renameSync(item.backupPath, item.destination);
-        item.backupPath = null;
-      }
-    } catch (e) {
-      if (item.backupPath !== null) {
-        // A failed restore leaves the only known copy of the original at the
-        // backup path. Never let the later best-effort cleanup unlink it.
-        item.preserveBackup = true;
-        errors.push(`${item.destination}: could not restore backup ${item.backupPath}: ${e.message}`);
-      } else {
-        errors.push(`${item.destination}: ${e.message}`);
+function readRegularBytes(filePath, label) {
+  if (lstatRegularOrMissing(filePath, label) === null) return null;
+  try { return fs.readFileSync(filePath); } catch (e) {
+    fail(`cannot read ${label} ${filePath}: ${e.message}`);
+  }
+}
+
+function directorySyncSupport() {
+  return process.platform === 'win32' ? 'file-only-platform-limited' : 'directory-fsync';
+}
+
+function syncDirectory(directory) {
+  let fd;
+  try {
+    fd = fs.openSync(directory, 'r');
+    fs.fsyncSync(fd);
+    return true;
+  } catch (e) {
+    if (process.platform === 'win32' && ['EBADF', 'EISDIR', 'EINVAL', 'ENOTSUP', 'EPERM'].includes(e.code)) return false;
+    if (['EISDIR', 'EINVAL', 'ENOTSUP', 'EPERM'].includes(e.code)) {
+      throw new Error(`directory fsync is unavailable for ${directory}; refusing to claim durable transaction ordering`, { cause: e });
+    }
+    throw e;
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+}
+
+function syncOutputDirectories(specDir, contentDir) {
+  const syncedSpec = syncDirectory(specDir);
+  const syncedContent = syncDirectory(contentDir);
+  if ((!syncedSpec || !syncedContent) && process.platform !== 'win32') {
+    fail('directory fsync is unavailable; refusing to claim durable transaction ordering');
+  }
+}
+
+function writeAllSync(fd, data, writeSync = fs.writeSync) {
+  let offset = 0;
+  while (offset < data.length) {
+    const written = writeSync(fd, data, offset, data.length - offset);
+    if (!Number.isSafeInteger(written) || written <= 0) {
+      fail(`synchronous write made zero progress at byte offset ${offset}`);
+    }
+    if (written > data.length - offset) {
+      fail(`synchronous write exceeded the requested length at byte offset ${offset}`);
+    }
+    offset += written;
+  }
+}
+
+function removeExactRegular(filePath, label, syncDir = null) {
+  if (lstatRegularOrMissing(filePath, label) === null) return false;
+  fs.unlinkSync(filePath);
+  if (syncDir !== null) syncDirectory(syncDir);
+  return true;
+}
+
+function removeJournal(journalPath, specDir) {
+  removeExactRegular(journalPath, 'transaction journal', specDir);
+  syncDirectory(specDir);
+}
+
+function journalStateJson(state) {
+  return JSON.stringify(state) + '\n';
+}
+
+function writeJournalSnapshot(specDir, state, journalExists, writeSync = fs.writeSync, guard = null) {
+  const journalPath = transactionJournalPath(specDir);
+  const tmpPath = transactionJournalTmpPath(specDir);
+  if (guard !== null) guard();
+  // A tmp file is never published. It is safe to replace only after lstat has
+  // proved that it is a regular file under the already validated root.
+  removeExactRegular(tmpPath, 'unpublished transaction journal temporary', specDir);
+  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  try {
+    const data = Buffer.from(journalStateJson(state), 'utf8');
+    writeAllSync(fd, data, writeSync);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const written = readRegularBytes(tmpPath, 'unpublished transaction journal temporary');
+  if (Buffer.compare(written, Buffer.from(journalStateJson(state), 'utf8')) !== 0) {
+    fail('transaction journal temporary was not written completely; ambiguous data was left untouched');
+  }
+  fs.renameSync(tmpPath, journalPath);
+  syncDirectory(specDir);
+  if (!journalExists) lstatRegularOrMissing(journalPath, 'transaction journal');
+}
+
+function exactObjectKeys(value, keys) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value) &&
+    Object.keys(value).length === keys.length && Object.keys(value).every((key, i) => key === keys[i]);
+}
+
+function validDigest(value) {
+  return typeof value === 'string' && TRANSACTION_DIGEST_RE.test(value);
+}
+
+function validateJournalState(state, specDir, contentDir) {
+  if (!exactObjectKeys(state, TRANSACTION_STATE_KEYS) ||
+      state.format !== TRANSACTION_FORMAT || state.version !== TRANSACTION_VERSION ||
+      !TRANSACTION_NONCE_RE.test(state.nonce) ||
+      (state.durability !== 'directory-fsync' && state.durability !== 'file-only-platform-limited') ||
+      !['prepared', 'backing-up', 'installing', 'committed', 'cleaning', 'rollback'].includes(state.phase) ||
+      !Number.isSafeInteger(state.backupIndex) || !Number.isSafeInteger(state.installIndex) ||
+      !Number.isSafeInteger(state.cleanupIndex) || !Number.isSafeInteger(state.rollbackIndex) ||
+      !Array.isArray(state.outputs) || state.outputs.length !== TRANSACTION_OUTPUTS.length) {
+    fail('transaction journal has an invalid schema; ambiguous data was left untouched');
+  }
+  const existingCount = TRANSACTION_OUTPUTS.filter(({ root, name }) => {
+    const item = state.outputs.find((output) => output.root === root && output.name === name);
+    return item?.existed === true;
+  }).length;
+  for (let i = 0; i < state.outputs.length; i++) {
+    const item = state.outputs[i];
+    const expected = TRANSACTION_OUTPUTS[i];
+    if (!exactObjectKeys(item, TRANSACTION_OUTPUT_KEYS) || item.root !== expected.root ||
+        item.name !== expected.name || typeof item.existed !== 'boolean' ||
+        !Number.isSafeInteger(item.newLength) || item.newLength < 0 || !validDigest(item.newSha256) ||
+        (item.existed
+          ? (!Number.isSafeInteger(item.oldLength) || item.oldLength < 0 || !validDigest(item.oldSha256))
+          : (item.oldLength !== null || item.oldSha256 !== null))) {
+      fail('transaction journal has invalid or duplicate output records; ambiguous data was left untouched');
+    }
+  }
+  const inRange = (n, max) => n >= 0 && n <= max;
+  if (!inRange(state.backupIndex, existingCount) || !inRange(state.installIndex, 6) ||
+      !inRange(state.cleanupIndex, 6) || !inRange(state.rollbackIndex, 6)) {
+    fail('transaction journal has invalid phase indexes; ambiguous data was left untouched');
+  }
+  if (state.phase === 'prepared' &&
+      (state.backupIndex !== 0 || state.installIndex !== 0 || state.cleanupIndex !== 0 || state.rollbackIndex !== 0)) {
+    fail('transaction journal has invalid prepared ordering; ambiguous data was left untouched');
+  }
+  if (state.phase === 'backing-up' && (state.installIndex !== 0 || state.cleanupIndex !== 0 || state.rollbackIndex !== 0)) {
+    fail('transaction journal has invalid backup ordering; ambiguous data was left untouched');
+  }
+  if (state.phase === 'installing' && (state.backupIndex !== existingCount || state.cleanupIndex !== 0 || state.rollbackIndex !== 0)) {
+    fail('transaction journal has invalid install ordering; ambiguous data was left untouched');
+  }
+  if ((state.phase === 'committed' || state.phase === 'cleaning') &&
+      (state.backupIndex !== existingCount || state.installIndex !== 6 || state.rollbackIndex !== 0)) {
+    fail('transaction journal has invalid commit ordering; ambiguous data was left untouched');
+  }
+  if (state.phase === 'rollback' && state.rollbackIndex > 6) {
+    fail('transaction journal has invalid rollback ordering; ambiguous data was left untouched');
+  }
+  // The journal contains no paths. These derived paths are checked here so a
+  // later operation cannot accidentally acquire a path from untrusted data.
+  for (const { root, name } of TRANSACTION_OUTPUTS) {
+    const directory = root === 'spec' ? specDir : contentDir;
+    for (const suffix of ['tmp', 'bak']) {
+      const candidate = path.join(directory, `.${name}.${state.nonce}.${suffix}`);
+      if (path.dirname(candidate) !== directory || path.basename(candidate) !== `.${name}.${state.nonce}.${suffix}`) {
+        fail('transaction journal derived an unexpected artifact path; ambiguous data was left untouched');
       }
     }
   }
-  for (const item of staged) {
-    try {
-      if (item.tempPath !== null) fs.unlinkSync(item.tempPath);
-    } catch (e) {
-      if (e.code !== 'ENOENT') errors.push(`${item.tempPath}: ${e.message}`);
+}
+
+function readTransactionJournal(specDir, contentDir) {
+  const journalPath = transactionJournalPath(specDir);
+  let source;
+  try {
+    lstatRegularOrMissing(journalPath, 'transaction journal');
+    source = fs.readFileSync(journalPath);
+  } catch (e) {
+    fail(`cannot read transaction journal: ${e.message}; ambiguous data was left untouched`);
+  }
+  let state;
+  try { state = JSON.parse(utf8Strict.decode(source)); } catch (e) {
+    fail(`transaction journal is corrupt: ${e.message}; ambiguous data was left untouched`);
+  }
+  if (Buffer.compare(source, Buffer.from(journalStateJson(state), 'utf8')) !== 0) {
+    fail('transaction journal is not a canonical complete snapshot; ambiguous data was left untouched');
+  }
+  validateJournalState(state, specDir, contentDir);
+  return state;
+}
+
+function outputPaths(specDir, contentDir, state, index) {
+  const { root, name } = TRANSACTION_OUTPUTS[index];
+  const directory = root === 'spec' ? specDir : contentDir;
+  return {
+    destination: path.join(directory, name),
+    temp: path.join(directory, `.${name}.${state.nonce}.tmp`),
+    backup: path.join(directory, `.${name}.${state.nonce}.bak`),
+  };
+}
+
+function assertDigest(data, length, digest, label) {
+  if (data === null || data.length !== length || hashBytes(data) !== digest) {
+    fail(`${label} has an unexpected length or digest; ambiguous data was left untouched`);
+  }
+}
+
+function ensureAbsent(filePath, label) {
+  const stat = lstatRegularOrMissing(filePath, label);
+  if (stat !== null) fail(`${label} ${filePath} already exists; ambiguous data was left untouched`);
+}
+
+function verifyNew(item, bytes, label) {
+  assertDigest(bytes, item.newLength, item.newSha256, label);
+}
+
+function verifyOld(item, bytes, label) {
+  if (!item.existed) fail(`${label} exists although the original was missing; ambiguous data was left untouched`);
+  assertDigest(bytes, item.oldLength, item.oldSha256, label);
+}
+
+function cleanJournalTmpIfSafe(specDir) {
+  const tmp = transactionJournalTmpPath(specDir);
+  removeExactRegular(tmp, 'unpublished transaction journal temporary', specDir);
+}
+
+function beginRollback(specDir, contentDir, state, journalExists, writeSync, guard) {
+  state.phase = 'rollback';
+  state.rollbackIndex = 0;
+  writeJournalSnapshot(specDir, state, journalExists, writeSync, guard);
+}
+
+function rollbackOne(specDir, contentDir, state, index, guard) {
+  const item = state.outputs[index];
+  const paths = outputPaths(specDir, contentDir, state, index);
+  const destination = readRegularBytes(paths.destination, 'transaction destination');
+  const backup = readRegularBytes(paths.backup, 'transaction backup');
+  const temporary = readRegularBytes(paths.temp, 'transaction temporary');
+  if (temporary !== null) verifyNew(item, temporary, 'transaction temporary');
+
+  if (backup !== null) {
+    verifyOld(item, backup, 'transaction backup');
+    if (destination !== null) {
+      verifyNew(item, destination, 'installed transaction output');
+      validateWriteRoots(specDir, contentDir);
+      guard();
+      removeExactRegular(paths.destination, 'installed transaction output', path.dirname(paths.destination));
     }
-    if (item.backupPath !== null && !item.preserveBackup) {
-      try {
-        fs.unlinkSync(item.backupPath);
-      } catch (e) {
-        if (e.code !== 'ENOENT') errors.push(`${item.backupPath}: ${e.message}`);
-      }
+    ensureAbsent(paths.destination, 'transaction destination');
+    lstatRegularOrMissing(paths.backup, 'transaction backup');
+    validateWriteRoots(specDir, contentDir);
+    guard();
+    fs.renameSync(paths.backup, paths.destination);
+    if (readRegularBytes(paths.destination, 'restored transaction destination') === null) {
+      fail('restored transaction destination disappeared; ambiguous data was left untouched');
+    }
+    syncDirectory(path.dirname(paths.destination));
+    verifyOld(item, readRegularBytes(paths.destination, 'restored transaction destination'), 'restored transaction destination');
+  } else if (item.existed) {
+    if (destination === null) {
+      fail(`missing transaction backup for ${paths.destination}; ambiguous data was left untouched`);
+    }
+    verifyOld(item, destination, 'original transaction destination');
+  } else if (destination !== null) {
+    verifyNew(item, destination, 'installed transaction output');
+    validateWriteRoots(specDir, contentDir);
+    guard();
+    removeExactRegular(paths.destination, 'installed transaction output', path.dirname(paths.destination));
+  }
+
+  if (temporary !== null) {
+    validateWriteRoots(specDir, contentDir);
+    guard();
+    removeExactRegular(paths.temp, 'transaction temporary', path.dirname(paths.temp));
+  }
+}
+
+function rollbackTransaction(specDir, contentDir, state, writeSync, guard) {
+  const errors = [];
+  // Re-checking all six exact derived names makes rollback idempotent after a
+  // crash between a restore and its snapshot. The cursor is informational;
+  // actual bytes, not an untrusted cursor, decide every operation.
+  state.rollbackIndex = 0;
+  for (let index = TRANSACTION_OUTPUTS.length - 1; index >= 0; index--) {
+    try {
+      rollbackOne(specDir, contentDir, state, index, guard);
+      syncOutputDirectories(specDir, contentDir);
+      state.rollbackIndex++;
+      writeJournalSnapshot(specDir, state, true, writeSync, guard);
+    } catch (e) {
+      const backup = outputPaths(specDir, contentDir, state, index).backup;
+      errors.push(`${TRANSACTION_OUTPUTS[index].root}/${TRANSACTION_OUTPUTS[index].name}: could not restore backup ${backup}: ${e.message}`);
     }
   }
   return errors;
+}
+
+function completeOne(specDir, contentDir, state, index, guard) {
+  const item = state.outputs[index];
+  const paths = outputPaths(specDir, contentDir, state, index);
+  let destination = readRegularBytes(paths.destination, 'transaction destination');
+  const temporary = readRegularBytes(paths.temp, 'transaction temporary');
+  if (destination === null) {
+    if (temporary === null) fail(`missing committed output ${paths.destination}; ambiguous data was left untouched`);
+    verifyNew(item, temporary, 'transaction temporary');
+    ensureAbsent(paths.destination, 'transaction destination');
+    validateWriteRoots(specDir, contentDir);
+    guard();
+    fs.renameSync(paths.temp, paths.destination);
+    syncDirectory(path.dirname(paths.destination));
+    destination = readRegularBytes(paths.destination, 'committed transaction destination');
+  } else {
+    verifyNew(item, destination, 'committed transaction destination');
+    if (temporary !== null) fail(`both committed output and temporary exist for ${paths.destination}; ambiguous data was left untouched`);
+  }
+  verifyNew(item, destination, 'committed transaction destination');
+  const backup = readRegularBytes(paths.backup, 'transaction backup');
+  if (backup !== null) {
+    verifyOld(item, backup, 'transaction backup');
+    validateWriteRoots(specDir, contentDir);
+    guard();
+    removeExactRegular(paths.backup, 'transaction backup', path.dirname(paths.backup));
+  }
+}
+
+function recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard) {
+  if (state.phase === 'committed') {
+    state.phase = 'cleaning';
+    state.cleanupIndex = 0;
+    writeJournalSnapshot(specDir, state, true, writeSync, guard);
+  }
+  for (let index = state.cleanupIndex; index < TRANSACTION_OUTPUTS.length; index++) {
+    completeOne(specDir, contentDir, state, index, guard);
+    syncOutputDirectories(specDir, contentDir);
+    state.cleanupIndex = index + 1;
+    writeJournalSnapshot(specDir, state, true, writeSync, guard);
+  }
+  guard();
+  removeJournal(transactionJournalPath(specDir), specDir);
+}
+
+function lockCandidatePath(specDir) {
+  return path.join(specDir, TRANSACTION_LOCK_CANDIDATE_FILE);
+}
+
+function lockClaimPath(specDir) {
+  return path.join(specDir, TRANSACTION_LOCK_CLAIM_FILE);
+}
+
+function lockLeasePath(specDir) {
+  return path.join(specDir, TRANSACTION_LOCK_LEASE_FILE);
+}
+
+function lockLeaseTmpPath(specDir, owner) {
+  return path.join(specDir, `${TRANSACTION_LOCK_LEASE_FILE}.${owner.nonce}.tmp`);
+}
+
+function lockNow(now) {
+  const value = typeof now === 'function' ? now() : now === undefined ? Date.now() : now;
+  if (!Number.isSafeInteger(value) || value < 0) fail('transaction lock clock returned an invalid timestamp');
+  return value;
+}
+
+function lockJson(value) {
+  return JSON.stringify(value) + '\n';
+}
+
+function lockIdentityEqual(left, right) {
+  return left.format === right.format && left.version === right.version &&
+    left.pid === right.pid && left.incarnation === right.incarnation && left.nonce === right.nonce;
+}
+
+function pidIsLive(pid) {
+  try { process.kill(pid, 0); return true; } catch (e) {
+    return e.code !== 'ESRCH';
+  }
+}
+
+function readLock(lockPath, label = 'transaction lock') {
+  let source;
+  let value;
+  try {
+    source = fs.readFileSync(lockPath);
+    value = JSON.parse(utf8Strict.decode(source));
+  } catch (e) {
+    fail(`${label} is corrupt: ${e.message}; no transaction mutation was attempted`);
+  }
+  if (Buffer.compare(source, Buffer.from(lockJson(value), 'utf8')) !== 0) {
+    fail(`${label} is not a canonical complete record; no transaction mutation was attempted`);
+  }
+  if (!exactObjectKeys(value, TRANSACTION_LOCK_KEYS) || value.format !== TRANSACTION_LOCK_FORMAT ||
+      value.version !== TRANSACTION_LOCK_VERSION || !Number.isSafeInteger(value.pid) || value.pid < 1 ||
+      typeof value.incarnation !== 'string' || !TRANSACTION_NONCE_RE.test(value.incarnation) ||
+      !TRANSACTION_NONCE_RE.test(value.nonce) || !Number.isSafeInteger(value.leaseUntil) || value.leaseUntil < 0) {
+    fail(`${label} has an invalid schema; no transaction mutation was attempted`);
+  }
+  return value;
+}
+
+function lockIsActive(specDir, lock, now) {
+  // A process that has exited cannot retain a lease. The lease is still
+  // required for live PIDs, because PID liveness alone does not identify the
+  // builder incarnation that created this record.
+  if (!pidIsLive(lock.pid)) return false;
+  const leasePath = lockLeasePath(specDir);
+  const lease = lstatRegularOrMissing(leasePath, 'transaction lock lease') === null
+    ? null : readLock(leasePath, 'transaction lock lease');
+  if (lease !== null) {
+    if (!lockIdentityEqual(lease, lock)) {
+      fail('transaction lock lease belongs to a different incarnation; no transaction mutation was attempted');
+    }
+    return lease.leaseUntil >= now;
+  }
+  return lock.leaseUntil >= now;
+}
+
+function removeOwnLockClaim(specDir) {
+  removeExactRegular(lockClaimPath(specDir), 'transaction lock claim', specDir);
+}
+
+function cleanStaleLockLeaseTemps(specDir, now) {
+  let entries;
+  try { entries = fs.readdirSync(specDir); } catch { return; }
+  for (const name of entries) {
+    if (!name.startsWith(`${TRANSACTION_LOCK_LEASE_FILE}.`) || !name.endsWith('.tmp')) continue;
+    const filePath = path.join(specDir, name);
+    const stat = lstatRegularOrMissing(filePath, 'unpublished transaction lock lease temporary');
+    if (stat !== null && now - Math.trunc(stat.mtimeMs) >= TRANSACTION_LOCK_LEASE_MS) {
+      removeExactRegular(filePath, 'stale unpublished transaction lock lease temporary', specDir);
+    }
+  }
+}
+
+function claimExactStaleFile(specDir, targetPath, expected, now) {
+  const claimPath = lockClaimPath(specDir);
+  try {
+    fs.linkSync(targetPath, claimPath);
+  } catch (e) {
+    if (e.code === 'ENOENT') return false;
+    if (e.code === 'EEXIST') {
+      const claimStat = lstatRegularOrMissing(claimPath, 'transaction lock claim');
+      if (claimStat !== null && now - Math.trunc(claimStat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
+        fail('transaction lock reclaim is already in progress; refusing concurrent write');
+      }
+      const claimed = readLock(claimPath, 'transaction lock claim');
+      if (lockIsActive(specDir, claimed, now)) {
+        fail(`transaction is owned by live process ${claimed.pid}; refusing concurrent write`);
+      }
+      removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+      return false;
+    }
+    throw e;
+  }
+  if (expected === null) {
+    // A candidate can be torn by a process dying during its first write. The
+    // hard link still claims that exact inode; its age is the conservative
+    // lease evidence used by the caller, so it is safe to discard only this
+    // unpublished candidate, never the final lock path.
+    fs.unlinkSync(targetPath);
+    syncDirectory(specDir);
+    return true;
+  }
+  const claimed = readLock(claimPath, 'transaction lock claim');
+  let current;
+  try {
+    current = readLock(targetPath);
+  } catch (e) {
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    throw e;
+  }
+  if (!lockIdentityEqual(current, expected) || current.leaseUntil !== expected.leaseUntil ||
+      !lockIdentityEqual(claimed, expected) || claimed.leaseUntil !== expected.leaseUntil) {
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    return false;
+  }
+  if (lockIsActive(specDir, current, now)) {
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    fail(`transaction is owned by live process ${current.pid}; refusing concurrent write`);
+  }
+  // The hard link is an inode-level claim. Cooperating writers cannot publish
+  // a replacement while targetPath still exists, and other reclaimers cannot
+  // create the fixed claim path. Therefore this unlink can only remove the
+  // exact incarnation just claimed above.
+  fs.unlinkSync(targetPath);
+  syncDirectory(specDir);
+  return true;
+}
+
+function writeLockCandidate(specDir, owner, writeSync) {
+  const candidatePath = lockCandidatePath(specDir);
+  const fd = fs.openSync(candidatePath, 'wx', 0o600);
+  try {
+    const data = Buffer.from(lockJson(owner), 'utf8');
+    writeAllSync(fd, data, writeSync);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const written = readRegularBytes(candidatePath, 'transaction lock candidate');
+  if (Buffer.compare(written, Buffer.from(lockJson(owner), 'utf8')) !== 0) {
+    fail('transaction lock candidate was not written completely; no transaction mutation was attempted');
+  }
+}
+
+function publishLockCandidate(specDir, owner) {
+  const candidatePath = lockCandidatePath(specDir);
+  const lockPath = transactionLockPath(specDir);
+  try {
+    fs.linkSync(candidatePath, lockPath);
+  } catch (e) {
+    if (e.code === 'EEXIST') return false;
+    throw e;
+  }
+  syncDirectory(specDir);
+  if (!lockIdentityEqual(readLock(lockPath), owner) || readLock(lockPath).leaseUntil !== owner.leaseUntil) {
+    fail('published transaction lock differs from its complete candidate; no transaction mutation was attempted');
+  }
+  removeExactRegular(candidatePath, 'transaction lock candidate', specDir);
+  syncDirectory(specDir);
+  return true;
+}
+
+function removeCandidateIfOwned(specDir, owner) {
+  const candidatePath = lockCandidatePath(specDir);
+  const candidate = lstatRegularOrMissing(candidatePath, 'transaction lock candidate');
+  if (candidate === null) return;
+  try {
+    const value = readLock(candidatePath, 'transaction lock candidate');
+    if (lockIdentityEqual(value, owner) && value.leaseUntil === owner.leaseUntil) {
+      removeExactRegular(candidatePath, 'transaction lock candidate', specDir);
+    }
+  } catch {
+    // A candidate owned by another reclaimer must never be removed here.
+  }
+}
+
+function writeLockLease(specDir, owner, writeSync, now) {
+  const refreshed = { ...owner, leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
+  const tmpPath = lockLeaseTmpPath(specDir, owner);
+  removeExactRegular(tmpPath, 'unpublished transaction lock lease temporary', specDir);
+  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  try {
+    const data = Buffer.from(lockJson(refreshed), 'utf8');
+    writeAllSync(fd, data, writeSync);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const written = readRegularBytes(tmpPath, 'unpublished transaction lock lease temporary');
+  if (Buffer.compare(written, Buffer.from(lockJson(refreshed), 'utf8')) !== 0) {
+    fail('transaction lock lease temporary was not written completely; no transaction mutation was attempted');
+  }
+  fs.renameSync(tmpPath, lockLeasePath(specDir));
+  syncDirectory(specDir);
+  owner.leaseUntil = refreshed.leaseUntil;
+}
+
+function assertTransactionLockOwned(specDir, owner, now) {
+  const current = readLock(transactionLockPath(specDir));
+  if (!lockIdentityEqual(current, owner)) {
+    fail('transaction lock ownership changed; refusing to mutate outputs');
+  }
+  if (!lockIsActive(specDir, current, now)) {
+    fail('transaction lock lease expired; refusing to mutate outputs');
+  }
+}
+
+function acquireTransactionLock(specDir, options = {}) {
+  const lockPath = transactionLockPath(specDir);
+  const now = lockNow(options.now);
+  const writeSync = options.writeSync || fs.writeSync;
+  const owner = { format: TRANSACTION_LOCK_FORMAT, version: TRANSACTION_LOCK_VERSION,
+    pid: process.pid, incarnation: PROCESS_INCARNATION,
+    nonce: randomBytes(16).toString('hex'), leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
+  let staleClaimed = false;
+  let staleOwner = null;
+  for (;;) {
+    cleanStaleLockLeaseTemps(specDir, now);
+    const candidatePath = lockCandidatePath(specDir);
+    const claimPath = lockClaimPath(specDir);
+    const finalStat = lstatRegularOrMissing(lockPath, 'transaction lock');
+    if (finalStat !== null) {
+      const current = readLock(lockPath);
+      if (lockIsActive(specDir, current, now)) {
+        fail(`transaction is owned by live process ${current.pid}; refusing concurrent write`);
+      }
+      if (!claimExactStaleFile(specDir, lockPath, current, now)) continue;
+      staleClaimed = true;
+      staleOwner = current;
+    }
+    const candidateStat = lstatRegularOrMissing(candidatePath, 'transaction lock candidate');
+    if (candidateStat !== null) {
+      let candidate;
+      try {
+        candidate = readLock(candidatePath, 'transaction lock candidate');
+      } catch (e) {
+        if (now - Math.trunc(candidateStat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) throw e;
+        if (!claimExactStaleFile(specDir, candidatePath, null, now)) continue;
+        staleClaimed = true;
+      }
+      if (candidate !== undefined) {
+        if (staleClaimed && staleOwner !== null && lockIdentityEqual(candidate, staleOwner) &&
+            candidate.leaseUntil === staleOwner.leaseUntil) {
+          // A crash after exclusive publication but before candidate cleanup
+          // leaves both links to the same stale owner. The final-lock claim
+          // above already owns that incarnation, so discard only its orphan.
+          removeExactRegular(candidatePath, 'stale transaction lock candidate', specDir);
+          candidate = undefined;
+        }
+      }
+      if (candidate !== undefined) {
+        if (lockIsActive(specDir, candidate, now)) {
+          fail(`transaction is owned by live process ${candidate.pid}; refusing concurrent write`);
+        }
+        if (!claimExactStaleFile(specDir, candidatePath, candidate, now)) continue;
+        staleClaimed = true;
+      }
+    }
+    const claimStat = lstatRegularOrMissing(claimPath, 'transaction lock claim');
+    if (claimStat !== null && !staleClaimed) {
+      if (now - Math.trunc(claimStat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
+        fail('transaction lock reclaim is already in progress; refusing concurrent write');
+      }
+      const claim = readLock(claimPath, 'transaction lock claim');
+      if (lockIsActive(specDir, claim, now)) {
+        fail(`transaction is owned by live process ${claim.pid}; refusing concurrent write`);
+      }
+      removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+      continue;
+    }
+    if (typeof options.onStaleLockClaimed === 'function' && staleClaimed) {
+      options.onStaleLockClaimed();
+      staleClaimed = false;
+    }
+    try {
+      writeLockCandidate(specDir, owner, writeSync);
+      if (!publishLockCandidate(specDir, owner)) {
+        removeCandidateIfOwned(specDir, owner);
+        continue;
+      }
+      removeOwnLockClaim(specDir);
+      writeLockLease(specDir, owner, writeSync, now);
+      return owner;
+    } catch (e) {
+      if (e.code !== 'EEXIST') throw e;
+      continue;
+    }
+  }
+}
+
+function releaseTransactionLock(specDir, owner) {
+  const lockPath = transactionLockPath(specDir);
+  const current = readLock(lockPath);
+  if (!lockIdentityEqual(current, owner)) {
+    fail('transaction lock ownership changed; refusing to remove another owner lock');
+  }
+  removeExactRegular(lockPath, 'transaction lock', specDir);
+  removeExactRegular(lockLeasePath(specDir), 'transaction lock lease', specDir);
+  removeOwnLockClaim(specDir);
+  syncDirectory(specDir);
+}
+
+function transactionLockGuard(specDir, owner, options) {
+  if (owner === null) fail('transaction mutation requires an owned cooperative lock');
+  return () => {
+    const now = lockNow(options.now);
+    assertTransactionLockOwned(specDir, owner, now);
+    writeLockLease(specDir, owner, options.writeSync || fs.writeSync, now);
+    assertTransactionLockOwned(specDir, owner, now);
+  };
+}
+
+function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) {
+  const guard = options.owner === null || options.owner === undefined
+    ? () => fail('transaction recovery requires an owned cooperative lock')
+    : transactionLockGuard(specDir, options.owner, options);
+  const writeSync = options.writeSync || fs.writeSync;
+  const journalPath = transactionJournalPath(specDir);
+  const journal = lstatRegularOrMissing(journalPath, 'transaction journal');
+  if (journal !== null) {
+    const state = readTransactionJournal(specDir, contentDir);
+    guard();
+    cleanJournalTmpIfSafe(specDir);
+    if (state.phase === 'committed' || state.phase === 'cleaning') {
+      recoverCommittedTransaction(specDir, contentDir, state, writeSync, guard);
+    } else {
+      if (state.phase !== 'rollback') beginRollback(specDir, contentDir, state, true, writeSync, guard);
+      const errors = rollbackTransaction(specDir, contentDir, state, writeSync, guard);
+      if (errors.length) fail(`transaction recovery rollback failed: ${errors.join('; ')}`);
+      guard();
+      removeJournal(journalPath, specDir);
+    }
+    return;
+  }
+  guard();
+  cleanJournalTmpIfSafe(specDir);
+  const orphans = transactionArtifactPaths(specDir, contentDir)
+    .filter((filePath) => ![TRANSACTION_JOURNAL_FILE, TRANSACTION_JOURNAL_TMP_FILE].includes(path.basename(filePath)));
+  if (orphans.length) {
+    fail(`found transaction artifact(s) without ${TRANSACTION_JOURNAL_FILE}: ${orphans.join(', ')}; ambiguous data was left untouched`);
+  }
+}
+
+// Recovery and writing share one cooperative lock. The lock is not a hostile
+// process security boundary: a process with write access can replace files
+// between lstat and rename. It prevents cooperating builders from racing by
+// requiring an incarnation token, a refreshed lease, and an ownership check
+// immediately before every output mutation. A builder that stays alive but
+// stops refreshing for the conservative lease interval may be reclaimed; no
+// pathname lock can distinguish that pause from an abandoned builder without
+// an OS-specific process-incarnation service. Such a reclaimed paused builder
+// must fail its next ownership check and cannot continue mutating outputs.
+export function recoverBuildOutputTransaction(specDir, contentDir, options = {}) {
+  const resolvedSpecDir = path.resolve(specDir);
+  const resolvedContentDir = path.resolve(contentDir);
+  validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+  let owner = null;
+  if (options.lockHeld) owner = options.owner || null;
+  else owner = acquireTransactionLock(resolvedSpecDir, options);
+  try {
+    recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
+      ...options, owner,
+    });
+  } finally {
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner);
+  }
 }
 
 function resolvedWriteRoot(root, label) {
@@ -1962,113 +2799,187 @@ function validateWriteRoots(specDir, contentDir) {
 }
 
 export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, options = {}) {
-  validateWriteRoots(specDir, contentDir);
-  const outputs = [];
-  for (const lang of LANGS) {
-    outputs.push([path.join(specDir, OUT_FILES[lang]), bufs[lang]]);
-    outputs.push([path.join(contentDir, README_FILES[lang]), readmeBufs[lang]]);
-  }
-
-  // Preflight every destination so a rejected symlink/special file cannot
-  // leave a partially regenerated set of outputs behind.
-  const staged = [];
-  for (const [destination] of outputs) {
-    staged.push({
-      destination,
-      data: null,
-      existed: assertRegularDestination(destination),
-      tempPath: null,
-      fd: null,
-      backupPath: null,
-      preserveBackup: false,
-      replaced: false,
-    });
-  }
+  const resolvedSpecDir = path.resolve(specDir);
+  const resolvedContentDir = path.resolve(contentDir);
+  validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+  const owner = options.lockHeld
+    ? options.owner || null
+    : acquireTransactionLock(resolvedSpecDir, options);
   const { renameSync = fs.renameSync, unlinkSync = fs.unlinkSync } = options;
+  const writeSync = options.writeSync || fs.writeSync;
+  const guard = transactionLockGuard(resolvedSpecDir, owner, { ...options, writeSync });
+  let state = null;
+  const temporaryPaths = [];
   try {
-    // Stage every replacement before touching a destination.
-    for (let i = 0; i < staged.length; i++) {
-      const item = staged[i];
-      item.data = outputs[i][1];
-      const temporary = createTemporaryOutput(item.destination);
-      item.fd = temporary.fd;
-      item.tempPath = temporary.tempPath;
-      if (!fs.fstatSync(item.fd).isFile()) {
-        fail(`temporary output for ${item.destination} is not a regular file`);
-      }
-      fs.writeFileSync(item.fd, item.data);
-      fs.closeSync(item.fd);
-      item.fd = null;
-    }
+    recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
+      ...options, owner, writeSync,
+    });
 
-    // Move all original files aside before the first replacement. This keeps
-    // every original byte recoverable, including metadata and missing-file
-    // state, if a later replacement fails.
-    for (const item of staged) {
-      if (!item.existed) continue;
-      const backupPath = createAuxiliaryPath(item.destination, 'bak');
+    const nonce = randomBytes(16).toString('hex');
+    const dataFor = (index) => {
+      const { root, name } = TRANSACTION_OUTPUTS[index];
+      return Buffer.from(root === 'spec' ? bufs[LANGS.find((lang) => OUT_FILES[lang] === name)]
+        : readmeBufs[LANGS.find((lang) => README_FILES[lang] === name)]);
+    };
+    state = {
+      format: TRANSACTION_FORMAT,
+      version: TRANSACTION_VERSION,
+      nonce,
+      durability: directorySyncSupport(),
+      phase: 'prepared',
+      backupIndex: 0,
+      installIndex: 0,
+      cleanupIndex: 0,
+      rollbackIndex: 0,
+      outputs: TRANSACTION_OUTPUTS.map(({ root, name }, index) => {
+        const destination = root === 'spec' ? path.join(resolvedSpecDir, name) : path.join(resolvedContentDir, name);
+        const existed = assertRegularDestination(destination);
+        const old = existed ? readRegularBytes(destination, 'original output') : null;
+        const data = dataFor(index);
+        return {
+          root, name, existed,
+          oldLength: old === null ? null : old.length,
+          oldSha256: old === null ? null : hashBytes(old),
+          newLength: data.length,
+          newSha256: hashBytes(data),
+        };
+      }),
+    };
+    validateJournalState(state, resolvedSpecDir, resolvedContentDir);
+
+    // Every temporary is created with an exact nonce-derived name and is
+    // fsynced before the first journal snapshot becomes publishable.
+    for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+      const paths = outputPaths(resolvedSpecDir, resolvedContentDir, state, index);
+      ensureAbsent(paths.temp, 'transaction temporary');
+      guard();
+      const fd = fs.openSync(paths.temp, 'wx', 0o600);
+      temporaryPaths.push(paths.temp);
       try {
-        renameSync(item.destination, backupPath);
-        item.backupPath = backupPath;
+        const data = dataFor(index);
+        writeAllSync(fd, data, writeSync);
+        fs.fsyncSync(fd);
+      } finally {
+        fs.closeSync(fd);
+      }
+      verifyNew(state.outputs[index], readRegularBytes(paths.temp, 'transaction temporary'), 'transaction temporary');
+    }
+    writeJournalSnapshot(resolvedSpecDir, state, false, writeSync, guard);
+
+    state.phase = 'backing-up';
+    writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+    for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+      const item = state.outputs[index];
+      if (!item.existed) continue;
+      const paths = outputPaths(resolvedSpecDir, resolvedContentDir, state, index);
+      validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+      verifyOld(item, readRegularBytes(paths.destination, 'original output'), 'original output');
+      ensureAbsent(paths.backup, 'transaction backup');
+      guard();
+      renameSync(paths.destination, paths.backup);
+      verifyOld(item, readRegularBytes(paths.backup, 'transaction backup'), 'transaction backup');
+      if (readRegularBytes(paths.destination, 'transaction destination') !== null) {
+        fail(`backup left a destination behind at ${paths.destination}; ambiguous data was left untouched`);
+      }
+      if (process.env.KTAV_BUILD_SPEC_CRASH_AFTER_RENAME === `backup:${index}`) process.kill(process.pid, 'SIGKILL');
+      syncDirectory(path.dirname(paths.destination));
+      state.backupIndex++;
+      writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+    }
+
+    state.phase = 'installing';
+    writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+    for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+      const item = state.outputs[index];
+      const paths = outputPaths(resolvedSpecDir, resolvedContentDir, state, index);
+      validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+      verifyNew(item, readRegularBytes(paths.temp, 'transaction temporary'), 'transaction temporary');
+      ensureAbsent(paths.destination, 'transaction destination');
+      guard();
+      renameSync(paths.temp, paths.destination);
+      verifyNew(item, readRegularBytes(paths.destination, 'installed transaction output'), 'installed transaction output');
+      if (process.env.KTAV_BUILD_SPEC_CRASH_AFTER_RENAME === `install:${index}`) process.kill(process.pid, 'SIGKILL');
+      syncDirectory(path.dirname(paths.destination));
+      state.installIndex++;
+      writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+    }
+
+    for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+      const paths = outputPaths(resolvedSpecDir, resolvedContentDir, state, index);
+      verifyNew(state.outputs[index], readRegularBytes(paths.destination, 'installed transaction output'), 'installed transaction output');
+      if (readRegularBytes(paths.temp, 'transaction temporary') !== null) {
+        fail(`temporary remained after install at ${paths.temp}; ambiguous data was left untouched`);
+      }
+    }
+    syncOutputDirectories(resolvedSpecDir, resolvedContentDir);
+    // This is the durable direction switch. No pre-commit recovery may keep
+    // new bytes after this snapshot is published.
+    state.phase = 'committed';
+    writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+
+    state.phase = 'cleaning';
+    writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+    const cleanupErrors = [];
+    let cleanupBlocked = false;
+    for (let index = 0; index < TRANSACTION_OUTPUTS.length; index++) {
+      const paths = outputPaths(resolvedSpecDir, resolvedContentDir, state, index);
+      try {
+        const backup = readRegularBytes(paths.backup, 'transaction backup');
+        if (backup !== null) {
+          verifyOld(state.outputs[index], backup, 'transaction backup');
+          validateWriteRoots(resolvedSpecDir, resolvedContentDir);
+          guard();
+          unlinkSync(paths.backup);
+          if (readRegularBytes(paths.backup, 'transaction backup') !== null) {
+            fail(`backup remained after cleanup at ${paths.backup}`);
+          }
+        }
+        syncOutputDirectories(resolvedSpecDir, resolvedContentDir);
+        if (!cleanupBlocked) {
+          state.cleanupIndex = index + 1;
+          writeJournalSnapshot(resolvedSpecDir, state, true, writeSync, guard);
+        }
       } catch (error) {
-        // A custom rename hook may perform the rename and then throw. Keep a
-        // successfully created backup discoverable for rollback in that case.
-        try {
-          if (fs.lstatSync(backupPath).isFile()) item.backupPath = backupPath;
-        } catch { /* the failed rename left no backup */ }
-        throw error;
+        cleanupBlocked = true;
+        cleanupErrors.push(`${paths.backup}: ${error.message}`);
       }
     }
-
-    for (const item of staged) {
-      // Recheck immediately before replacement. rename() never follows a
-      // destination symlink, and this check rejects one before that point.
-      assertRegularDestination(item.destination);
-      // Mark before calling the hook so a hook that performs the rename and
-      // then throws is still rolled back as a completed replacement.
-      item.replaced = true;
-      renameSync(item.tempPath, item.destination);
-      item.tempPath = null;
+    if (cleanupErrors.length) {
+      const cleanupError = new Error(`outputs committed; backup cleanup failed: ${cleanupErrors.join('; ')}`);
+      cleanupError.code = 'KTAV_BACKUP_CLEANUP_FAILED';
+      throw cleanupError;
     }
-
+    guard();
+    removeJournal(transactionJournalPath(resolvedSpecDir), resolvedSpecDir);
   } catch (error) {
-    for (const item of staged) {
-      if (item.fd !== null) {
-        try { fs.closeSync(item.fd); } catch { /* preserve the original failure */ }
-        item.fd = null;
+    if (state === null) {
+      for (const temp of temporaryPaths) {
+        try {
+          guard();
+          removeExactRegular(temp, 'transaction temporary', path.dirname(temp));
+        } catch { /* preserve original error */ }
       }
+      throw error;
     }
-    const rollbackErrors = rollbackOutputTransaction(staged);
-    const detail = rollbackErrors.length
-      ? `; rollback failed: ${rollbackErrors.join('; ')}`
-      : '';
-    const transactionError = new Error(
-      `build output transaction failed: ${error.message}${detail}`,
-      { cause: error }
-    );
+    if (state.phase === 'committed' || state.phase === 'cleaning') throw error;
+    const rollbackErrors = [];
+    try {
+      const journalExists = lstatRegularOrMissing(transactionJournalPath(resolvedSpecDir), 'transaction journal') !== null;
+      beginRollback(resolvedSpecDir, resolvedContentDir, state, journalExists, writeSync, guard);
+      rollbackErrors.push(...rollbackTransaction(resolvedSpecDir, resolvedContentDir, state, writeSync, guard));
+      if (rollbackErrors.length === 0) {
+        guard();
+        removeJournal(transactionJournalPath(resolvedSpecDir), resolvedSpecDir);
+      }
+    } catch (rollbackError) {
+      rollbackErrors.push(rollbackError.message);
+    }
+    const detail = rollbackErrors.length ? `; rollback failed: ${rollbackErrors.join('; ')}` : '';
+    const transactionError = new Error(`build output transaction failed: ${error.message}${detail}`, { cause: error });
     transactionError.code = error.code;
     throw transactionError;
-  }
-
-  // All six replacements have committed. Backup cleanup is deliberately
-  // outside the rollback boundary: once any backup is deleted, rollback can
-  // no longer restore every original and must never remove committed outputs.
-  const cleanupErrors = [];
-  for (const item of staged) {
-    if (item.backupPath === null) continue;
-    try {
-      unlinkSync(item.backupPath);
-      item.backupPath = null;
-    } catch (error) {
-      cleanupErrors.push(`${item.backupPath}: ${error.message}`);
-    }
-  }
-  if (cleanupErrors.length) {
-    const cleanupError = new Error(
-      `outputs committed; backup cleanup failed: ${cleanupErrors.join('; ')}`
-    );
-    cleanupError.code = 'KTAV_BACKUP_CLEANUP_FAILED';
-    throw cleanupError;
+  } finally {
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner);
   }
 }
 
@@ -2203,7 +3114,15 @@ async function cli() {
   try {
     // --check reads generated outputs, so reject linked roots before content
     // validation can traverse a directory outside the repository.
-    if (checkMode) validateWriteRoots(specDir, contentDir);
+    validateWriteRoots(specDir, contentDir);
+    if (checkMode) {
+      const pending = pendingTransactionPaths(specDir, contentDir);
+      if (pending.length) {
+        fail(`build_spec --check: pending/interrupted transaction artifact(s): ${pending.join(', ')}; --check is read-only and will not recover or remove them`);
+      }
+    } else {
+      recoverBuildOutputTransaction(specDir, contentDir);
+    }
     build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
   } catch (e) {
     process.stderr.write(`build_spec: ${e.message}\n`);

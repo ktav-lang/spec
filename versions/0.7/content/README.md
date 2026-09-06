@@ -138,7 +138,9 @@ Field meanings:
   enforces that all three languages use the same `sep` for a unit.
 - `bodyParts` — the integer count of `body-*.js` files for the unit
   (N in `body-1.js` .. `body-N.js`). Always >= 1. Present on ALL units,
-  including `frontmatter`, and always appended **last**.
+  including `frontmatter`, and always appended **last**. The builder
+  accepts at most 4096 parts per unit and rejects larger values before reading
+  body files.
 
 ### `body-<k>.js`
 
@@ -267,10 +269,16 @@ and byte-compares them against the committed files. On success: exit 0 and
 **completely silent**.
 On divergence: exit 1 with a diagnostic naming the unit, language, and line
 of the first differing byte. It writes nothing. Write mode stages all six
-temporary outputs and recoverable backups before replacement; a caught I/O
-failure during replacement restores every destination, including originally
-missing files, and removes staging artifacts. This is not a process-kill
-durability guarantee.
+temporary outputs and recoverable backups before replacement. The transaction
+journal is one atomically replaced, fsynced snapshot: it contains only a
+validated nonce, digests, phase indexes, and the six known output identities;
+all temporary and backup paths are derived by the builder. Before its durable
+commit marker, recovery restores the exact old bytes; after it, recovery keeps
+the exact new bytes and only finishes cleanup. A live cooperative lock rejects
+a second writer. If a pending journal, lock, or artifact exists, `--check`
+reports it and performs no recovery or cleanup. Directory fsync is unavailable
+on some platforms (notably Windows), so those builds explicitly provide
+file-only crash durability rather than claiming power-loss durability.
 
 `node --test scripts/test_build_spec.mjs` runs the builder's adversarial
 (negative-path) test suite: it feeds deliberately malformed content trees

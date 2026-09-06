@@ -9,6 +9,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 import {
   validateContentDir,
@@ -27,6 +29,9 @@ import {
   README_SOURCE_FILE,
   validateMeta,
   findHeadings,
+  splitPlan,
+  MAX_BODY_PARTS,
+  recoverBuildOutputTransaction,
 } from './build_spec.mjs';
 
 function write(p, content) {
@@ -1069,6 +1074,17 @@ test('thematic breaks close a list before following indented code', async () => 
   }
 });
 
+test('thematic breaks are checked after every nested list marker', () => {
+  for (const body of [
+    '- * * *\n      # indented code\n',
+    '> - * * *\n>       # indented code\n',
+    '- > * * *\n      >       # indented code\n',
+    '> - > * * *\n>       >       # indented code\n',
+  ]) {
+    assert.deepEqual(findHeadings(body), [], body);
+  }
+});
+
 test('speculative link definitions stop at paragraph-interrupting block openers', async () => {
   for (const body of [
     '[ref]: /url "\n# injected\n"\n\n',
@@ -1487,6 +1503,20 @@ test('meta.bodyParts=2 but body-2.js missing', async () => {
   );
 });
 
+test('bodyParts accepts safe existing values and rejects invalid or excessive counts before file iteration', () => {
+  assert.doesNotThrow(() => validateMeta('sec-1', unitMeta('numbered', { __num: '1', bodyParts: 1 })));
+  assert.doesNotThrow(() => validateMeta('sec-1', unitMeta('numbered', { __num: '1', bodyParts: 4 })));
+  for (const value of [0, -1, Number.MAX_SAFE_INTEGER + 1, 1e308, MAX_BODY_PARTS + 1]) {
+    assert.throws(
+      () => validateMeta('sec-1', unitMeta('numbered', { __num: '1', bodyParts: value })),
+      (e) => /bad bodyParts/.test(e.message) &&
+        (value === 1e308 || value === MAX_BODY_PARTS + 1
+          ? /safe integer between 1 and/.test(e.message)
+          : true)
+    );
+  }
+});
+
 test('bodyParts rejects needless splitting of a unit with at most 120 lines', async () => {
   const fx = baseFixtures();
   const body = bodyWithOneInteriorBlank(120, 59);
@@ -1505,6 +1535,18 @@ test('body parts accept the mandated two-way blank-line split', async () => {
   fx[2].bodies = sameLanguageBodies(splitBody(body, body.indexOf('\n\n') + 2));
   const result = await validate(fx);
   assert.equal(result.units.get('sec-1').parts.length, 2);
+});
+
+test('splitPlan scales to the maximum part count with dense blank boundaries', () => {
+  const lineCount = 50_000;
+  const partCount = MAX_BODY_PARTS;
+  const body = '\n'.repeat(lineCount);
+  const plan = splitPlan(body, partCount, lineCount);
+  assert.equal(plan.lineCount, lineCount);
+  assert.equal(plan.blankLineCount, lineCount - 1);
+  assert.equal(plan.cuts.length, partCount - 1);
+  assert.deepEqual(plan.cuts.slice(0, 3), [12, 24, 37]);
+  assert.equal(plan.cuts.at(-1), 49_988);
 });
 
 test('equidistant split tie chooses the earlier blank boundary', async () => {
@@ -1576,6 +1618,46 @@ test('body parts reject a mid-word cut even when the body has a valid blank boun
     validate(fx),
     (e) => /unit "sec-1": en: body parts must use the mandated blank-line cut points/.test(e.message)
   );
+});
+
+test('deeply nested list markers remain bounded on one short line', () => {
+  const markerCount = 50_000;
+  const body = '- '.repeat(markerCount) + 'leaf\n';
+  assert.deepEqual(findHeadings(body), []);
+});
+
+test('deep active-list lazy continuations reuse the active frame state', () => {
+  const markerCount = 50_000;
+  const continuationCount = 50_000;
+  const body = '- '.repeat(markerCount) + 'paragraph\n' +
+    'lazy continuation\n'.repeat(continuationCount);
+  assert.deepEqual(findHeadings(body), []);
+});
+
+test('deep list fences reuse their list-only classification across blank lines', () => {
+  const markerCount = 50_000;
+  const blankCount = 50_000;
+  const markers = '- '.repeat(markerCount);
+  const body = markers + '```\n' + '\n'.repeat(blankCount) +
+    markers + '```\n';
+  assert.deepEqual(findHeadings(body), []);
+});
+
+test('deeply nested fenced containers preserve hidden and visible headings', () => {
+  const markerCount = 50_000;
+  const markers = '> '.repeat(markerCount);
+  const body =
+    markers + '```\n' +
+    markers + '# hidden\n' +
+    markers + '```\n' +
+    '# visible\n';
+  assert.deepEqual(findHeadings(body), [{
+    level: 1,
+    raw: '# visible',
+    container: 'root',
+    type: 'ATX',
+    line: 4,
+  }]);
 });
 
 test('legacy en.md/ru.md/zh.md without body files', async () => {
@@ -2105,6 +2187,468 @@ test('backup cleanup failure never rolls back committed six-output build', async
         .map((name) => path.join(directory, name)))
       .sort();
     assert.deepEqual(leftovers, [failedBackup].sort());
+
+    // The commit marker is already durable when cleanup fails. Recovery must
+    // therefore retain new bytes and finish only the remaining cleanup.
+    recoverBuildOutputTransaction(versionDir, contentDir);
+    for (const lang of LANGS) {
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), build.bufs[lang]);
+      assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), build.readmeBufs[lang]);
+    }
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
+    assert.deepEqual(
+      [versionDir, contentDir].flatMap((directory) => fs.readdirSync(directory)
+        .filter((name) => name.endsWith('.tmp') || name.endsWith('.bak'))),
+      []
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a child-process death after backup or install rename is recovered on the next invocation', async () => {
+  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
+  const run = (versionDir, contentDir, crashPoint = null, recover = false) => {
+    const source = `
+      import { buildBuffers, writeBuildOutputs, recoverBuildOutputTransaction } from ${JSON.stringify(scriptUrl)};
+      const versionDir = ${JSON.stringify(versionDir)};
+      const contentDir = ${JSON.stringify(contentDir)};
+      ${recover ? 'recoverBuildOutputTransaction(versionDir, contentDir);' : ''}
+      const build = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, build);
+    `;
+    const env = { ...process.env };
+    if (crashPoint !== null) env.KTAV_BUILD_SPEC_CRASH_AFTER_RENAME = crashPoint;
+    else delete env.KTAV_BUILD_SPEC_CRASH_AFTER_RENAME;
+    return spawnSync(process.execPath, ['--input-type=module', '-e', source], {
+      env,
+      encoding: 'utf8',
+    });
+  };
+
+  for (const [label, crashPoint] of [['backup', 'backup:2'], ['install', 'install:3']]) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-write-crash-${label}-`));
+    try {
+      const versionDir = path.join(temp, 'versions', '0.7');
+      const contentDir = path.join(versionDir, 'content');
+      const fixtures = baseFixtures();
+      makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+      const initial = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, initial);
+
+      const crashed = run(versionDir, contentDir, crashPoint);
+      assert.notEqual(crashed.status, 0, `${label} child unexpectedly completed`);
+      assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), true);
+
+      const recovered = run(versionDir, contentDir, null, true);
+      assert.equal(recovered.status, 0, recovered.stderr);
+      for (const lang of LANGS) {
+        assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), initial.bufs[lang]);
+        assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), initial.readmeBufs[lang]);
+      }
+      for (const directory of [versionDir, contentDir]) {
+        assert.deepEqual(
+          fs.readdirSync(directory).filter((name) =>
+            name === '.build-spec.transaction.json' || name.endsWith('.tmp') || name.endsWith('.bak')),
+          []
+        );
+      }
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+});
+
+test('all transaction file writes preserve offsets across short writes', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-short-write-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    let calls = 0;
+    let observedCandidateOnly = false;
+    const shortWrite = (fd, buffer, offset, length) => {
+      calls++;
+      if (!observedCandidateOnly) {
+        assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+        observedCandidateOnly = true;
+      }
+      return fs.writeSync(fd, buffer, offset, Math.min(length, 3));
+    };
+
+    writeBuildOutputs(versionDir, contentDir, build, { writeSync: shortWrite });
+    assert.ok(calls > 20, `expected short writes at every transaction write site, got ${calls}`);
+    for (const lang of LANGS) {
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), build.bufs[lang]);
+      assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), build.readmeBufs[lang]);
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a zero-progress transaction write is rejected', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-zero-write-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, { writeSync: () => 0 }),
+      /zero progress/
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('published transaction journal contains only exact derived records and rejects crafted paths', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-journal-schema-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const manifestPath = path.join(contentDir, 'manifest.js');
+    const manifestBefore = fs.readFileSync(manifestPath);
+    write(path.join(versionDir, '.build-spec.transaction.json'), JSON.stringify({
+      format: 'ktav-build-output-transaction',
+      version: 1,
+      items: [{ destination: manifestPath, tempPath: manifestPath, backupPath: manifestPath }],
+    }) + '\n');
+
+    assert.throws(
+      () => recoverBuildOutputTransaction(versionDir, contentDir),
+      /invalid schema|invalid header|unsupported/
+    );
+    assert.deepEqual(fs.readFileSync(manifestPath), manifestBefore);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('recovery cleans an unpublished journal tmp but never treats it as a journal', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-journal-torn-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const torn = path.join(versionDir, '.build-spec.transaction.json.tmp');
+    write(torn, '{"phase":"installing"');
+    recoverBuildOutputTransaction(versionDir, contentDir);
+    assert.equal(fs.existsSync(torn), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('--check reports pending transaction artifacts without removing or rewriting them', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-check-transaction-'));
+  try {
+    const scriptDir = path.join(temp, 'scripts');
+    const versionDir = path.join(temp, 'versions', '0.7');
+    const contentDir = path.join(versionDir, 'content');
+    fs.mkdirSync(scriptDir, { recursive: true });
+    fs.copyFileSync(path.join(process.cwd(), 'scripts', 'build_spec.mjs'), path.join(scriptDir, 'build_spec.mjs'));
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
+      JSON.stringify({
+        format: 'ktav-section-inventory',
+        units: lockUnits(fixtures, fixtures.map((u) => u.name)),
+        version: '0.7.0',
+      }, null, 2) + '\n');
+    const build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
+    writeBuildOutputs(versionDir, contentDir, build);
+    const torn = path.join(versionDir, '.build-spec.transaction.json.tmp');
+    const lock = path.join(versionDir, '.build-spec.transaction.lock');
+    write(torn, 'torn unpublished journal');
+    write(lock, 'dead-owner lock must remain byte-identical\n');
+    const before = new Map([torn, lock].map((file) => [file, fs.readFileSync(file)]));
+    const result = spawnSync(process.execPath, [path.join(scriptDir, 'build_spec.mjs'), '--check'], {
+      cwd: temp, encoding: 'utf8',
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /pending\/interrupted transaction artifact/);
+    for (const [file, bytes] of before) assert.deepEqual(fs.readFileSync(file), bytes, file);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a live cooperative lock blocks a second writer without touching outputs', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-live-lock-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const lockPath = path.join(versionDir, '.build-spec.transaction.lock');
+    const lock = {
+      format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+      incarnation: '0123456789abcdef0123456789abcdef',
+      nonce: '0123456789abcdef0123456789abcdef',
+      leaseUntil: Date.now() + 60_000,
+    };
+    write(lockPath, JSON.stringify(lock) + '\n');
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build),
+      /owned by live process/
+    );
+    assert.deepEqual(JSON.parse(fs.readFileSync(lockPath, 'utf8')), lock);
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a dead owner lock is reclaimed before deterministic recovery and write', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-stale-lock-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify({
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'fedcba9876543210fedcba9876543210',
+      nonce: 'fedcba9876543210fedcba9876543210',
+      leaseUntil: 0,
+    }) + '\n');
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build));
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a live PID with an unrelated incarnation blocks while an expired lease is reclaimable', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-incarnation-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    const lockPath = path.join(versionDir, '.build-spec.transaction.lock');
+    const fixedNow = 10_000;
+    const unrelated = {
+      format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: fixedNow + 60_000,
+    };
+    write(lockPath, JSON.stringify(unrelated) + '\n');
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, { now: fixedNow }),
+      /owned by live process/
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+
+    const stale = { ...unrelated, leaseUntil: fixedNow - 1 };
+    write(lockPath, JSON.stringify(stale) + '\n');
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, { now: fixedNow }));
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a crash-created complete lock candidate is recovered without exposing it as the final lock', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-candidate-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    const fixedNow = 20_000;
+    write(path.join(versionDir, '.build-spec.transaction.lock.candidate'), JSON.stringify({
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'cccccccccccccccccccccccccccccccc',
+      nonce: 'dddddddddddddddddddddddddddddddd', leaseUntil: fixedNow - 1,
+    }) + '\n');
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, { now: fixedNow }));
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock.candidate')), false);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('a reclaimer cannot remove a replacement lock from a stale-incarnation interleaving', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-interleave-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    const stale = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+      nonce: 'ffffffffffffffffffffffffffffffff', leaseUntil: 0,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(stale) + '\n');
+    const replacement = {
+      format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+      incarnation: '11111111111111111111111111111111',
+      nonce: '22222222222222222222222222222222', leaseUntil: Date.now() + 60_000,
+    };
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        onStaleLockClaimed() {
+          write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(replacement) + '\n');
+        },
+      }),
+      /owned by live process/
+    );
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(versionDir, '.build-spec.transaction.lock'), 'utf8')),
+      replacement
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('crash recovery restores distinct old bytes before a later full write installs new bytes', async () => {
+  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-distinct-recovery-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const oldBuild = await buildBuffers(contentDir);
+    writeBuildOutputs(versionDir, contentDir, oldBuild);
+    write(path.join(contentDir, 'named-abstract', 'body-1.js'),
+      bodyJs('distinct new body.\n\n', 'новое тело.\n\n', '新的正文。\n\n'));
+    const newBuild = await buildBuffers(contentDir);
+    const source = `
+      import { buildBuffers, writeBuildOutputs } from ${JSON.stringify(scriptUrl)};
+      const versionDir = ${JSON.stringify(versionDir)};
+      const contentDir = ${JSON.stringify(contentDir)};
+      const build = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, build);
+    `;
+    const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: 'install:3' };
+    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    assert.notEqual(crashed.status, 0);
+    const journal = JSON.parse(fs.readFileSync(path.join(versionDir, '.build-spec.transaction.json'), 'utf8'));
+    assert.equal(journal.phase, 'installing');
+    assert.match(journal.nonce, /^[0-9a-f]{32}$/);
+    assert.equal(journal.outputs.length, 6);
+    assert.equal(journal.outputs.some((item) => Object.keys(item).some((key) => /path/i.test(key))), false);
+
+    // Recover immediately, before asking the builder to perform another full write.
+    recoverBuildOutputTransaction(versionDir, contentDir);
+    for (const lang of LANGS) {
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), oldBuild.bufs[lang]);
+      assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), oldBuild.readmeBufs[lang]);
+    }
+    writeBuildOutputs(versionDir, contentDir, newBuild);
+    for (const lang of LANGS) {
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), newBuild.bufs[lang]);
+      assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), newBuild.readmeBufs[lang]);
+    }
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('distinct-byte crash matrix covers backup and install offsets, including missing destinations', async () => {
+  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
+  const runCase = async (label, crashPoint, missingIndexes = []) => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-matrix-${label}-`));
+    try {
+      const versionDir = path.join(temp, 'version');
+      const contentDir = path.join(versionDir, 'content');
+      const fixtures = baseFixtures();
+      makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+      const oldBuild = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, oldBuild);
+      write(path.join(contentDir, 'named-abstract', 'body-1.js'),
+        bodyJs(`matrix en body ${label}.\n\n`, `matrix ru body ${label}.\n\n`, `matrix zh body ${label}.\n\n`));
+      write(path.join(contentDir, README_SOURCE_FILE), bodyJs(
+        `# Matrix EN README ${label}\n`, `# Matrix RU README ${label}\n`, `# Matrix ZH README ${label}\n`));
+      const newBuild = await buildBuffers(contentDir);
+      const destinations = LANGS.flatMap((lang) => [
+        path.join(versionDir, OUT_FILES[lang]), path.join(contentDir, README_FILES[lang]),
+      ]);
+      const oldBytes = LANGS.flatMap((lang) => [oldBuild.bufs[lang], oldBuild.readmeBufs[lang]]);
+      const newBytes = LANGS.flatMap((lang) => [newBuild.bufs[lang], newBuild.readmeBufs[lang]]);
+      assert.equal(new Set(newBytes.map((bytes) => bytes.toString('hex'))).size, 6);
+      for (const index of missingIndexes) fs.unlinkSync(destinations[index]);
+      const source = `
+        import { buildBuffers, writeBuildOutputs } from ${JSON.stringify(scriptUrl)};
+        const versionDir = ${JSON.stringify(versionDir)};
+        const contentDir = ${JSON.stringify(contentDir)};
+        const build = await buildBuffers(contentDir);
+        writeBuildOutputs(versionDir, contentDir, build);
+      `;
+      const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: crashPoint };
+      const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+      assert.notEqual(crashed.status, 0, `${label} child unexpectedly completed`);
+      recoverBuildOutputTransaction(versionDir, contentDir);
+      for (let index = 0; index < destinations.length; index++) {
+        if (missingIndexes.includes(index)) assert.equal(fs.existsSync(destinations[index]), false, destinations[index]);
+        else assert.deepEqual(fs.readFileSync(destinations[index]), oldBytes[index], destinations[index]);
+      }
+      writeBuildOutputs(versionDir, contentDir, newBuild);
+      for (let index = 0; index < destinations.length; index++) {
+        assert.deepEqual(fs.readFileSync(destinations[index]), newBytes[index], destinations[index]);
+      }
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  };
+
+  for (const phase of ['backup', 'install']) {
+    for (let index = 0; index < 6; index++) await runCase(`${phase}-${index}`, `${phase}:${index}`);
+  }
+  await runCase('backup-missing', 'backup:1', [0]);
+  await runCase('install-missing', 'install:3', [0, 3]);
+});
+
+test('pre-commit recovery rejects a missing backup without mutating the remaining outputs', async () => {
+  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-missing-backup-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const initial = await buildBuffers(contentDir);
+    writeBuildOutputs(versionDir, contentDir, initial);
+    for (const lang of LANGS) {
+      write(path.join(versionDir, OUT_FILES[lang]), Buffer.from(`old spec ${lang}\n`));
+      write(path.join(contentDir, README_FILES[lang]), Buffer.from(`old readme ${lang}\n`));
+    }
+    const source = `
+      import { buildBuffers, writeBuildOutputs } from ${JSON.stringify(scriptUrl)};
+      const versionDir = ${JSON.stringify(versionDir)};
+      const contentDir = ${JSON.stringify(contentDir)};
+      const build = await buildBuffers(contentDir);
+      writeBuildOutputs(versionDir, contentDir, build);
+    `;
+    const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: 'backup:0' };
+    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    assert.notEqual(crashed.status, 0);
+    const backup = fs.readdirSync(versionDir).find((name) => name.endsWith('.bak'));
+    assert.ok(backup);
+    fs.unlinkSync(path.join(versionDir, backup));
+    assert.throws(
+      () => recoverBuildOutputTransaction(versionDir, contentDir),
+      /missing transaction backup|ambiguous/
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

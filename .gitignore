@@ -27,3 +27,24 @@ __pycache__/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# build_spec transaction artifacts
+.build-spec.transaction.json
+.build-spec.transaction.json.tmp
+.build-spec.transaction.lock
+.build-spec.transaction.lock.candidate
+.build-spec.transaction.lock.claim
+.build-spec.transaction.lock.lease
+.build-spec.transaction.lock.lease.*
+.spec.md.*.tmp
+.spec.md.*.bak
+.spec.ru.md.*.tmp
+.spec.ru.md.*.bak
+.spec.zh.md.*.tmp
+.spec.zh.md.*.bak
+.README.md.*.tmp
+.README.md.*.bak
+.README.ru.md.*.tmp
+.README.ru.md.*.bak
+.README.zh.md.*.tmp
+.README.zh.md.*.bak
