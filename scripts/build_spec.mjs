@@ -1978,6 +1978,8 @@ const TRANSACTION_LOCK_LEASE_MS = 60_000;
 const TRANSACTION_NONCE_RE = /^[0-9a-f]{32}$/u;
 const TRANSACTION_LOCK_UNVERIFIED_INCARNATION = '00000000000000000000000000000000';
 const TRANSACTION_DIGEST_RE = /^[0-9a-f]{64}$/u;
+const RECOVERABLE_OWNER_KEYS = new Set();
+const RECOVERABLE_ARTIFACTS = new Map();
 const TRANSACTION_OUTPUTS = LANGS.flatMap((lang) => [
   { root: 'spec', name: OUT_FILES[lang] },
   { root: 'content', name: README_FILES[lang] },
@@ -2146,38 +2148,105 @@ function removeExactRegular(filePath, label, syncDir = null, unlinkSync = fs.unl
 // Metadata files are private until their final record is published. Cleanup
 // after a failed write must not depend on another fsync succeeding, otherwise
 // the failed publication can poison the next acquisition attempt.
-function removePrivateRegularBestEffort(filePath) {
+function removePrivateRegularBestEffort(filePath, unlinkSync = fs.unlinkSync) {
   try {
     const stat = fs.lstatSync(filePath);
-    if (stat.isFile()) fs.unlinkSync(filePath);
+    if (stat.isFile()) unlinkSync(filePath);
+    return true;
   } catch {
     // Preserve the original metadata-write error. A non-regular replacement
     // is left untouched rather than being treated as our private temporary.
+    return false;
   }
 }
 
-function removeOwnedLockRecordBestEffort(filePath, owner, claim = false) {
+function removeOwnedLockRecordBestEffort(filePath, owner, claim = false,
+                                        unlinkSync = fs.unlinkSync) {
   try {
-    if (lstatRegularOrMissing(filePath, 'transaction lock artifact') === null) return;
+    if (lstatRegularOrMissing(filePath, 'transaction lock artifact') === null) return true;
     const value = claim ? readLockClaim(filePath, 'transaction lock artifact')
       : readLock(filePath, 'transaction lock artifact');
     const owned = claim ? lockClaimEqual(value, owner) : lockIdentityEqual(value, owner);
-    if (owned) removePrivateRegularBestEffort(filePath);
+    return !owned || removePrivateRegularBestEffort(filePath, unlinkSync);
   } catch {
     // Never remove an artifact whose ownership cannot be established.
+    return false;
   }
 }
 
-function cleanupFailedLockOwnerArtifacts(specDir, owner) {
-  removePrivateRegularBestEffort(lockCandidateTempPath(specDir, owner));
-  removePrivateRegularBestEffort(lockLeaseTmpPath(specDir, owner));
+function ownerRecoveryKey(specDir, owner) {
+  return `${path.resolve(specDir)}:${owner.pid}:${owner.incarnation}:${owner.nonce}`;
+}
+
+function rememberOwnerRecovery(specDir, owner) {
+  RECOVERABLE_OWNER_KEYS.add(ownerRecoveryKey(specDir, owner));
+}
+
+function forgetOwnerRecovery(specDir, owner) {
+  RECOVERABLE_OWNER_KEYS.delete(ownerRecoveryKey(specDir, owner));
+}
+
+function ownerRecoveryPending(specDir, owner) {
+  return RECOVERABLE_OWNER_KEYS.has(ownerRecoveryKey(specDir, owner));
+}
+
+function rememberRecoverableArtifact(filePath, owner) {
+  RECOVERABLE_ARTIFACTS.set(path.resolve(filePath), {
+    pid: owner.pid, incarnation: owner.incarnation, nonce: owner.nonce,
+  });
+}
+
+function forgetRecoverableArtifact(filePath) {
+  RECOVERABLE_ARTIFACTS.delete(path.resolve(filePath));
+}
+
+function recoverableArtifactPending(filePath) {
+  return RECOVERABLE_ARTIFACTS.has(path.resolve(filePath));
+}
+
+function recoverableArtifactBelongsToCurrentProcess(filePath, options) {
+  const owner = RECOVERABLE_ARTIFACTS.get(path.resolve(filePath));
+  return owner !== undefined && owner.pid === process.pid &&
+    owner.incarnation === lockIncarnationForOwner(options, process.pid);
+}
+
+function cleanRecoverableMetadata(specDir, options) {
+  for (const [filePath, identity] of RECOVERABLE_ARTIFACTS) {
+    if (path.dirname(filePath) !== path.resolve(specDir) ||
+        identity.pid !== process.pid ||
+        identity.incarnation !== lockIncarnationForOwner(options, process.pid)) continue;
+    const name = path.basename(filePath);
+    if (!name.includes(`${TRANSACTION_LOCK_FILE}.candidate.`) &&
+        !name.includes(`${TRANSACTION_LOCK_FILE}.owner.`) &&
+        !name.includes(`${TRANSACTION_LOCK_FILE}.claim.`) &&
+        !name.includes(`${TRANSACTION_LOCK_FILE}.lease.`)) continue;
+    try {
+      const value = name.includes(`${TRANSACTION_LOCK_FILE}.claim.`)
+        ? readLockClaim(filePath, 'resumable transaction lock claim')
+        : readLock(filePath, 'resumable transaction lock artifact');
+      if (value.pid !== identity.pid || value.incarnation !== identity.incarnation ||
+          value.nonce !== identity.nonce) continue;
+      removeExactRegular(filePath, 'resumable transaction lock artifact', specDir,
+        options.unlinkSync || fs.unlinkSync);
+      forgetRecoverableArtifact(filePath);
+    } catch {
+      // Leave a changed or unreadable replacement untouched.
+    }
+  }
+}
+
+function cleanupFailedLockOwnerArtifacts(specDir, owner, options = {}) {
+  const unlinkSync = options.unlinkSync || fs.unlinkSync;
   for (const filePath of [
     lockCandidatePath(specDir, owner),
     lockOwnerPath(specDir, owner),
     lockLeasePath(specDir, owner),
     transactionLockPath(specDir),
   ]) {
-    removeOwnedLockRecordBestEffort(filePath, owner);
+    if (recoverableArtifactPending(filePath)) continue;
+    if (!removeOwnedLockRecordBestEffort(filePath, owner, false, unlinkSync)) {
+      rememberOwnerRecovery(specDir, owner);
+    }
   }
 }
 
@@ -2369,7 +2438,12 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   if (nonces.size !== 1) {
     fail(`unpublished transaction temporaries have ambiguous nonces: ${[...nonces].join(', ')}; data was left untouched`);
   }
-  if (!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) {
+  const currentOwner = options.owner;
+  const currentOwnerTemps = currentOwner !== null && currentOwner !== undefined &&
+    ownerIsCurrentProcess(currentOwner, options)
+    ? temps.filter((temp) => temp.nonce === currentOwner.nonce) : [];
+  if ((!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) &&
+      currentOwnerTemps.length === 0) {
     fail(`unpublished transaction temporaries have no provably dead owner; data was left untouched`);
   }
   const reclaimRe = new RegExp(
@@ -2385,7 +2459,7 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
       return owner !== null && owner.nonce === match[1] &&
         options.reclaimedOwners.some((candidate) => lockIdentityEqual(candidate, owner));
     });
-  if (!hasReclaimIntent) {
+  if (!hasReclaimIntent && currentOwnerTemps.length === 0) {
     fail(`unpublished transaction temporaries have no matching reclaim intent; data was left untouched`);
   }
   for (const owner of options.reclaimedOwners) {
@@ -2394,7 +2468,7 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
     }
   }
   for (const temp of temps) {
-    if (temp.digest === null) {
+    if (temp.digest === null && !currentOwnerTemps.includes(temp)) {
       fail(`unpublished transaction temporary ${temp.filePath} has no derived digest; data was left untouched`);
     }
   }
@@ -2864,7 +2938,8 @@ function lockClaimIsActive(claim, now, options) {
     observed === null || observed === claim.incarnation;
 }
 
-function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync) {
+function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync,
+                         unlinkSync = fs.unlinkSync) {
   let published = false;
   try {
     removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
@@ -2888,7 +2963,9 @@ function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync) {
       fs.linkSync(tmpPath, finalPath);
     } catch (e) {
       if (e.code === 'EEXIST') {
-        removePrivateRegularBestEffort(tmpPath);
+        if (!removePrivateRegularBestEffort(tmpPath, unlinkSync)) {
+          rememberRecoverableArtifact(tmpPath, value);
+        }
         return false;
       }
       throw e;
@@ -2898,9 +2975,13 @@ function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync) {
     syncDirectory(specDir);
     return true;
   } catch (error) {
-    removePrivateRegularBestEffort(tmpPath);
+    if (!removePrivateRegularBestEffort(tmpPath, unlinkSync)) {
+      rememberRecoverableArtifact(tmpPath, value);
+    }
     if (published && label === 'transaction lock claim') {
-      removeOwnedLockRecordBestEffort(finalPath, value, true);
+      if (!removeOwnedLockRecordBestEffort(finalPath, value, true, unlinkSync)) {
+        rememberRecoverableArtifact(finalPath, value);
+      }
     }
     throw error;
   }
@@ -2949,11 +3030,14 @@ function publishLockClaim(specDir, target, now, options) {
   };
   const tmpPath = lockClaimTmpPath(specDir, target, claim);
   if (!writeLockRecord(specDir, claimPath, tmpPath, claim, 'transaction lock claim',
-    options.writeSync || fs.writeSync)) return null;
+    options.writeSync || fs.writeSync, options.unlinkSync || fs.unlinkSync)) return null;
   try {
     setClaimCreationTime(claimPath, now);
   } catch (error) {
-    removeOwnedLockRecordBestEffort(claimPath, claim, true);
+    if (!removeOwnedLockRecordBestEffort(claimPath, claim, true,
+      options.unlinkSync || fs.unlinkSync)) {
+      rememberRecoverableArtifact(claimPath, claim);
+    }
     throw error;
   }
   return { path: claimPath, record: claim };
@@ -3202,7 +3286,13 @@ function cleanStaleLockLeaseTemps(specDir, now, options) {
       const observed = live ? observedProcessIncarnation(pid, options) : null;
       if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
           observed === null || observed === incarnation)) {
-        fail('transaction lock lease publication is in progress; refusing concurrent write');
+        if (!recoverableArtifactBelongsToCurrentProcess(filePath, options)) {
+          fail('transaction lock lease publication is in progress; refusing concurrent write');
+        }
+        removeExactRegular(filePath, 'resumable unpublished transaction lock lease', specDir,
+          options.unlinkSync || fs.unlinkSync);
+        forgetRecoverableArtifact(filePath);
+        continue;
       }
     } else {
       const owner = readLock(filePath, 'unpublished legacy transaction lock lease');
@@ -3210,7 +3300,8 @@ function cleanStaleLockLeaseTemps(specDir, now, options) {
         fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
       }
     }
-    removeExactRegular(filePath, 'stale unpublished transaction lock lease temporary', specDir);
+    removeExactRegular(filePath, 'stale unpublished transaction lock lease temporary', specDir,
+      options.unlinkSync || fs.unlinkSync);
   }
 }
 
@@ -3528,7 +3619,7 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
   return true;
 }
 
-function writeLockCandidate(specDir, owner, writeSync) {
+function writeLockCandidate(specDir, owner, writeSync, unlinkSync = fs.unlinkSync) {
   const candidatePath = lockCandidatePath(specDir, owner);
   const tmpPath = lockCandidateTempPath(specDir, owner);
   let published = false;
@@ -3550,8 +3641,13 @@ function writeLockCandidate(specDir, owner, writeSync) {
     published = true;
     syncDirectory(specDir);
   } catch (error) {
-    removePrivateRegularBestEffort(tmpPath);
-    if (published) removeOwnedLockRecordBestEffort(candidatePath, owner);
+    if (!removePrivateRegularBestEffort(tmpPath, unlinkSync)) {
+      rememberRecoverableArtifact(tmpPath, owner);
+    }
+    if (published && !removeOwnedLockRecordBestEffort(candidatePath, owner, false, unlinkSync)) {
+      rememberRecoverableArtifact(candidatePath, owner);
+      rememberOwnerRecovery(specDir, owner);
+    }
     throw error;
   }
 }
@@ -3590,7 +3686,7 @@ function removeCandidateIfOwned(specDir, owner) {
   }
 }
 
-function writeLockLease(specDir, owner, writeSync, now) {
+function writeLockLease(specDir, owner, writeSync, now, unlinkSync = fs.unlinkSync) {
   const refreshed = { ...owner, leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
   const tmpPath = lockLeaseTmpPath(specDir, owner);
   let published = false;
@@ -3614,8 +3710,13 @@ function writeLockLease(specDir, owner, writeSync, now) {
     syncDirectory(specDir);
     owner.leaseUntil = refreshed.leaseUntil;
   } catch (error) {
-    removePrivateRegularBestEffort(tmpPath);
-    if (published) removeOwnedLockRecordBestEffort(lockLeasePath(specDir, owner), owner);
+    if (!removePrivateRegularBestEffort(tmpPath, unlinkSync)) {
+      rememberRecoverableArtifact(tmpPath, owner);
+    }
+    if (published && !removeOwnedLockRecordBestEffort(lockLeasePath(specDir, owner), owner, false, unlinkSync)) {
+      rememberRecoverableArtifact(lockLeasePath(specDir, owner), owner);
+      rememberOwnerRecovery(specDir, owner);
+    }
     throw error;
   }
 }
@@ -3652,11 +3753,18 @@ function cleanStaleCandidateTemps(specDir, now, options) {
     const observed = live ? observedProcessIncarnation(pid, options) : null;
     if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
         observed === null || observed === incarnation)) {
-      fail(`transaction is owned by live process ${pid}; refusing concurrent write`);
+      if (!recoverableArtifactBelongsToCurrentProcess(candidatePath, options)) {
+        fail(`transaction is owned by live process ${pid}; refusing concurrent write`);
+      }
+      removeExactRegular(candidatePath, 'resumable unpublished transaction lock candidate', specDir,
+        options.unlinkSync || fs.unlinkSync);
+      forgetRecoverableArtifact(candidatePath);
+      continue;
     }
     if (!live || (observed !== null && incarnation !== TRANSACTION_LOCK_UNVERIFIED_INCARNATION &&
         observed !== incarnation)) {
-      removeExactRegular(candidatePath, 'stale unpublished transaction lock candidate', specDir);
+      removeExactRegular(candidatePath, 'stale unpublished transaction lock candidate', specDir,
+        options.unlinkSync || fs.unlinkSync);
     }
   }
 }
@@ -3715,9 +3823,16 @@ function cleanStaleLockClaimTemps(specDir, options) {
     const observed = live ? observedProcessIncarnation(pid, options) : null;
     if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
         observed === null || observed === incarnation)) {
-      fail(`transaction lock reclaim is in progress by live process ${pid}`);
+      if (!recoverableArtifactBelongsToCurrentProcess(claimPath, options)) {
+        fail(`transaction lock reclaim is in progress by live process ${pid}`);
+      }
+      removeExactRegular(claimPath, 'resumable unpublished transaction lock claim', specDir,
+        options.unlinkSync || fs.unlinkSync);
+      forgetRecoverableArtifact(claimPath);
+      continue;
     }
-    removeExactRegular(claimPath, 'stale unpublished transaction lock claim', specDir);
+    removeExactRegular(claimPath, 'stale unpublished transaction lock claim', specDir,
+      options.unlinkSync || fs.unlinkSync);
   }
 }
 
@@ -3735,6 +3850,7 @@ function acquireTransactionLock(specDir, options = {}) {
     cleanStaleLockLeaseTemps(specDir, now, lockOptions);
     cleanStaleLockClaimTemps(specDir, lockOptions);
     cleanStaleCandidateTemps(specDir, now, lockOptions);
+    cleanRecoverableMetadata(specDir, lockOptions);
     cleanExistingQuarantines(specDir, now, lockOptions);
     cleanExistingClaims(specDir, now, lockOptions);
     cleanLegacyFixedArtifacts(specDir, now, lockOptions);
@@ -3744,6 +3860,10 @@ function acquireTransactionLock(specDir, options = {}) {
     if (finalStat !== null) {
       const current = readLock(lockPath);
       if (lockIsActive(specDir, current, now, lockOptions)) {
+        if (options.resumeCurrentOwner === true && ownerIsCurrentProcess(current, lockOptions) &&
+            ownerRecoveryPending(specDir, current)) {
+          return current;
+        }
         fail(`transaction is owned by live process ${current.pid}; refusing concurrent write`);
       }
       if (!claimExactStaleFile(specDir, lockPath, current, now, lockOptions)) continue;
@@ -3760,6 +3880,16 @@ function acquireTransactionLock(specDir, options = {}) {
       if (lstatRegularOrMissing(candidatePath, 'transaction lock candidate') === null) continue;
       const candidate = readLock(candidatePath, 'transaction lock candidate');
       if (lockIsActive(specDir, candidate, now, lockOptions)) {
+        if (options.resumeCurrentOwner === true && ownerIsCurrentProcess(candidate, lockOptions) &&
+            ownerRecoveryPending(specDir, candidate)) {
+          if (!removeOwnedLockRecordBestEffort(candidatePath, candidate, false,
+            options.unlinkSync || fs.unlinkSync)) {
+            fail('resumable transaction lock candidate cleanup failed; no transaction mutation was attempted');
+          }
+          forgetOwnerRecovery(specDir, candidate);
+          forgetRecoverableArtifact(candidatePath);
+          continue;
+        }
         fail(`transaction is owned by live process ${candidate.pid}; refusing concurrent write`);
       }
       if (!claimExactStaleFile(specDir, candidatePath, candidate, now, lockOptions)) continue;
@@ -3772,15 +3902,15 @@ function acquireTransactionLock(specDir, options = {}) {
       staleClaimed = false;
     }
     try {
-      writeLockCandidate(specDir, owner, writeSync);
+      writeLockCandidate(specDir, owner, writeSync, options.unlinkSync || fs.unlinkSync);
       if (!publishLockCandidate(specDir, owner)) {
         removeCandidateIfOwned(specDir, owner);
         continue;
       }
-      writeLockLease(specDir, owner, writeSync, now);
+      writeLockLease(specDir, owner, writeSync, now, options.unlinkSync || fs.unlinkSync);
       return owner;
     } catch (e) {
-      cleanupFailedLockOwnerArtifacts(specDir, owner);
+      cleanupFailedLockOwnerArtifacts(specDir, owner, options);
       if (e.code !== 'EEXIST') throw e;
       continue;
     }
@@ -3815,6 +3945,7 @@ function releaseTransactionLock(specDir, owner, options = {}) {
     removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir,
       options.unlinkSync || fs.unlinkSync);
     syncDirectory(specDir);
+    forgetOwnerRecovery(specDir, owner);
     return;
   }
   const current = readLock(lockPath);
@@ -3860,16 +3991,23 @@ function releaseTransactionLock(specDir, owner, options = {}) {
   removeExactRegular(capturedRelease.quarantinePath, 'transaction quarantine record', specDir,
     options.unlinkSync || fs.unlinkSync);
   syncDirectory(specDir);
+  forgetOwnerRecovery(specDir, owner);
 }
 
 function transactionLockGuard(specDir, owner, options) {
   if (owner === null) fail('transaction mutation requires an owned cooperative lock');
   return () => {
+    transactionLockOwnershipGuard(specDir, owner, options)();
     const now = lockNow(options.now);
-    assertTransactionLockOwned(specDir, owner, now, options);
-    writeLockLease(specDir, owner, options.writeSync || fs.writeSync, now);
-    assertTransactionLockOwned(specDir, owner, now, options);
+    writeLockLease(specDir, owner, options.writeSync || fs.writeSync, now,
+      options.unlinkSync || fs.unlinkSync);
+    transactionLockOwnershipGuard(specDir, owner, options)();
   };
+}
+
+function transactionLockOwnershipGuard(specDir, owner, options) {
+  if (owner === null) fail('transaction mutation requires an owned cooperative lock');
+  return () => assertTransactionLockOwned(specDir, owner, lockNow(options.now), options);
 }
 
 function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) {
@@ -3975,15 +4113,21 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
   const resolvedSpecDir = path.resolve(specDir);
   const resolvedContentDir = path.resolve(contentDir);
   validateWriteRoots(resolvedSpecDir, resolvedContentDir);
-  const writeOptions = { ...options, reclaimedOwners: options.reclaimedOwners || [] };
+  const writeOptions = {
+    ...options, reclaimedOwners: options.reclaimedOwners || [], resumeCurrentOwner: true,
+  };
   const owner = writeOptions.lockHeld
     ? writeOptions.owner || null
     : acquireTransactionLock(resolvedSpecDir, writeOptions);
   const { renameSync = fs.renameSync, unlinkSync = fs.unlinkSync } = writeOptions;
   const writeSync = writeOptions.writeSync || fs.writeSync;
   const guard = transactionLockGuard(resolvedSpecDir, owner, { ...writeOptions, writeSync });
+  const ownershipGuard = transactionLockOwnershipGuard(resolvedSpecDir, owner, {
+    ...writeOptions, writeSync,
+  });
   let state = null;
   let firstJournalPublished = false;
+  let retainLockForRecovery = false;
   const temporaryPaths = [];
   try {
     recoverBuildOutputTransactionLocked(resolvedSpecDir, resolvedContentDir, {
@@ -3991,7 +4135,6 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       expectedOutputBytes: transactionOutputBytes(bufs, readmeBufs),
     });
 
-    const nonce = randomBytes(16).toString('hex');
     const dataFor = (index) => {
       const { root, name } = TRANSACTION_OUTPUTS[index];
       return Buffer.from(root === 'spec' ? bufs[LANGS.find((lang) => OUT_FILES[lang] === name)]
@@ -4000,7 +4143,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
     state = {
       format: TRANSACTION_FORMAT,
       version: TRANSACTION_VERSION,
-      nonce,
+      nonce: owner.nonce,
       durability: directorySyncSupport(),
       phase: 'prepared',
       backupIndex: 0,
@@ -4143,7 +4286,8 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
       } catch { /* preserve the original error */ }
     }
     if (!journalPublished) {
-      const cleaned = cleanupPreJournalArtifacts(resolvedSpecDir, temporaryPaths, writeOptions, guard);
+      const cleaned = cleanupPreJournalArtifacts(
+        resolvedSpecDir, temporaryPaths, writeOptions, ownershipGuard);
       if (!cleaned && state !== null) {
         try {
           // If private staging could not be removed, publish its exact derived
@@ -4152,9 +4296,13 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
             writeOptions.unlinkSync || fs.unlinkSync);
           journalPublished = true;
         } catch {
-          // A persistent write failure may prevent provenance publication; a
-          // later retry can still remove the exact private names best-effort.
-          cleanupPreJournalArtifacts(resolvedSpecDir, temporaryPaths, writeOptions, guard);
+          // Keep the owner lock when both cleanup and journal publication fail.
+          // Its nonce is the exact provenance for a same-process retry and a
+          // later dead-owner reclaim.
+          retainLockForRecovery = true;
+          rememberOwnerRecovery(resolvedSpecDir, owner);
+          cleanupPreJournalArtifacts(
+            resolvedSpecDir, temporaryPaths, writeOptions, ownershipGuard);
         }
       }
       if (!journalPublished) throw error;
@@ -4179,7 +4327,9 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
     transactionError.code = error.code;
     throw transactionError;
   } finally {
-    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, writeOptions);
+    if (owner !== null && !retainLockForRecovery) {
+      releaseTransactionLock(resolvedSpecDir, owner, writeOptions);
+    }
   }
 }
 

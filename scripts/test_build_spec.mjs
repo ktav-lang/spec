@@ -2416,6 +2416,131 @@ test('partial output staging keeps journal provenance when cleanup is transientl
   }
 });
 
+test('partial output, output cleanup, and journal publication failures retain retry provenance', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-partial-output-all-failures-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    const fixtures = baseFixtures();
+    makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    const build = await buildBuffers(contentDir);
+    let outputFailed = false;
+    let journalFailed = false;
+    const options = {
+      writeSync(fd, data, offset, length) {
+        if (!outputFailed && offset === 0 && Buffer.compare(data, build.bufs.en) === 0) {
+          outputFailed = true;
+          fs.writeSync(fd, data, offset, 1);
+          const error = new Error('injected output EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        if (!journalFailed && offset === 0 &&
+            data.includes(Buffer.from('ktav-build-output-transaction'))) {
+          journalFailed = true;
+          fs.writeSync(fd, data, offset, 1);
+          const error = new Error('injected journal EIO');
+          error.code = 'EIO';
+          throw error;
+        }
+        return fs.writeSync(fd, data, offset, length);
+      },
+      unlinkSync(filePath) {
+        if (path.basename(filePath).startsWith('.spec.md.') && filePath.endsWith('.tmp')) {
+          const error = new Error('injected output unlink EACCES');
+          error.code = 'EACCES';
+          throw error;
+        }
+        fs.unlinkSync(filePath);
+      },
+    };
+
+    assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options), /injected output EIO/);
+    assert.equal(outputFailed, true);
+    assert.equal(journalFailed, true);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), true);
+    assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.spec.md.') && name.endsWith('.tmp')), true);
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
+
+    assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build));
+    assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
+    assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('partial candidate, claim, and lease metadata resumes after initial cleanup failure', async () => {
+  const cases = [
+    ['candidate', 'candidate'],
+    ['claim', 'claim'],
+    ['lease', 'lease'],
+  ];
+  for (const [family, mode] of cases) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-${family}-partial-resume-`));
+    try {
+      const versionDir = path.join(temp, 'version');
+      const contentDir = path.join(versionDir, 'content');
+      const fixtures = baseFixtures();
+      makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+      const build = await buildBuffers(contentDir);
+      if (mode === 'claim') {
+        write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify({
+          format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+          incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+        }) + '\n');
+      }
+      let metadataWrite = 0;
+      let metadataFailed = false;
+      let cleanupFailed = false;
+      const options = {
+        processIncarnation: '11111111111111111111111111111111',
+        writeSync(fd, data, offset, length) {
+          const isClaim = data.includes(Buffer.from('ktav-build-output-lock-claim'));
+          const isMetadata = data.includes(Buffer.from('ktav-build-output-lock'));
+          if (isMetadata) metadataWrite++;
+          const failNow = !metadataFailed &&
+            ((mode === 'candidate' && metadataWrite === 1 && !isClaim) ||
+             (mode === 'claim' && isClaim) ||
+             (mode === 'lease' && metadataWrite === 2));
+          if (failNow) {
+            metadataFailed = true;
+            fs.writeSync(fd, data, offset, 1);
+            const error = new Error(`injected ${family} metadata EIO`);
+            error.code = 'EIO';
+            throw error;
+          }
+          return fs.writeSync(fd, data, offset, length);
+        },
+        unlinkSync(filePath) {
+          const name = path.basename(filePath);
+          if (!cleanupFailed && name.startsWith(`.build-spec.transaction.lock.${mode}.`) && name.endsWith('.tmp')) {
+            cleanupFailed = true;
+            const error = new Error(`injected ${family} cleanup EACCES`);
+            error.code = 'EACCES';
+            throw error;
+          }
+          fs.unlinkSync(filePath);
+        },
+      };
+
+      assert.throws(() => writeBuildOutputs(versionDir, contentDir, build, options),
+        new RegExp(`injected ${family} metadata EIO`));
+      assert.equal(metadataFailed, true);
+      assert.equal(cleanupFailed, true);
+      assert.ok(fs.readdirSync(versionDir).some((name) =>
+        name.startsWith(`.build-spec.transaction.lock.${mode}.`) && name.endsWith('.tmp')));
+
+      assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build, options));
+      assert.equal(fs.readdirSync(versionDir).some((name) => name.startsWith('.build-spec.transaction.lock.')), false);
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
+  }
+});
+
 test('candidate, claim, and lease write failures clean private metadata before retry', async () => {
   const cases = [
     ['candidate', null],
