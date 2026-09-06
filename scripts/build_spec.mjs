@@ -284,9 +284,10 @@ function isThematicBreak(line) {
 const HTML_BLOCK_TAGS =
   '(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|' +
   'colgroup|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|' +
-  'form|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|' +
-  'menu|menuitem|nav|ol|p|pre|script|search|section|summary|table|tbody|td|' +
-  'tfoot|th|thead|title|tr|track|ul)';
+  'form|frame|frameset|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|' +
+  'li|link|main|menu|menuitem|nav|noframes|ol|optgroup|option|p|param|pre|' +
+  'script|search|section|summary|table|tbody|td|tfoot|th|thead|title|tr|' +
+  'track|ul)';
 
 // The source format is prose plus fenced examples, not arbitrary HTML. Reject
 // each CommonMark HTML-block opener family instead of trying to model its
@@ -385,9 +386,9 @@ function parseHtmlBlockOpener(line) {
   }
   if (/^ {0,3}<!--/u.test(line)) return { htmlType: 2 };
   if (/^ {0,3}<\?/u.test(line)) return { htmlType: 3 };
-  if (/^ {0,3}<![A-Z]/u.test(line)) return { htmlType: 4 };
+  if (/^ {0,3}<![A-Za-z]/u.test(line)) return { htmlType: 4 };
   if (/^ {0,3}<!\[CDATA\[/u.test(line)) return { htmlType: 5 };
-  if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[ \\t/>]|$)`, 'iu').test(line)) {
+  if (new RegExp(`^ {0,3}</?${HTML_BLOCK_TAGS}(?=[\\t-\\r >]|/>)`, 'iu').test(line)) {
     return { htmlType: 6 };
   }
   if (isCompleteType7Tag(line)) return { htmlType: 7 };
@@ -506,9 +507,10 @@ function isEmptyListMarker(line, list) {
 // paragraph without repeating its container marker. Keep that container so a
 // later Setext underline is still associated with the active paragraph.
 function canContinueParagraph(line) {
+  const html = parseHtmlBlockOpener(line);
   if (/^[ \t]*$/.test(line) || parseAtxHeading(line) !== null ||
       parseFenceOpener(line) !== null || parseSetextUnderline(line) !== null ||
-      isThematicBreak(line) || parseHtmlBlockOpener(line) !== null) {
+      isThematicBreak(line) || (html !== null && html.htmlType !== 7)) {
     return false;
   }
   const list = parseListMarker(line, 0);
@@ -564,12 +566,9 @@ function normalizeContainerLine(line, state) {
     // its marker belongs to the parent of the previous list item and must be
     // normalized as a new item, including "1. first / 2. # heading".
     const sameParagraphContainer = state.paragraphContainer === container;
-    const lazyQuoteContinuation = state.paragraphContainer !== null &&
-      state.paragraphContainer.includes('/quote') &&
-      list.ordered && list.number !== '1';
     if ((sameParagraphContainer &&
          (isEmptyListMarker(line, list) ||
-          (list.ordered && list.number !== '1'))) || lazyQuoteContinuation) break;
+          (list.ordered && list.number !== '1')))) break;
 
     const markerIndent = leadingColumns(line, pos).column;
     const padding = consumeListPadding(line, list);
@@ -702,7 +701,9 @@ function findHeadings(body) {
       continue;
     }
     const html = normalized.isIndentedCode ? null : parseHtmlBlockOpener(line);
-    if (html !== null) {
+    const inlineHtmlContinuation = html?.htmlType === 7 &&
+      paragraphLine !== null && paragraphLine.container === normalized.container;
+    if (html !== null && !inlineHtmlContinuation) {
       headings.push({
         ...html,
         type: 'HTML',

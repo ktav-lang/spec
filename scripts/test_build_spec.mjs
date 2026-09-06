@@ -585,10 +585,7 @@ test('active paragraphs survive non-interrupting indented and lazy continuation 
   lazyOrdered[1].bodies = [sameLanguageBodies([
     '> Paragraph\n2. lazy continuation\n> ---\n\n',
   ])[0]];
-  await assert.rejects(
-    validate(lazyOrdered),
-    /unit "named-abstract": en: unit body contains a Setext heading/
-  );
+  await assert.doesNotReject(validate(lazyOrdered));
 });
 
 test('ordered list interruption follows the CommonMark start-number rule', async () => {
@@ -634,10 +631,20 @@ test('Setext and block-start lines do not become lazy continuations after an int
   lazyQuote[1].bodies = [sameLanguageBodies([
     '> Paragraph\n2. lazy continuation\n> ---\n\n',
   ])[0]];
-  await assert.rejects(
-    validate(lazyQuote),
-    /unit "named-abstract": en: unit body contains a Setext heading/
-  );
+  await assert.doesNotReject(validate(lazyQuote));
+
+  for (const body of [
+    '> 1. first\n> 2. # hidden\n\n',
+    '> prose\n2. # heading\n\n',
+  ]) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.rejects(
+      validate(fx),
+      /unit "named-abstract": en: unit body contains an ATX heading/,
+      body
+    );
+  }
 });
 
 test('tab-expanded container columns remain absolute and fenced tab content stays opaque', async () => {
@@ -674,8 +681,17 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
     ['<!-- comment -->', 2],
     ['<?processing-instruction>', 3],
     ['<!DOCTYPE html>', 4],
+    ['<!doctype html>', 4],
     ['<![CDATA[data]]>', 5],
     ['<div>', 6],
+    ['<frame>', 6],
+    ['<frameset>', 6],
+    ['<noframes>', 6],
+    ['<optgroup>', 6],
+    ['<option>', 6],
+    ['<param>', 6],
+    ['<param/>', 6],
+    ['<param />', 6],
     ['<span>', 7],
     ['<span title=">">', 7],
     ['<x-widget data-id="42" enabled>', 7],
@@ -700,6 +716,12 @@ test('all seven CommonMark HTML block opener families are forbidden outside fenc
     '```html\n<div>allowed in a confirmed fence</div>\n```\n\n',
   ])[0]];
   await assert.doesNotReject(validate(fenced));
+
+  for (const prose of ['<div/extra>', '<param/extra>']) {
+    const fx = baseFixtures();
+    fx[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
+    await assert.doesNotReject(validate(fx), prose);
+  }
 });
 
 test('CommonMark HTML type 7 requires a standalone syntactically complete tag', async () => {
@@ -714,6 +736,33 @@ test('CommonMark HTML type 7 requires a standalone syntactically complete tag', 
     const fx = baseFixtures();
     fx[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
     await assert.doesNotReject(validate(fx), prose);
+  }
+});
+
+test('CommonMark HTML type 7 continues an active paragraph but interrupts at block start', async () => {
+  for (const prose of ['<span>', '</span>', '<x-widget enabled>']) {
+    const continuation = baseFixtures();
+    continuation[1].bodies = [sameLanguageBodies([
+      `paragraph\n${prose}\n\n`,
+    ])[0]];
+    await assert.doesNotReject(validate(continuation), prose);
+
+    const blockStart = baseFixtures();
+    blockStart[1].bodies = [sameLanguageBodies([`${prose}\n\n`])[0]];
+    await assert.rejects(
+      validate(blockStart),
+      /unit "named-abstract": en: unit body contains a raw HTML block opener \(CommonMark type 7\)/,
+      prose
+    );
+  }
+
+  for (const body of [
+    '- paragraph\n<span>\n\n',
+    '> paragraph\n<span>\n\n',
+  ]) {
+    const continuation = baseFixtures();
+    continuation[1].bodies = [sameLanguageBodies([body])[0]];
+    await assert.doesNotReject(validate(continuation), body);
   }
 });
 
