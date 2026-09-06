@@ -2218,14 +2218,13 @@ test('backup cleanup failure never rolls back committed six-output build', async
 
 test('a child-process death after backup or install rename is recovered on the next invocation', async () => {
   const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
-  const run = (versionDir, contentDir, crashPoint = null, recover = false) => {
+  const run = (versionDir, contentDir, crashPoint = null, recover = false, writeAfterRecover = true) => {
     const source = `
       import { buildBuffers, writeBuildOutputs, recoverBuildOutputTransaction } from ${JSON.stringify(scriptUrl)};
       const versionDir = ${JSON.stringify(versionDir)};
       const contentDir = ${JSON.stringify(contentDir)};
       ${recover ? 'recoverBuildOutputTransaction(versionDir, contentDir);' : ''}
-      const build = await buildBuffers(contentDir);
-      writeBuildOutputs(versionDir, contentDir, build);
+      ${writeAfterRecover ? 'const build = await buildBuffers(contentDir);\n      writeBuildOutputs(versionDir, contentDir, build);' : ''}
     `;
     const env = { ...process.env };
     if (crashPoint !== null) env.KTAV_BUILD_SPEC_CRASH_AFTER_RENAME = crashPoint;
@@ -2250,8 +2249,12 @@ test('a child-process death after backup or install rename is recovered on the n
       assert.notEqual(crashed.status, 0, `${label} child unexpectedly completed`);
       assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), true);
 
-      const recovered = run(versionDir, contentDir, null, true);
+      const recovered = run(versionDir, contentDir, null, true, false);
       assert.equal(recovered.status, 0, recovered.stderr);
+      assert.equal(fs.readdirSync(versionDir).some((name) =>
+        name.startsWith('.build-spec.transaction.lock.release.reclaim.')), false);
+      const rewritten = run(versionDir, contentDir);
+      assert.equal(rewritten.status, 0, rewritten.stderr);
       for (const lang of LANGS) {
         assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), initial.bufs[lang]);
         assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), initial.readmeBufs[lang]);
@@ -2314,6 +2317,57 @@ test('a zero-progress transaction write is rejected', async () => {
     assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('candidate, claim, and lease write failures clean private metadata before retry', async () => {
+  const cases = [
+    ['candidate', null],
+    ['claim', 'claim'],
+    ['lease', 'lease'],
+  ];
+  for (const [family, mode] of cases) {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-${family}-write-failure-`));
+    try {
+      const versionDir = path.join(temp, 'version');
+      const contentDir = path.join(versionDir, 'content');
+      const fixtures = baseFixtures();
+      makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+      const build = await buildBuffers(contentDir);
+      if (mode === 'claim') {
+        write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify({
+          format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+          incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+          nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+        }) + '\n');
+      }
+
+      let calls = 0;
+      const failure = new Error(`injected ${family} metadata write failure`);
+      assert.throws(
+        () => writeBuildOutputs(versionDir, contentDir, build, {
+          writeSync(fd, data, offset, length) {
+            calls++;
+            const failNow = mode === 'lease' ? calls === 2 : calls === 1;
+            if (failNow) throw failure;
+            return fs.writeSync(fd, data, offset, length);
+          },
+        }),
+        new RegExp(`injected ${family} metadata write failure`)
+      );
+      assert.deepEqual(
+        [versionDir, contentDir].flatMap((directory) => fs.readdirSync(directory)
+          .filter((name) => name.startsWith('.build-spec.transaction.lock.') &&
+            (name.includes('.tmp') || name.includes('.candidate.') || name.includes('.owner.') ||
+             name.includes('.claim.') || name.includes('.lease.')))),
+        []
+      );
+      assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.lock')), mode === 'claim');
+      assert.doesNotThrow(() => writeBuildOutputs(versionDir, contentDir, build));
+      assert.deepEqual(fs.readFileSync(path.join(versionDir, 'spec.md')), build.bufs.en);
+    } finally {
+      fs.rmSync(temp, { recursive: true, force: true });
+    }
   }
 });
 
@@ -3051,9 +3105,16 @@ test('crash before first journal publication recovers derived output temporaries
     const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
     assert.notEqual(crashed.status, 0);
     assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
-    assert.ok(fs.readdirSync(versionDir).some((name) => /^\.spec\.md\.[0-9a-f]{32}\.[0-9a-f]{64}\.tmp$/u.test(name)));
+    const firstTemp = fs.readdirSync(versionDir).find((name) =>
+      /^\.spec\.md\.[0-9a-f]{32}\.[0-9a-f]{64}\.tmp$/u.test(name));
+    assert.ok(firstTemp);
+    // Model an interrupted first write after the owner has died: the exact
+    // derived name remains, but its bytes no longer match the filename digest.
+    fs.truncateSync(path.join(versionDir, firstTemp), 1);
     recoverBuildOutputTransaction(versionDir, contentDir);
     assert.equal(fs.readdirSync(versionDir).some((name) => name.endsWith('.tmp')), false);
+    assert.equal(fs.readdirSync(versionDir).some((name) =>
+      name.startsWith('.build-spec.transaction.lock.release.reclaim.')), false);
     assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });

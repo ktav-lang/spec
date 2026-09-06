@@ -2143,6 +2143,44 @@ function removeExactRegular(filePath, label, syncDir = null) {
   return true;
 }
 
+// Metadata files are private until their final record is published. Cleanup
+// after a failed write must not depend on another fsync succeeding, otherwise
+// the failed publication can poison the next acquisition attempt.
+function removePrivateRegularBestEffort(filePath) {
+  try {
+    const stat = fs.lstatSync(filePath);
+    if (stat.isFile()) fs.unlinkSync(filePath);
+  } catch {
+    // Preserve the original metadata-write error. A non-regular replacement
+    // is left untouched rather than being treated as our private temporary.
+  }
+}
+
+function removeOwnedLockRecordBestEffort(filePath, owner, claim = false) {
+  try {
+    if (lstatRegularOrMissing(filePath, 'transaction lock artifact') === null) return;
+    const value = claim ? readLockClaim(filePath, 'transaction lock artifact')
+      : readLock(filePath, 'transaction lock artifact');
+    const owned = claim ? lockClaimEqual(value, owner) : lockIdentityEqual(value, owner);
+    if (owned) removePrivateRegularBestEffort(filePath);
+  } catch {
+    // Never remove an artifact whose ownership cannot be established.
+  }
+}
+
+function cleanupFailedLockOwnerArtifacts(specDir, owner) {
+  removePrivateRegularBestEffort(lockCandidateTempPath(specDir, owner));
+  removePrivateRegularBestEffort(lockLeaseTmpPath(specDir, owner));
+  for (const filePath of [
+    lockCandidatePath(specDir, owner),
+    lockOwnerPath(specDir, owner),
+    lockLeasePath(specDir, owner),
+    transactionLockPath(specDir),
+  ]) {
+    removeOwnedLockRecordBestEffort(filePath, owner);
+  }
+}
+
 function removeJournal(journalPath, specDir) {
   removeExactRegular(journalPath, 'transaction journal', specDir);
   syncDirectory(specDir);
@@ -2333,6 +2371,22 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   if (!Array.isArray(options.reclaimedOwners) || options.reclaimedOwners.length === 0) {
     fail(`unpublished transaction temporaries have no provably dead owner; data was left untouched`);
   }
+  const reclaimRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `reclaim\\.([0-9a-f]{32})\\.[0-9a-f]{32}$`, 'u');
+  const hasReclaimIntent = lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)
+    .some((markerPath) => {
+      const match = reclaimRe.exec(path.basename(markerPath));
+      if (match === null) return false;
+      const owner = (() => {
+        try { return readLock(markerPath, 'transaction lock reclaim record'); } catch { return null; }
+      })();
+      return owner !== null && owner.nonce === match[1] &&
+        options.reclaimedOwners.some((candidate) => lockIdentityEqual(candidate, owner));
+    });
+  if (!hasReclaimIntent) {
+    fail(`unpublished transaction temporaries have no matching reclaim intent; data was left untouched`);
+  }
   for (const owner of options.reclaimedOwners) {
     if (lockIsActive(specDir, owner, lockNow(options.now), options)) {
       fail(`unpublished transaction temporary belongs to live process ${owner.pid}; data was left untouched`);
@@ -2341,14 +2395,6 @@ function cleanUnpublishedOutputTemps(specDir, contentDir, orphanPaths, options, 
   for (const temp of temps) {
     if (temp.digest === null) {
       fail(`unpublished transaction temporary ${temp.filePath} has no derived digest; data was left untouched`);
-    }
-    const actual = readRegularBytes(temp.filePath, 'unpublished transaction output temporary');
-    if (actual === null || hashBytes(actual) !== temp.digest) {
-      fail(`unpublished transaction temporary ${temp.filePath} has an unexpected digest; data was left untouched`);
-    }
-    const expected = options.expectedOutputBytes?.[temp.index];
-    if (expected !== undefined && (!Buffer.isBuffer(expected) || Buffer.compare(actual, expected) !== 0)) {
-      fail(`unpublished transaction temporary ${temp.filePath} does not match the derived output; data was left untouched`);
     }
   }
   for (const temp of temps) {
@@ -2776,35 +2822,45 @@ function lockClaimIsActive(claim, now, options) {
 }
 
 function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync) {
-  removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
-  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  let published = false;
   try {
-    writeAllSync(fd, Buffer.from(lockJson(value), 'utf8'), writeSync);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
-  }
-  const written = readRegularBytes(tmpPath, `unpublished ${label} temporary`);
-  if (Buffer.compare(written, Buffer.from(lockJson(value), 'utf8')) !== 0) {
-    fail(`${label} temporary was not written completely; no transaction mutation was attempted`);
-  }
-  if (label === 'transaction lock claim') readLockClaim(tmpPath, label);
-  else readLock(tmpPath, label);
-  try {
+    removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
+    const fd = fs.openSync(tmpPath, 'wx', 0o600);
+    try {
+      writeAllSync(fd, Buffer.from(lockJson(value), 'utf8'), writeSync);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const written = readRegularBytes(tmpPath, `unpublished ${label} temporary`);
+    if (Buffer.compare(written, Buffer.from(lockJson(value), 'utf8')) !== 0) {
+      fail(`${label} temporary was not written completely; no transaction mutation was attempted`);
+    }
+    if (label === 'transaction lock claim') readLockClaim(tmpPath, label);
+    else readLock(tmpPath, label);
     // A hard link is the cross-platform no-replace publication primitive for
     // a regular file. rename() would overwrite a concurrent fresh claim on
     // POSIX, destroying the serialization guarantee.
-    fs.linkSync(tmpPath, finalPath);
-  } catch (e) {
-    if (e.code === 'EEXIST') {
-      removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
-      return false;
+    try {
+      fs.linkSync(tmpPath, finalPath);
+    } catch (e) {
+      if (e.code === 'EEXIST') {
+        removePrivateRegularBestEffort(tmpPath);
+        return false;
+      }
+      throw e;
     }
-    throw e;
+    published = true;
+    removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
+    syncDirectory(specDir);
+    return true;
+  } catch (error) {
+    removePrivateRegularBestEffort(tmpPath);
+    if (published && label === 'transaction lock claim') {
+      removeOwnedLockRecordBestEffort(finalPath, value, true);
+    }
+    throw error;
   }
-  removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
-  syncDirectory(specDir);
-  return true;
 }
 
 function publishLockClaim(specDir, target, now, options) {
@@ -2851,7 +2907,12 @@ function publishLockClaim(specDir, target, now, options) {
   const tmpPath = lockClaimTmpPath(specDir, target, claim);
   if (!writeLockRecord(specDir, claimPath, tmpPath, claim, 'transaction lock claim',
     options.writeSync || fs.writeSync)) return null;
-  setClaimCreationTime(claimPath, now);
+  try {
+    setClaimCreationTime(claimPath, now);
+  } catch (error) {
+    removeOwnedLockRecordBestEffort(claimPath, claim, true);
+    throw error;
+  }
   return { path: claimPath, record: claim };
 }
 
@@ -3430,21 +3491,29 @@ function claimExactStaleFile(specDir, targetPath, expected, now, options) {
 function writeLockCandidate(specDir, owner, writeSync) {
   const candidatePath = lockCandidatePath(specDir, owner);
   const tmpPath = lockCandidateTempPath(specDir, owner);
-  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  let published = false;
   try {
-    const data = Buffer.from(lockJson(owner), 'utf8');
-    writeAllSync(fd, data, writeSync);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+    const fd = fs.openSync(tmpPath, 'wx', 0o600);
+    try {
+      const data = Buffer.from(lockJson(owner), 'utf8');
+      writeAllSync(fd, data, writeSync);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const written = readRegularBytes(tmpPath, 'unpublished transaction lock candidate');
+    if (Buffer.compare(written, Buffer.from(lockJson(owner), 'utf8')) !== 0) {
+      fail('transaction lock candidate was not written completely; no transaction mutation was attempted');
+    }
+    readLock(tmpPath, 'transaction lock candidate');
+    fs.renameSync(tmpPath, candidatePath);
+    published = true;
+    syncDirectory(specDir);
+  } catch (error) {
+    removePrivateRegularBestEffort(tmpPath);
+    if (published) removeOwnedLockRecordBestEffort(candidatePath, owner);
+    throw error;
   }
-  const written = readRegularBytes(tmpPath, 'unpublished transaction lock candidate');
-  if (Buffer.compare(written, Buffer.from(lockJson(owner), 'utf8')) !== 0) {
-    fail('transaction lock candidate was not written completely; no transaction mutation was attempted');
-  }
-  readLock(tmpPath, 'transaction lock candidate');
-  fs.renameSync(tmpPath, candidatePath);
-  syncDirectory(specDir);
 }
 
 function publishLockCandidate(specDir, owner) {
@@ -3484,23 +3553,31 @@ function removeCandidateIfOwned(specDir, owner) {
 function writeLockLease(specDir, owner, writeSync, now) {
   const refreshed = { ...owner, leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
   const tmpPath = lockLeaseTmpPath(specDir, owner);
-  removeExactRegular(tmpPath, 'unpublished transaction lock lease temporary', specDir);
-  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  let published = false;
   try {
-    const data = Buffer.from(lockJson(refreshed), 'utf8');
-    writeAllSync(fd, data, writeSync);
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+    removeExactRegular(tmpPath, 'unpublished transaction lock lease temporary', specDir);
+    const fd = fs.openSync(tmpPath, 'wx', 0o600);
+    try {
+      const data = Buffer.from(lockJson(refreshed), 'utf8');
+      writeAllSync(fd, data, writeSync);
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const written = readRegularBytes(tmpPath, 'unpublished transaction lock lease temporary');
+    if (Buffer.compare(written, Buffer.from(lockJson(refreshed), 'utf8')) !== 0) {
+      fail('transaction lock lease temporary was not written completely; no transaction mutation was attempted');
+    }
+    readLock(tmpPath, 'transaction lock lease');
+    fs.renameSync(tmpPath, lockLeasePath(specDir, owner));
+    published = true;
+    syncDirectory(specDir);
+    owner.leaseUntil = refreshed.leaseUntil;
+  } catch (error) {
+    removePrivateRegularBestEffort(tmpPath);
+    if (published) removeOwnedLockRecordBestEffort(lockLeasePath(specDir, owner), owner);
+    throw error;
   }
-  const written = readRegularBytes(tmpPath, 'unpublished transaction lock lease temporary');
-  if (Buffer.compare(written, Buffer.from(lockJson(refreshed), 'utf8')) !== 0) {
-    fail('transaction lock lease temporary was not written completely; no transaction mutation was attempted');
-  }
-  readLock(tmpPath, 'transaction lock lease');
-  fs.renameSync(tmpPath, lockLeasePath(specDir, owner));
-  syncDirectory(specDir);
-  owner.leaseUntil = refreshed.leaseUntil;
 }
 
 function assertTransactionLockOwned(specDir, owner, now, options) {
@@ -3663,6 +3740,7 @@ function acquireTransactionLock(specDir, options = {}) {
       writeLockLease(specDir, owner, writeSync, now);
       return owner;
     } catch (e) {
+      cleanupFailedLockOwnerArtifacts(specDir, owner);
       if (e.code !== 'EEXIST') throw e;
       continue;
     }
@@ -3780,6 +3858,7 @@ function recoverBuildOutputTransactionLocked(specDir, contentDir, options = {}) 
       guard();
       removeJournal(journalPath, specDir);
     }
+    cleanReclaimedOwnerMarkers(specDir, options);
     return;
   }
   guard();
