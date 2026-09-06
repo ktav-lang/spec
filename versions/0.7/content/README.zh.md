@@ -245,10 +245,14 @@ node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negat
 并 fsync 的快照,只包含经过验证的 nonce、digest、阶段索引和六个已知输出
 标识;所有临时文件与备份路径都由构建器派生。durable commit marker 之前,
 恢复会还原精确的旧字节;之后会保留精确的新字节并只完成清理。活跃的协作
-lock 会拒绝第二个写入者。仅凭 lease 过期绝不会回收仍在运行且进程
-incarnation 匹配的所有者;只有已证明进程退出或已证明 incarnation 不同才可
-回收。在没有可靠 incarnation 来源的平台上,构建器会保守地保留活跃所有权。
-lock claim 使用所有者专属路径,并且只有在完整验证后才会移动。如果存在未完成的 journal、lock 或事务文件,
+lock 会拒绝第二个写入者。Linux 和 Windows 的所有者使用与回收者相同的可观测
+进程启动路径来生成 incarnation;如果该来源不可用,构建器会记录未验证的
+incarnation,并且永远不会回收仍然存活的 PID。仅凭 lease 过期绝不会回收仍在
+运行且 incarnation 匹配的所有者;只有已证明进程退出或已证明 incarnation 不同
+才可回收。回收会先原子发布新的所有者专属 claim,再捕获过期 target,并且只删除
+精确旧所有者的 artifact。release 会先捕获 alias;如果发现 replacement,会先恢复
+它,再删除所有者 artifact。旧的固定 candidate、claim 和 lease 只有在保守验证
+所有者已不存在后才会清理;`--check` 只报告它们。如果存在未完成的 journal、lock 或事务文件,
 `--check` 会报告它们并且不执行恢复或清理。某些平台(尤其 Windows)不支持
 目录 fsync,因此构建器明确提供 file-only crash durability,不会虚假声称
 它能防止断电导致的数据丢失。

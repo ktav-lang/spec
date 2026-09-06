@@ -2493,6 +2493,36 @@ test('an expired lease never reclaims a live matching incarnation', async () => 
   }
 });
 
+test('an unavailable process incarnation never reclaims a live PID', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-unverified-incarnation-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const owner = {
+      format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+      incarnation: '00000000000000000000000000000000',
+      nonce: 'abcdefabcdefabcdefabcdefabcdefab', leaseUntil: 1,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(owner) + '\n');
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        now: 10_000,
+        processIncarnation: () => null,
+      }),
+      /owned by live process/
+    );
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(versionDir, '.build-spec.transaction.lock'), 'utf8')),
+      owner
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
 test('a crash-created complete lock candidate is recovered without exposing it as the final lock', async () => {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lock-candidate-'));
   try {
@@ -2596,6 +2626,113 @@ test('a reclaimer cannot remove a replacement lock from a stale-incarnation inte
       replacement
     );
     assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), false);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('release captures and restores a replacement before removing owner artifacts', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-interleave-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    let replacement;
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        onReleaseValidated() {
+          replacement = {
+            format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+            incarnation: '11111111111111111111111111111111',
+            nonce: '22222222222222222222222222222222', leaseUntil: Date.now() + 60_000,
+          };
+          write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(replacement) + '\n');
+        },
+      }),
+      /owned by live process/
+    );
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(versionDir, '.build-spec.transaction.lock'), 'utf8')),
+      replacement
+    );
+    const names = fs.readdirSync(versionDir);
+    assert.ok(names.some((name) => name.startsWith('.build-spec.transaction.lock.owner.')));
+    assert.ok(names.some((name) => name.startsWith('.build-spec.transaction.lock.lease.')));
+    assert.equal(fs.existsSync(path.join(versionDir, 'spec.md')), true);
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('reclaim removes every exact old-owner artifact but preserves replacement artifacts', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-reclaim-artifacts-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const old = {
+      format: 'ktav-build-output-lock', version: 3, pid: 999999999,
+      incarnation: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      nonce: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', leaseUntil: 0,
+    };
+    const replacement = {
+      format: 'ktav-build-output-lock', version: 3, pid: process.pid,
+      incarnation: 'cccccccccccccccccccccccccccccccc',
+      nonce: 'dddddddddddddddddddddddddddddddd', leaseUntil: 0,
+    };
+    write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(old) + '\n');
+    const oldArtifacts = [
+      `.build-spec.transaction.lock.candidate.${old.nonce}`,
+      `.build-spec.transaction.lock.owner.${old.nonce}`,
+      `.build-spec.transaction.lock.lease.${old.nonce}`,
+      `.build-spec.transaction.lock.claim.${old.nonce}`,
+    ];
+    for (const name of oldArtifacts) write(path.join(versionDir, name), JSON.stringify(old) + '\n');
+    fs.utimesSync(path.join(versionDir, `.build-spec.transaction.lock.claim.${old.nonce}`), 1, 1);
+
+    assert.throws(
+      () => writeBuildOutputs(versionDir, contentDir, build, {
+        onStaleLockClaimed() {
+          write(path.join(versionDir, '.build-spec.transaction.lock'), JSON.stringify(replacement) + '\n');
+          write(path.join(versionDir, `.build-spec.transaction.lock.owner.${replacement.nonce}`),
+            JSON.stringify(replacement) + '\n');
+          write(path.join(versionDir, `.build-spec.transaction.lock.lease.${replacement.nonce}`),
+            JSON.stringify({ ...replacement, leaseUntil: Date.now() + 60_000 }) + '\n');
+        },
+      }),
+      /owned by live process/
+    );
+    for (const name of oldArtifacts) assert.equal(fs.existsSync(path.join(versionDir, name)), false, name);
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(versionDir, `.build-spec.transaction.lock.owner.${replacement.nonce}`), 'utf8')),
+      replacement
+    );
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
+});
+
+test('write mode conservatively removes torn legacy lock artifacts only after owner death', async () => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-legacy-lock-recovery-'));
+  try {
+    const versionDir = path.join(temp, 'version');
+    const contentDir = path.join(versionDir, 'content');
+    makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
+    const build = await buildBuffers(contentDir);
+    const hint = 'garbage {"pid":999999999,"incarnation":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"';
+    for (const name of [
+      '.build-spec.transaction.lock.candidate',
+      '.build-spec.transaction.lock.claim',
+      '.build-spec.transaction.lock.lease',
+    ]) write(path.join(versionDir, name), hint);
+    writeBuildOutputs(versionDir, contentDir, build);
+    for (const name of [
+      '.build-spec.transaction.lock.candidate',
+      '.build-spec.transaction.lock.claim',
+      '.build-spec.transaction.lock.lease',
+    ]) assert.equal(fs.existsSync(path.join(versionDir, name)), false, name);
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }

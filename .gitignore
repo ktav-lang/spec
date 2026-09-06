@@ -33,9 +33,13 @@ Desktop.ini
 .build-spec.transaction.json.tmp
 .build-spec.transaction.lock
 .build-spec.transaction.lock.candidate
+.build-spec.transaction.lock.candidate.*
+.build-spec.transaction.lock.owner.*
 .build-spec.transaction.lock.claim
+.build-spec.transaction.lock.claim.*
 .build-spec.transaction.lock.lease
 .build-spec.transaction.lock.lease.*
+.build-spec.transaction.lock.release.*
 .spec.md.*.tmp
 .spec.md.*.bak
 .spec.ru.md.*.tmp

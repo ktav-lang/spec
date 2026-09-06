@@ -275,12 +275,18 @@ validated nonce, digests, phase indexes, and the six known output identities;
 all temporary and backup paths are derived by the builder. Before its durable
 commit marker, recovery restores the exact old bytes; after it, recovery keeps
 the exact new bytes and only finishes cleanup. A live cooperative lock rejects
-a second writer. Lease expiry alone never reclaims a live matching process
+a second writer. Linux and Windows owners derive their incarnation through
+the same observable process-start path used by reclaimers; when that source
+is unavailable, the owner records an unverified incarnation and a live PID
+is never reclaimed. Lease expiry alone never reclaims a live matching
 incarnation: only a proven-dead process or a provably different incarnation
-may be reclaimed. On platforms without a reliable incarnation source, live
-ownership is retained conservatively. Lock claims use owner-specific paths and
-are moved only after complete validation. If a pending journal, lock, or
-artifact exists, `--check`
+may be reclaimed. Reclaim publishes a fresh owner-specific claim before
+capturing the stale target and removes only artifacts for the exact old
+owner. Release captures its alias in an owner-specific claim and restores a
+replacement before removing any owner artifacts. Legacy fixed candidate,
+claim, and lease files are cleaned only after conservative owner validation;
+`--check` only reports them. If a pending journal, lock, or artifact exists,
+`--check`
 reports it and performs no recovery or cleanup. Directory fsync is unavailable
 on some platforms (notably Windows), so those builds explicitly provide
 file-only crash durability rather than claiming power-loss durability.

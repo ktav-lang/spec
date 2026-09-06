@@ -1966,12 +1966,16 @@ const TRANSACTION_LOCK_LEGACY_CANDIDATE_FILE = `${TRANSACTION_LOCK_FILE}.candida
 const TRANSACTION_LOCK_OWNER_PREFIX = `${TRANSACTION_LOCK_FILE}.owner.`;
 const TRANSACTION_LOCK_CLAIM_PREFIX = `${TRANSACTION_LOCK_FILE}.claim.`;
 const TRANSACTION_LOCK_LEASE_PREFIX = `${TRANSACTION_LOCK_FILE}.lease.`;
+const TRANSACTION_LOCK_RELEASE_PREFIX = `${TRANSACTION_LOCK_FILE}.release.`;
 const TRANSACTION_FORMAT = 'ktav-build-output-transaction';
 const TRANSACTION_LOCK_FORMAT = 'ktav-build-output-lock';
+const TRANSACTION_LOCK_CLAIM_FORMAT = 'ktav-build-output-lock-claim';
 const TRANSACTION_VERSION = 2;
 const TRANSACTION_LOCK_VERSION = 3;
+const TRANSACTION_LOCK_CLAIM_VERSION = 1;
 const TRANSACTION_LOCK_LEASE_MS = 60_000;
 const TRANSACTION_NONCE_RE = /^[0-9a-f]{32}$/u;
+const TRANSACTION_LOCK_UNVERIFIED_INCARNATION = '00000000000000000000000000000000';
 const TRANSACTION_DIGEST_RE = /^[0-9a-f]{64}$/u;
 const TRANSACTION_OUTPUTS = LANGS.flatMap((lang) => [
   { root: 'spec', name: OUT_FILES[lang] },
@@ -1986,9 +1990,12 @@ const TRANSACTION_OUTPUT_KEYS = [
   'root', 'name', 'existed', 'oldLength', 'oldSha256', 'newLength', 'newSha256',
 ];
 const TRANSACTION_LOCK_KEYS = ['format', 'version', 'pid', 'incarnation', 'nonce', 'leaseUntil'];
-const PROCESS_INCARNATION = process.platform === 'linux'
-  ? processStartIncarnation(process.pid) || randomBytes(16).toString('hex')
-  : randomBytes(16).toString('hex');
+const TRANSACTION_LOCK_CLAIM_KEYS = [
+  'format', 'version', 'pid', 'incarnation', 'nonce', 'createdAt', 'target',
+];
+// A missing OS start-time source is explicitly recorded as unverified. It is
+// never treated as a reusable incarnation while the PID is live.
+const PROCESS_INCARNATION = processStartIncarnation(process.pid);
 
 function transactionJournalPath(specDir) {
   return path.join(specDir, TRANSACTION_JOURNAL_FILE);
@@ -2030,10 +2037,13 @@ function pendingTransactionPaths(specDir, contentDir) {
     for (const name of entries) {
       if (name === TRANSACTION_LOCK_FILE ||
           name === TRANSACTION_LOCK_LEGACY_CANDIDATE_FILE ||
+          name === `${TRANSACTION_LOCK_FILE}.claim` ||
+          name === `${TRANSACTION_LOCK_FILE}.lease` ||
           name.startsWith(TRANSACTION_LOCK_CANDIDATE_PREFIX) ||
           name.startsWith(TRANSACTION_LOCK_OWNER_PREFIX) ||
           name.startsWith(TRANSACTION_LOCK_CLAIM_PREFIX) ||
-          name.startsWith(TRANSACTION_LOCK_LEASE_PREFIX) || transactionArtifactName(name)) {
+          name.startsWith(TRANSACTION_LOCK_LEASE_PREFIX) ||
+          name.startsWith(TRANSACTION_LOCK_RELEASE_PREFIX) || transactionArtifactName(name)) {
         result.push(path.join(directory, name));
       }
     }
@@ -2433,13 +2443,13 @@ function observedProcessIncarnation(pid, options = {}) {
   if (options.processIncarnation !== undefined) {
     const value = typeof options.processIncarnation === 'function'
       ? options.processIncarnation(pid) : options.processIncarnation;
+    if (value === null) return null;
     if (typeof value !== 'string' || !TRANSACTION_NONCE_RE.test(value)) {
       fail('transaction process-incarnation hook returned an invalid token');
     }
     return value;
   }
-  if (pid === process.pid) return PROCESS_INCARNATION;
-  return processStartIncarnation(pid);
+  return pid === process.pid ? PROCESS_INCARNATION : processStartIncarnation(pid);
 }
 
 function lockCandidatePath(specDir, owner) {
@@ -2455,10 +2465,6 @@ function lockOwnerPath(specDir, owner) {
   return path.join(specDir, `${TRANSACTION_LOCK_OWNER_PREFIX}${owner.nonce}`);
 }
 
-function lockClaimPath(specDir, owner) {
-  return path.join(specDir, `${TRANSACTION_LOCK_CLAIM_PREFIX}${owner.nonce}`);
-}
-
 function lockLeasePath(specDir, owner) {
   return path.join(specDir, `${TRANSACTION_LOCK_LEASE_PREFIX}${owner.nonce}`);
 }
@@ -2466,6 +2472,19 @@ function lockLeasePath(specDir, owner) {
 function lockLeaseTmpPath(specDir, owner) {
   return path.join(specDir,
     `${TRANSACTION_LOCK_LEASE_PREFIX}${owner.pid}.${owner.incarnation}.${owner.nonce}.tmp`);
+}
+
+function lockReleasePath(specDir, owner) {
+  return path.join(specDir, `${TRANSACTION_LOCK_RELEASE_PREFIX}${owner.nonce}`);
+}
+
+function lockClaimTmpPath(specDir, target, claim) {
+  return path.join(specDir,
+    `${TRANSACTION_LOCK_CLAIM_PREFIX}${claim.pid}.${claim.incarnation}.${target.nonce}.${claim.nonce}.tmp`);
+}
+
+function lockClaimPathForTarget(specDir, target) {
+  return path.join(specDir, `${TRANSACTION_LOCK_CLAIM_PREFIX}${target.nonce}`);
 }
 
 function lockNow(now) {
@@ -2481,6 +2500,10 @@ function lockJson(value) {
 function lockIdentityEqual(left, right) {
   return left.format === right.format && left.version === right.version &&
     left.pid === right.pid && left.incarnation === right.incarnation && left.nonce === right.nonce;
+}
+
+function lockIncarnationForOwner(options = {}, pid = process.pid) {
+  return observedProcessIncarnation(pid, options) || TRANSACTION_LOCK_UNVERIFIED_INCARNATION;
 }
 
 function pidIsLive(pid) {
@@ -2520,6 +2543,39 @@ function readLock(lockPath, label = 'transaction lock') {
   return value;
 }
 
+function readLockClaim(claimPath, label = 'transaction lock claim') {
+  let source;
+  let value;
+  try {
+    source = fs.readFileSync(claimPath);
+    value = JSON.parse(utf8Strict.decode(source));
+  } catch (e) {
+    fail(`${label} is corrupt: ${e.message}; no transaction mutation was attempted`);
+  }
+  if (Buffer.compare(source, Buffer.from(lockJson(value), 'utf8')) !== 0 ||
+      !exactObjectKeys(value, TRANSACTION_LOCK_CLAIM_KEYS) ||
+      value.format !== TRANSACTION_LOCK_CLAIM_FORMAT ||
+      value.version !== TRANSACTION_LOCK_CLAIM_VERSION ||
+      !Number.isSafeInteger(value.pid) || value.pid < 1 ||
+      typeof value.incarnation !== 'string' || !TRANSACTION_NONCE_RE.test(value.incarnation) ||
+      !TRANSACTION_NONCE_RE.test(value.nonce) ||
+      !Number.isSafeInteger(value.createdAt) || value.createdAt < 0 ||
+      value.target === null || typeof value.target !== 'object' ||
+      !exactObjectKeys(value.target, TRANSACTION_LOCK_KEYS)) {
+    fail(`${label} has an invalid schema; no transaction mutation was attempted`);
+  }
+  // Reuse the lock validator for the target without trusting any path from it.
+  if (value.target.format !== TRANSACTION_LOCK_FORMAT ||
+      value.target.version !== TRANSACTION_LOCK_VERSION ||
+      !Number.isSafeInteger(value.target.pid) || value.target.pid < 1 ||
+      typeof value.target.incarnation !== 'string' || !TRANSACTION_NONCE_RE.test(value.target.incarnation) ||
+      !TRANSACTION_NONCE_RE.test(value.target.nonce) ||
+      !Number.isSafeInteger(value.target.leaseUntil) || value.target.leaseUntil < 0) {
+    fail(`${label} has an invalid target schema; no transaction mutation was attempted`);
+  }
+  return value;
+}
+
 function lockIsActive(specDir, lock, now, options = {}) {
   if (!pidIsLive(lock.pid)) return false;
   const leasePath = lockLeasePath(specDir, lock);
@@ -2533,17 +2589,201 @@ function lockIsActive(specDir, lock, now, options = {}) {
   const observed = observedProcessIncarnation(lock.pid, options);
   // An expired lease is not a death detector. A live matching incarnation is
   // still the owner, and an unknown incarnation is handled conservatively.
-  return observed === null || observed === lock.incarnation;
+  return lock.incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+    observed === null || observed === lock.incarnation;
 }
 
-function removeOwnLockClaim(specDir, owner) {
-  const claimPath = lockClaimPath(specDir, owner);
-  if (lstatRegularOrMissing(claimPath, 'transaction lock claim') === null) return;
-  const claim = readLock(claimPath, 'transaction lock claim');
-  if (!lockIdentityEqual(claim, owner)) {
-    fail('transaction lock claim belongs to a different incarnation; refusing to remove it');
+function lockClaimIsActive(claim, now, options) {
+  if (!pidIsLive(claim.pid)) return false;
+  const observed = observedProcessIncarnation(claim.pid, options);
+  return claim.incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+    observed === null || observed === claim.incarnation;
+}
+
+function writeLockRecord(specDir, finalPath, tmpPath, value, label, writeSync) {
+  removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
+  const fd = fs.openSync(tmpPath, 'wx', 0o600);
+  try {
+    writeAllSync(fd, Buffer.from(lockJson(value), 'utf8'), writeSync);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
   }
-  removeExactRegular(claimPath, 'transaction lock claim', specDir);
+  const written = readRegularBytes(tmpPath, `unpublished ${label} temporary`);
+  if (Buffer.compare(written, Buffer.from(lockJson(value), 'utf8')) !== 0) {
+    fail(`${label} temporary was not written completely; no transaction mutation was attempted`);
+  }
+  if (label === 'transaction lock claim') readLockClaim(tmpPath, label);
+  else readLock(tmpPath, label);
+  try {
+    // A hard link is the cross-platform no-replace publication primitive for
+    // a regular file. rename() would overwrite a concurrent fresh claim on
+    // POSIX, destroying the serialization guarantee.
+    fs.linkSync(tmpPath, finalPath);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
+      return false;
+    }
+    throw e;
+  }
+  removeExactRegular(tmpPath, `unpublished ${label} temporary`, specDir);
+  syncDirectory(specDir);
+  return true;
+}
+
+function publishLockClaim(specDir, target, now, options) {
+  const claimPath = lockClaimPathForTarget(specDir, target);
+  const existing = lstatRegularOrMissing(claimPath, 'transaction lock claim');
+  if (existing !== null) {
+    let claim = null;
+    try {
+      claim = readLockClaim(claimPath);
+    } catch (error) {
+      let legacyOwner;
+      try {
+        legacyOwner = readLock(claimPath, 'transaction lock claim');
+      } catch {
+        throw error;
+      }
+      if (lockIsActive(specDir, legacyOwner, now, options)) {
+        fail(`transaction is owned by live process ${legacyOwner.pid}; refusing concurrent write`);
+      }
+    }
+    if (claim !== null && !lockIdentityEqual(claim.target, target)) {
+      fail('transaction lock claim targets a different owner; ambiguous data was left untouched');
+    }
+    if (claim !== null && lockClaimIsActive(claim, now, options)) {
+      fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
+    }
+    removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+  }
+
+  const claim = {
+    format: TRANSACTION_LOCK_CLAIM_FORMAT,
+    version: TRANSACTION_LOCK_CLAIM_VERSION,
+    pid: process.pid,
+    incarnation: lockIncarnationForOwner(options),
+    nonce: randomBytes(16).toString('hex'),
+    createdAt: now,
+    target,
+  };
+  const tmpPath = lockClaimTmpPath(specDir, target, claim);
+  if (!writeLockRecord(specDir, claimPath, tmpPath, claim, 'transaction lock claim',
+    options.writeSync || fs.writeSync)) return null;
+  setClaimCreationTime(claimPath, now);
+  return { path: claimPath, record: claim };
+}
+
+function restoreCapturedLock(specDir, capturedPath, targetPath) {
+  if (lstatRegularOrMissing(targetPath, 'replacement transaction lock') !== null) {
+    fail('transaction lock replacement appeared while restoring the captured record; ambiguous data was left untouched');
+  }
+  try {
+    fs.linkSync(capturedPath, targetPath);
+  } catch (e) {
+    if (e.code === 'EEXIST') {
+      fail('transaction lock replacement appeared while restoring the captured record; ambiguous data was left untouched');
+    }
+    throw e;
+  }
+  removeExactRegular(capturedPath, 'transaction lock captured record', specDir);
+  syncDirectory(specDir);
+}
+
+function removeExactOwnerArtifacts(specDir, owner, claimPath, reclaimPath) {
+  const escapedPrefix = TRANSACTION_LOCK_FILE.replaceAll('.', '\\.');
+  const escapedNonce = owner.nonce;
+  const re = new RegExp(
+    `^${escapedPrefix}\\.(?:candidate|owner|claim|lease)\\.(?:${escapedNonce}|\\d+\\.[0-9a-f]{32}\\.${escapedNonce}(?:\\.tmp)?)$`, 'u');
+  const releaseRe = new RegExp(
+    `^${TRANSACTION_LOCK_RELEASE_PREFIX.replaceAll('.', '\\.')}${escapedNonce}(?:\\..+)?$`, 'u');
+  let entries;
+  try { entries = fs.readdirSync(specDir); } catch { return; }
+  for (const name of entries) {
+    if (!re.test(name) && !releaseRe.test(name)) continue;
+    const filePath = path.join(specDir, name);
+    if (filePath === reclaimPath || filePath === claimPath) continue;
+    removeExactRegular(filePath, 'stale transaction lock owner artifact', specDir);
+  }
+  for (const legacyName of [
+    `${TRANSACTION_LOCK_FILE}.claim`, `${TRANSACTION_LOCK_FILE}.lease`,
+  ]) {
+    const filePath = path.join(specDir, legacyName);
+    if (lstatRegularOrMissing(filePath, 'legacy transaction lock artifact') === null) continue;
+    try {
+      const value = readLock(filePath, 'legacy transaction lock artifact');
+      if (lockIdentityEqual(value, owner)) {
+        removeExactRegular(filePath, 'legacy transaction lock artifact', specDir);
+      }
+    } catch {
+      // Ambiguous legacy artifacts are left for conservative recovery.
+    }
+  }
+}
+
+function captureReleaseOwnedArtifact(specDir, sourcePath, owner, kind) {
+  if (lstatRegularOrMissing(sourcePath, 'transaction lock owner artifact') === null) return null;
+  const capturePath = path.join(specDir,
+    `${TRANSACTION_LOCK_RELEASE_PREFIX}${owner.nonce}.${kind}`);
+  if (lstatRegularOrMissing(capturePath, 'transaction lock release artifact') !== null) {
+    fail('transaction lock release artifact already exists; ambiguous data was left untouched');
+  }
+  const expected = readLock(sourcePath, 'transaction lock owner artifact');
+  if (!lockIdentityEqual(expected, owner)) {
+    fail('transaction lock owner artifact changed; refusing to remove another owner artifact');
+  }
+  fs.renameSync(sourcePath, capturePath);
+  try {
+    const captured = readLock(capturePath, 'transaction lock release artifact');
+    if (!lockIdentityEqual(captured, owner)) {
+      restoreCapturedLock(specDir, capturePath, sourcePath);
+      fail('transaction lock owner artifact replacement was captured; no transaction mutation was attempted');
+    }
+  } catch (error) {
+    if (lstatRegularOrMissing(capturePath, 'transaction lock release artifact') !== null) {
+      restoreCapturedLock(specDir, capturePath, sourcePath);
+    }
+    throw error;
+  }
+  return { capturePath, sourcePath };
+}
+
+function removeReleaseOwnerArtifacts(specDir, owner) {
+  const names = [
+    [lockCandidatePath(specDir, owner), 'candidate'],
+    [lockOwnerPath(specDir, owner), 'owner'],
+    [lockClaimPathForTarget(specDir, owner), 'claim'],
+    [lockLeasePath(specDir, owner), 'lease'],
+    [path.join(specDir, `${TRANSACTION_LOCK_FILE}.claim`), 'legacy-claim'],
+    [path.join(specDir, `${TRANSACTION_LOCK_FILE}.lease`), 'legacy-lease'],
+  ];
+  let entries;
+  try { entries = fs.readdirSync(specDir); } catch { entries = []; }
+  const tempRe = new RegExp(
+    `^${TRANSACTION_LOCK_FILE.replaceAll('.', '\\.')}\\.(?:candidate|lease)\\.` +
+    `\\d+\\.[0-9a-f]{32}\\.${owner.nonce}\\.tmp$`, 'u');
+  for (const name of entries) {
+    if (tempRe.test(name)) names.push([path.join(specDir, name), 'temporary']);
+  }
+  const captured = [];
+  try {
+    for (const [sourcePath, kind] of names) {
+      const artifact = captureReleaseOwnedArtifact(specDir, sourcePath, owner, kind);
+      if (artifact !== null) captured.push(artifact);
+    }
+  } catch (error) {
+    for (const artifact of captured.reverse()) {
+      if (lstatRegularOrMissing(artifact.capturePath, 'transaction lock release artifact') !== null &&
+          lstatRegularOrMissing(artifact.sourcePath, 'transaction lock owner artifact') === null) {
+        restoreCapturedLock(specDir, artifact.capturePath, artifact.sourcePath);
+      }
+    }
+    throw error;
+  }
+  for (const artifact of captured) {
+    removeExactRegular(artifact.capturePath, 'transaction lock release artifact', specDir);
+  }
 }
 
 function cleanStaleLockLeaseTemps(specDir, now, options) {
@@ -2551,20 +2791,93 @@ function cleanStaleLockLeaseTemps(specDir, now, options) {
   try { entries = fs.readdirSync(specDir); } catch { return; }
   const re = new RegExp(`^${TRANSACTION_LOCK_LEASE_PREFIX.replaceAll('.', '\\.')}` +
     `(\\d+)\\.([0-9a-f]{32})\\.([0-9a-f]{32})\\.tmp$`, 'u');
+  const legacyRe = new RegExp(`^${TRANSACTION_LOCK_LEASE_PREFIX.replaceAll('.', '\\.')}` +
+    `([0-9a-f]{32})\\.tmp$`, 'u');
   for (const name of entries) {
     const match = re.exec(name);
-    if (match === null) continue;
+    const legacyMatch = legacyRe.exec(name);
+    if (match === null && legacyMatch === null) continue;
     const filePath = path.join(specDir, name);
     const stat = lstatRegularOrMissing(filePath, 'unpublished transaction lock lease temporary');
     if (stat === null) continue;
-    const pid = Number(match[1]);
-    const incarnation = match[2];
-    const live = pidIsLive(pid);
-    const observed = live ? observedProcessIncarnation(pid, options) : null;
-    if (live && (observed === null || observed === incarnation)) {
-      fail('transaction lock lease publication is in progress; refusing concurrent write');
+    if (match !== null) {
+      const pid = Number(match[1]);
+      const incarnation = match[2];
+      const live = pidIsLive(pid);
+      const observed = live ? observedProcessIncarnation(pid, options) : null;
+      if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+          observed === null || observed === incarnation)) {
+        fail('transaction lock lease publication is in progress; refusing concurrent write');
+      }
+    } else {
+      const owner = readLock(filePath, 'unpublished legacy transaction lock lease');
+      if (lockIsActive(specDir, owner, now, options)) {
+        fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+      }
     }
     removeExactRegular(filePath, 'stale unpublished transaction lock lease temporary', specDir);
+  }
+}
+
+function ownerHintFromCorruptArtifact(filePath, label) {
+  let source;
+  try { source = fs.readFileSync(filePath).toString('utf8'); } catch (e) {
+    fail(`cannot read ${label}: ${e.message}; ambiguous data was left untouched`);
+  }
+  const pidMatch = /"pid"\s*:\s*(\d+)/u.exec(source);
+  const incarnationMatch = /"incarnation"\s*:\s*"([0-9a-f]{32})"/u.exec(source);
+  if (pidMatch === null || incarnationMatch === null) return null;
+  const pid = Number(pidMatch[1]);
+  return Number.isSafeInteger(pid) && pid > 0
+    ? { pid, incarnation: incarnationMatch[1] } : null;
+}
+
+function ownerHintIsLive(owner, options) {
+  if (!pidIsLive(owner.pid)) return false;
+  const observed = observedProcessIncarnation(owner.pid, options);
+  return owner.incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+    observed === null || observed === owner.incarnation;
+}
+
+function cleanLegacyArtifact(specDir, filePath, label, now, options, claimFreshness = false) {
+  const stat = lstatRegularOrMissing(filePath, label);
+  if (stat === null) return;
+  try {
+    const owner = readLock(filePath, label);
+    if (claimFreshness && now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
+      fail('transaction lock reclaim is already in progress; refusing concurrent write');
+    }
+    if (lockIsActive(specDir, owner, now, options)) {
+      fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+    }
+    removeExactRegular(filePath, label, specDir);
+  } catch (error) {
+    if (error.message.includes('already in progress') || error.message.includes('owned by live process')) throw error;
+    const hint = ownerHintFromCorruptArtifact(filePath, label);
+    if (hint !== null && !ownerHintIsLive(hint, options)) {
+      removeExactRegular(filePath, `stale ${label}`, specDir);
+      return;
+    }
+    fail(`${label} is corrupt; ambiguous data was left untouched`);
+  }
+}
+
+function cleanLegacyFixedArtifacts(specDir, now, options) {
+  cleanLegacyArtifact(specDir, path.join(specDir, TRANSACTION_LOCK_LEGACY_CANDIDATE_FILE),
+    'legacy transaction lock candidate', now, options);
+  cleanLegacyArtifact(specDir, path.join(specDir, `${TRANSACTION_LOCK_FILE}.claim`),
+    'legacy transaction lock claim', now, options, true);
+  cleanLegacyArtifact(specDir, path.join(specDir, `${TRANSACTION_LOCK_FILE}.lease`),
+    'legacy transaction lock lease', now, options);
+}
+
+function cleanExistingReleaseClaims(specDir, now, options) {
+  for (const releasePath of lockArtifactEntries(specDir, TRANSACTION_LOCK_RELEASE_PREFIX)) {
+    const owner = readLock(releasePath, 'transaction lock release claim');
+    if (lockIsActive(specDir, owner, now, options)) {
+      fail(`transaction is owned by live process ${owner.pid}; refusing concurrent write`);
+    }
+    removeExactRegular(releasePath, 'stale transaction lock release claim', specDir);
   }
 }
 
@@ -2576,49 +2889,61 @@ function setClaimCreationTime(claimPath, now) {
 }
 
 function claimExactStaleFile(specDir, targetPath, expected, now, options) {
-  const claimPath = lockClaimPath(specDir, expected);
-  const existingClaim = lstatRegularOrMissing(claimPath, 'transaction lock claim');
-  if (existingClaim !== null) {
-    if (now - Math.trunc(existingClaim.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
-      fail('transaction lock reclaim is already in progress; refusing concurrent write');
-    }
-    const claimed = readLock(claimPath, 'transaction lock claim');
-    if (lockIsActive(specDir, claimed, now, options)) {
-      fail(`transaction is owned by live process ${claimed.pid}; refusing concurrent write`);
-    }
-    removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+  const claim = publishLockClaim(specDir, expected, now, options);
+  if (claim === null) return false;
+  const claimPath = claim.path;
+  if (typeof options.onLockClaimPublished === 'function') {
+    options.onLockClaimPublished(claim.record);
+  }
+  let current;
+  try {
+    current = readLock(targetPath, 'transaction lock candidate');
+  } catch (error) {
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    if (error.message.includes('ENOENT')) return false;
+    throw error;
+  }
+  if (!lockIdentityEqual(current, expected) || current.leaseUntil !== expected.leaseUntil) {
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
     return false;
   }
 
-  // Validate before the atomic move. A partial candidate can never become a
-  // claim, and the claim's own mtime is set after the move rather than being
-  // inherited from a stale target inode.
-  const current = readLock(targetPath, 'transaction lock candidate');
-  if (!lockIdentityEqual(current, expected) || current.leaseUntil !== expected.leaseUntil) return false;
+  const reclaimPath = path.join(specDir,
+    `${TRANSACTION_LOCK_RELEASE_PREFIX}reclaim.${expected.nonce}.${claim.record.nonce}`);
+  if (lstatRegularOrMissing(reclaimPath, 'transaction lock reclaim record') !== null) {
+    fail('transaction lock reclaim record already exists; ambiguous data was left untouched');
+  }
   try {
-    fs.renameSync(targetPath, claimPath);
+    fs.renameSync(targetPath, reclaimPath);
   } catch (e) {
-    if (e.code === 'ENOENT') return false;
-    if (e.code === 'EEXIST') return false;
+    if (e.code === 'ENOENT') {
+      removeExactRegular(claimPath, 'transaction lock claim', specDir);
+      return false;
+    }
+    if (e.code === 'EEXIST') {
+      removeExactRegular(claimPath, 'transaction lock claim', specDir);
+      return false;
+    }
     throw e;
   }
-  setClaimCreationTime(claimPath, now);
-  const claimed = readLock(claimPath, 'transaction lock claim');
+  const claimed = readLock(reclaimPath, 'transaction lock reclaim record');
   if (!lockIdentityEqual(claimed, expected) || claimed.leaseUntil !== expected.leaseUntil) {
-    fail('transaction lock claim changed during publication; no transaction mutation was attempted');
+    restoreCapturedLock(specDir, reclaimPath, targetPath);
+    removeExactRegular(claimPath, 'transaction lock claim', specDir);
+    const replacement = readLock(targetPath, 'replacement transaction lock');
+    if (lockIsActive(specDir, replacement, now, options)) {
+      fail(`transaction is owned by live process ${replacement.pid}; refusing concurrent write`);
+    }
+    fail('transaction lock target changed during claim; no transaction mutation was attempted');
   }
   if (lockIsActive(specDir, claimed, now, options)) {
+    restoreCapturedLock(specDir, reclaimPath, targetPath);
     removeExactRegular(claimPath, 'transaction lock claim', specDir);
     fail(`transaction is owned by live process ${claimed.pid}; refusing concurrent write`);
   }
-  const ownerPath = lockOwnerPath(specDir, expected);
-  if (lstatRegularOrMissing(ownerPath, 'stale transaction lock owner record') !== null) {
-    const ownerRecord = readLock(ownerPath, 'stale transaction lock owner record');
-    if (!lockIdentityEqual(ownerRecord, expected)) {
-      fail('stale transaction lock owner record belongs to a different incarnation; no transaction mutation was attempted');
-    }
-    removeExactRegular(ownerPath, 'stale transaction lock owner record', specDir);
-  }
+
+  removeExactOwnerArtifacts(specDir, expected, claimPath, reclaimPath);
+  removeExactRegular(reclaimPath, 'transaction lock reclaim record', specDir);
   removeExactRegular(claimPath, 'transaction lock claim', specDir);
   syncDirectory(specDir);
   return true;
@@ -2730,10 +3055,12 @@ function cleanStaleCandidateTemps(specDir, now, options) {
     if (stat === null) continue;
     const live = pidIsLive(pid);
     const observed = live ? observedProcessIncarnation(pid, options) : null;
-    if (live && (observed === null || observed === incarnation)) {
+    if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+        observed === null || observed === incarnation)) {
       fail(`transaction is owned by live process ${pid}; refusing concurrent write`);
     }
-    if (!live || observed !== incarnation || now - Math.trunc(stat.mtimeMs) >= TRANSACTION_LOCK_LEASE_MS) {
+    if (!live || (observed !== null && incarnation !== TRANSACTION_LOCK_UNVERIFIED_INCARNATION &&
+        observed !== incarnation)) {
       removeExactRegular(candidatePath, 'stale unpublished transaction lock candidate', specDir);
     }
   }
@@ -2743,24 +3070,58 @@ function cleanExistingClaims(specDir, now, options) {
   for (const claimPath of lockArtifactEntries(specDir, TRANSACTION_LOCK_CLAIM_PREFIX)) {
     const stat = lstatRegularOrMissing(claimPath, 'transaction lock claim');
     if (stat === null) continue;
-    if (now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
-      fail('transaction lock reclaim is already in progress; refusing concurrent write');
-    }
     let claim;
     try {
-      claim = readLock(claimPath, 'transaction lock claim');
-    } catch {
-      // A claim is published by rename only after validation in this
-      // version. A stale malformed claim can therefore only be an older
-      // interrupted format and is safe to discard after its own freshness
-      // interval, never by inspecting the target inode's mtime.
-      removeExactRegular(claimPath, 'stale malformed transaction lock claim', specDir);
-      continue;
+      claim = readLockClaim(claimPath, 'transaction lock claim');
+      if (lockClaimIsActive(claim, now, options)) {
+        fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
+      }
+    } catch (error) {
+      let legacy;
+      try {
+        legacy = readLock(claimPath, 'transaction lock claim');
+      } catch {
+        const hint = ownerHintFromCorruptArtifact(claimPath, 'transaction lock claim');
+        if (hint !== null && !ownerHintIsLive(hint, options)) {
+          removeExactRegular(claimPath, 'stale malformed transaction lock claim', specDir);
+          continue;
+        }
+        throw error;
+      }
+      if (now - Math.trunc(stat.mtimeMs) < TRANSACTION_LOCK_LEASE_MS) {
+        fail('transaction lock reclaim is already in progress; refusing concurrent write');
+      }
+      if (lockIsActive(specDir, legacy, now, options)) {
+        fail(`transaction is owned by live process ${legacy.pid}; refusing concurrent write`);
+      }
+      claim = null;
     }
-    if (lockIsActive(specDir, claim, now, options)) {
-      fail(`transaction is owned by live process ${claim.pid}; refusing concurrent write`);
+    if (claim !== null && lockClaimIsActive(claim, now, options)) {
+      fail(`transaction lock reclaim is already in progress by live process ${claim.pid}`);
     }
     removeExactRegular(claimPath, 'stale transaction lock claim', specDir);
+  }
+}
+
+function cleanStaleLockClaimTemps(specDir, options) {
+  const re = new RegExp(`^${TRANSACTION_LOCK_CLAIM_PREFIX.replaceAll('.', '\\.')}` +
+    `(\\d+)\\.([0-9a-f]{32})\\.[0-9a-f]{32}\\.([0-9a-f]{32})\\.tmp$`, 'u');
+  for (const claimPath of lockArtifactEntries(specDir, TRANSACTION_LOCK_CLAIM_PREFIX, '.tmp')) {
+    const match = re.exec(path.basename(claimPath));
+    if (match === null) {
+      fail('transaction lock claim temporary has an invalid owner name; no transaction mutation was attempted');
+    }
+    const stat = lstatRegularOrMissing(claimPath, 'unpublished transaction lock claim');
+    if (stat === null) continue;
+    const pid = Number(match[1]);
+    const incarnation = match[2];
+    const live = pidIsLive(pid);
+    const observed = live ? observedProcessIncarnation(pid, options) : null;
+    if (live && (incarnation === TRANSACTION_LOCK_UNVERIFIED_INCARNATION ||
+        observed === null || observed === incarnation)) {
+      fail(`transaction lock reclaim is in progress by live process ${pid}`);
+    }
+    removeExactRegular(claimPath, 'stale unpublished transaction lock claim', specDir);
   }
 }
 
@@ -2769,13 +3130,16 @@ function acquireTransactionLock(specDir, options = {}) {
   const now = lockNow(options.now);
   const writeSync = options.writeSync || fs.writeSync;
   const owner = { format: TRANSACTION_LOCK_FORMAT, version: TRANSACTION_LOCK_VERSION,
-    pid: process.pid, incarnation: observedProcessIncarnation(process.pid, options),
+    pid: process.pid, incarnation: lockIncarnationForOwner(options),
     nonce: randomBytes(16).toString('hex'), leaseUntil: now + TRANSACTION_LOCK_LEASE_MS };
   let staleClaimed = false;
   for (;;) {
     cleanStaleLockLeaseTemps(specDir, now, options);
+    cleanStaleLockClaimTemps(specDir, options);
     cleanStaleCandidateTemps(specDir, now, options);
     cleanExistingClaims(specDir, now, options);
+    cleanLegacyFixedArtifacts(specDir, now, options);
+    cleanExistingReleaseClaims(specDir, now, options);
 
     const finalStat = lstatRegularOrMissing(lockPath, 'transaction lock');
     if (finalStat !== null) {
@@ -2787,22 +3151,13 @@ function acquireTransactionLock(specDir, options = {}) {
       staleClaimed = true;
     }
 
-    const legacyCandidatePath = path.join(specDir, TRANSACTION_LOCK_LEGACY_CANDIDATE_FILE);
-    if (lstatRegularOrMissing(legacyCandidatePath, 'transaction lock candidate') !== null) {
-      const candidate = readLock(legacyCandidatePath, 'transaction lock candidate');
-      if (lockIsActive(specDir, candidate, now, options)) {
-        fail(`transaction is owned by live process ${candidate.pid}; refusing concurrent write`);
-      }
-      if (!claimExactStaleFile(specDir, legacyCandidatePath, candidate, now, options)) continue;
-      staleClaimed = true;
-    }
-
     const candidates = [
       ...lockArtifactEntries(specDir, TRANSACTION_LOCK_CANDIDATE_PREFIX)
         .filter((candidatePath) => !candidatePath.endsWith('.tmp')),
       ...lockArtifactEntries(specDir, TRANSACTION_LOCK_OWNER_PREFIX),
     ];
     for (const candidatePath of candidates) {
+      if (lstatRegularOrMissing(candidatePath, 'transaction lock candidate') === null) continue;
       const candidate = readLock(candidatePath, 'transaction lock candidate');
       if (lockIsActive(specDir, candidate, now, options)) {
         fail(`transaction is owned by live process ${candidate.pid}; refusing concurrent write`);
@@ -2821,7 +3176,6 @@ function acquireTransactionLock(specDir, options = {}) {
         removeCandidateIfOwned(specDir, owner);
         continue;
       }
-      removeOwnLockClaim(specDir, owner);
       writeLockLease(specDir, owner, writeSync, now);
       return owner;
     } catch (e) {
@@ -2831,42 +3185,55 @@ function acquireTransactionLock(specDir, options = {}) {
   }
 }
 
-function releaseTransactionLock(specDir, owner) {
+function releaseTransactionLock(specDir, owner, options = {}) {
   const lockPath = transactionLockPath(specDir);
-  const currentStat = lstatRegularOrMissing(lockPath, 'transaction lock');
-  if (currentStat !== null) {
-    const current = readLock(lockPath);
-    if (!lockIdentityEqual(current, owner)) {
-      fail('transaction lock ownership changed; refusing to remove another owner lock');
-    }
+  const releasePath = lockReleasePath(specDir, owner);
+  if (lstatRegularOrMissing(releasePath, 'transaction lock release claim') !== null) {
+    fail('transaction lock release claim already exists; ambiguous data was left untouched');
   }
-  const ownerPath = lockOwnerPath(specDir, owner);
-  if (lstatRegularOrMissing(ownerPath, 'transaction lock owner record') !== null) {
-    const ownerRecord = readLock(ownerPath, 'transaction lock owner record');
-    if (!lockIdentityEqual(ownerRecord, owner)) {
-      fail('transaction lock owner record changed; refusing to remove another owner lock');
-    }
-    removeExactRegular(ownerPath, 'transaction lock owner record', specDir);
+  const current = readLock(lockPath);
+  if (!lockIdentityEqual(current, owner)) {
+    fail('transaction lock ownership changed; refusing to remove another owner lock');
   }
-  const leasePath = lockLeasePath(specDir, owner);
-  if (lstatRegularOrMissing(leasePath, 'transaction lock lease') !== null) {
-    const lease = readLock(leasePath, 'transaction lock lease');
-    if (!lockIdentityEqual(lease, owner)) {
-      fail('transaction lock lease changed; refusing to remove another owner lease');
-    }
-    removeExactRegular(leasePath, 'transaction lock lease', specDir);
+  const beforeReleaseRename = options.onReleaseValidated || options.onReleaseBeforeRename;
+  if (typeof beforeReleaseRename === 'function') {
+    beforeReleaseRename();
   }
-  // Re-read the fixed alias after removing only owner-derived paths. A
-  // replacement owner can be left untouched if the alias changed meanwhile.
-  const finalStat = lstatRegularOrMissing(lockPath, 'transaction lock');
-  if (finalStat !== null) {
-    const finalOwner = readLock(lockPath);
-    if (!lockIdentityEqual(finalOwner, owner)) {
-      fail('transaction lock ownership changed; refusing to remove another owner lock');
-    }
-    removeExactRegular(lockPath, 'transaction lock', specDir);
+
+  try {
+    fs.renameSync(lockPath, releasePath);
+  } catch (e) {
+    if (e.code === 'ENOENT') fail('transaction lock disappeared before release; no transaction mutation was attempted');
+    throw e;
   }
-  removeOwnLockClaim(specDir, owner);
+  const captured = readLock(releasePath, 'transaction lock release claim');
+  if (!lockIdentityEqual(captured, owner)) {
+    restoreCapturedLock(specDir, releasePath, lockPath);
+    const replacement = readLock(lockPath, 'replacement transaction lock');
+    if (lockIsActive(specDir, replacement, lockNow(options.now), options)) {
+      fail(`transaction is owned by live process ${replacement.pid}; refusing concurrent write`);
+    }
+    fail('transaction lock replacement was captured during release; no transaction mutation was attempted');
+  }
+
+  const afterReleaseCapture = options.onReleaseCaptured || options.onReleaseBeforeArtifactCleanup;
+  if (typeof afterReleaseCapture === 'function') {
+    afterReleaseCapture();
+  }
+
+  // The fixed alias is now held in the owner-specific release claim. No
+  // owner-derived artifact can be confused with a replacement nonce. Each
+  // artifact is captured and validated again before its removal.
+  try {
+    removeReleaseOwnerArtifacts(specDir, owner);
+  } catch (error) {
+    if (lstatRegularOrMissing(releasePath, 'transaction lock release claim') !== null &&
+        lstatRegularOrMissing(lockPath, 'replacement transaction lock') === null) {
+      restoreCapturedLock(specDir, releasePath, lockPath);
+    }
+    throw error;
+  }
+  removeExactRegular(releasePath, 'transaction lock release claim', specDir);
   syncDirectory(specDir);
 }
 
@@ -2931,7 +3298,7 @@ export function recoverBuildOutputTransaction(specDir, contentDir, options = {})
       ...options, owner,
     });
   } finally {
-    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner);
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, options);
   }
 }
 
@@ -3157,7 +3524,7 @@ export function writeBuildOutputs(specDir, contentDir, { bufs, readmeBufs }, opt
     transactionError.code = error.code;
     throw transactionError;
   } finally {
-    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner);
+    if (owner !== null) releaseTransactionLock(resolvedSpecDir, owner, options);
   }
 }
 
