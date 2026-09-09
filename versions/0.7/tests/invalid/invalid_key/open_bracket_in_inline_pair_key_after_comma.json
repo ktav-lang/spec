@@ -1,0 +1,1 @@
+{"expected_error": "InvalidKey", "note": "The position after an Object comma is a KEY position, not a value position: `[` there is a forbidden raw <key-char> (InvalidKey), not the start of a nested compound value."}
