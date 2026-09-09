@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "Same missing-separator defect as dotted_key_eof_quote_in_sibling_value.ktav, triggered instead by a quote at an ANCESTOR key position rather than a sibling value. The nested `{b. }` body is itself quote-free; the category must not depend on quotes elsewhere in the document."}
