@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "The first `[]` closes the item at value position; without a following comma the trailing `[text` is not a new item, so its `[` is literal (§ 5.8.5). The document's outer closer is the final `]`, so the compound IS closed and `[text` is content after it (§ 6.12)."}
