@@ -21,11 +21,11 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
-## Unreleased
+## [0.7.0] — 2026-09-10
 
-Draft normative text and conformance fixtures for 0.7.0, under
-`versions/0.7/`. Not yet the current stable specification — `versions.ktav`
-still points `stable` and `latest` at 0.6.4 until this is actually released.
+Normative text and conformance fixtures for 0.7.0, under
+`versions/0.7/`. This is the current stable specification —
+`versions.ktav` points `stable` and `latest` at 0.7.0.
 
 ### Breaking
 

@@ -6,11 +6,12 @@
 
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
-> **Draft scope:** the feature overview and examples in this README follow
-> the unreleased Ktav 0.7.0 draft. Stable 0.6.4 implementations should use
-> the [0.6.4 specification](versions/0.6/spec.md) and its
-> [conformance suite](versions/0.6/tests/); the draft's differences are
-> scoped in [Appendix D of the 0.7.0 specification](versions/0.7/spec.md).
+> **Version scope:** the feature overview and examples in this README follow
+> Ktav 0.7.0, the current stable specification. Implementations still
+> targeting 0.6.4 should use the [0.6.4 specification](versions/0.6/spec.md)
+> and its [conformance suite](versions/0.6/tests/); what changed between
+> them is scoped in
+> [Appendix D of the 0.7.0 specification](versions/0.7/spec.md).
 
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
@@ -383,17 +384,17 @@ timeout: null
 
 ## Full specification
 
-- **Draft described here:** [Ktav 0.7.0](versions/0.7/spec.md) — unreleased draft; this README's feature overview follows it.
-- **Current stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23; use this version for stable semantics and fixtures.
+- **Current stable:** [Ktav 0.7.0](versions/0.7/spec.md) — released 2026-09-10; this README's feature overview follows it.
+- **Previous stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23.
 - **Machine-readable index** of released/stable versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
 
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.6/tests/). The unreleased 0.7.0 draft
+[`versions/<v>/tests/`](versions/0.7/tests/). The 0.7.0 corpus
 has four fixture categories (`valid/`, `invalid/`, `unrepresentable/`, and
-`parseable-unrepresentable/`) plus one top-level metadata file. The stable
+`parseable-unrepresentable/`) plus one top-level metadata file. The older
 0.6.4 corpus has only `valid/` and `invalid/`. A conformance runner MUST
 walk every fixture category present in the version it targets — silently
 skipping one it doesn't recognise reports false-green, which is worse than

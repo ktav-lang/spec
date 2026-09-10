@@ -18,11 +18,10 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
-## 未发布
+## [0.7.0] —— 2026-09-10
 
-`versions/0.7/` 下 0.7.0 的规范性文本草案与 conformance fixture。尚非
-当前稳定规范 —— `versions.ktav` 的 `stable` 与 `latest` 仍指向 0.6.4,
-直到正式发布。
+`versions/0.7/` 下 0.7.0 的规范性文本与 conformance fixture。这是当前
+稳定规范 —— `versions.ktav` 的 `stable` 与 `latest` 均指向 0.7.0。
 
 ### 破坏性
 
