@@ -4564,7 +4564,25 @@ function rx(template) {
 // (0.6.x, older release dates) can never trip the check. If a deliberate
 // prose change breaks an anchor, update the anchor consciously in the same
 // commit. All disagreements are collected and reported together.
-const HANDWRITTEN_FILES = ['versions.ktav', 'README.md', 'README.ru.md', 'README.zh.md'];
+const HANDWRITTEN_FILES = [
+  'versions.ktav',
+  'README.md', 'README.ru.md', 'README.zh.md',
+  'CHANGELOG.md', 'CHANGELOG.ru.md', 'CHANGELOG.zh.md',
+];
+
+// The current version's CHANGELOG heading. Anchored to the exact date
+// on purpose: the failure this catches is a release shipping with its
+// entry still headed "unreleased" while release.js already carries the
+// date. That happened to 0.7.0, which shipped that way, and nearly
+// happened to 0.7.1 — both were caught by eye rather than by a tool.
+// Enforcing the heading means the date in release.js and the date in
+// the changelog can only move together.
+const HANDWRITTEN_CHANGELOG_ANCHORS = {
+  'CHANGELOG.md': [rx('^## [{V}] — {D}')],
+  'CHANGELOG.ru.md': [rx('^## [{V}] — {D}')],
+  // Chinese uses the full-width dash, matching the rest of that file.
+  'CHANGELOG.zh.md': [rx('^## [{V}] —— {D}')],
+};
 
 const HANDWRITTEN_README_ANCHORS = {
   'README.md': [
@@ -4685,6 +4703,91 @@ function checkVersionsKtav(text, release, disagreements) {
   // Entries anchored to other paths are historical and are ignored entirely.
 }
 
+// Appendix A's entry for the current version lives in a content unit's
+// meta.js, and meta is deliberately never token-substituted: those
+// headings are historical records, so a released version's date must
+// stay put when the next one ships. That exemption is what let 0.7.0
+// go out with its appendix entry still reading "unreleased" — the
+// substitution machinery could not have caught it, and nothing else
+// was looking. This check is the "nothing else" part.
+//
+// The title is the date alone; the version comes from the unit's
+// directory name and its `number` field.
+const APPENDIX_TITLE = {
+  en: (released) => `— ${released}`,
+  ru: (released) => `— ${released}`,
+  zh: (released) => `—— ${released}`,
+};
+
+// A unit whose name is a bare version — `sec-0.7.1` — is an Appendix A
+// entry. Synthetic content directories in the test suite use names like
+// `sec-1`, so this is also how the check recognises a tree that has no
+// Appendix A to check.
+const APPENDIX_UNIT_RE = /^sec-\d+\.\d+\.\d+$/u;
+
+function checkAppendixHeading(root, release, disagreements) {
+  const contentDir = path.join(root, RELEASE_PATH, 'content');
+  let manifest;
+  try {
+    manifest = readJsonDefault(path.join(contentDir, 'manifest.js'));
+  } catch {
+    // No manifest here at all: nothing to check, and whatever is wrong
+    // with this tree is reported by the builder's own validation.
+    return;
+  }
+  if (!Array.isArray(manifest) || !manifest.some((u) => APPENDIX_UNIT_RE.test(u))) {
+    // This tree has no Appendix A. The real repository always does, and
+    // losing every entry at once would already fail the section-inventory
+    // lock, so nothing is silently skipped here that is not caught there.
+    return;
+  }
+
+  const rel = `${RELEASE_PATH}/content/sec-${release.version}/meta.js`;
+  const metaPath = path.join(root, rel);
+  let stat = null;
+  try {
+    stat = fs.lstatSync(metaPath);
+  } catch {
+    // treated as missing below
+  }
+  if (stat === null || !stat.isFile()) {
+    disagreements.push(
+      `${rel}: Appendix A has no unit for the current version ` +
+      `(release.js declares ${JSON.stringify(release.version)}; ` +
+      'every released version needs its own sec-<version> unit)');
+    return;
+  }
+
+  let meta;
+  try {
+    meta = readJsonDefault(metaPath);
+  } catch (e) {
+    disagreements.push(`${rel}: could not be decoded: ${e.message}`);
+    return;
+  }
+
+  if (meta.number !== release.version) {
+    disagreements.push(
+      `${rel}: meta.number is ${JSON.stringify(meta.number)}, ` +
+      `expected ${JSON.stringify(release.version)} (release.js)`);
+  }
+
+  const title = meta.title;
+  if (typeof title !== 'object' || title === null) {
+    disagreements.push(`${rel}: meta.title must be an object of language strings`);
+    return;
+  }
+  for (const lang of LANGS) {
+    const expected = APPENDIX_TITLE[lang](release.released);
+    if (title[lang] !== expected) {
+      disagreements.push(
+        `${rel}: meta.title.${lang} is ${JSON.stringify(title[lang])}, ` +
+        `expected ${JSON.stringify(expected)} (release.js). A heading still ` +
+        'reading "unreleased" after the release is exactly what this checks.');
+    }
+  }
+}
+
 export async function checkHandwrittenVersionReferences(root, release) {
   const disagreements = [];
   const contents = new Map();
@@ -4705,7 +4808,11 @@ export async function checkHandwrittenVersionReferences(root, release) {
   if (contents.has('versions.ktav')) {
     checkVersionsKtav(contents.get('versions.ktav'), release, disagreements);
   }
-  for (const [rel, anchors] of Object.entries(HANDWRITTEN_README_ANCHORS)) {
+  const allAnchors = {
+    ...HANDWRITTEN_README_ANCHORS,
+    ...HANDWRITTEN_CHANGELOG_ANCHORS,
+  };
+  for (const [rel, anchors] of Object.entries(allAnchors)) {
     const text = contents.get(rel);
     if (text === undefined) continue;
     for (const anchor of anchors) {
@@ -4714,11 +4821,12 @@ export async function checkHandwrittenVersionReferences(root, release) {
         disagreements.push(
           `${rel}: no current-version reference matching /${pattern.source}/ ` +
           `(the current version per release.js is ${JSON.stringify(release.version)}; ` +
-          'update the README line, or update the anchor in checkHandwrittenVersionReferences ' +
+          'update the line, or update the anchor in checkHandwrittenVersionReferences ' +
           'if the prose deliberately changed)');
       }
     }
   }
+  checkAppendixHeading(root, release, disagreements);
   if (disagreements.length > 0) {
     fail('hand-maintained files disagree with release.js:\n' +
       disagreements.map((d) => `  ${d}`).join('\n'));

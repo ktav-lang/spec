@@ -103,12 +103,41 @@ const REAL_RELEASE = JSON.parse(
   fs.readFileSync(path.join(process.cwd(), 'versions', '0.7', 'content', 'release.js'), 'utf8')
     .replace(/^export default /, ''));
 
-const HANDWRITTEN_ROOT_FILES = ['versions.ktav', 'README.md', 'README.ru.md', 'README.zh.md'];
+const HANDWRITTEN_ROOT_FILES = [
+  'versions.ktav',
+  'README.md', 'README.ru.md', 'README.zh.md',
+  'CHANGELOG.md', 'CHANGELOG.ru.md', 'CHANGELOG.zh.md',
+];
+
+// Appendix A's entry for the current version. Not a root file — it lives
+// in a content unit, and meta is never token-substituted, which is
+// exactly why it needs checking rather than generating.
+const APPENDIX_META_REL =
+  `versions/0.7/content/sec-${REAL_RELEASE.version}/meta.js`;
 
 function copyHandwrittenRootFiles(root) {
   for (const rel of HANDWRITTEN_ROOT_FILES) {
     fs.copyFileSync(path.join(process.cwd(), rel), path.join(root, rel));
   }
+}
+
+// Root files PLUS the Appendix A unit. Kept separate from
+// copyHandwrittenRootFiles because some tests build a synthetic
+// content/ directory in the same temp root and then run the real
+// builder over it: dropping the real sec-<version> unit in there makes
+// closed-world validation reject it as a directory not in manifest.js.
+// Only the drift-check tests want both.
+function copyDriftCheckInputs(root) {
+  copyHandwrittenRootFiles(root);
+  const metaDest = path.join(root, APPENDIX_META_REL);
+  fs.mkdirSync(path.dirname(metaDest), { recursive: true });
+  fs.copyFileSync(path.join(process.cwd(), APPENDIX_META_REL), metaDest);
+  // The appendix check first asks the manifest whether this tree has an
+  // Appendix A at all — that is how synthetic content directories opt
+  // out. Copy the real one so these tests are checking the real
+  // behaviour rather than the opt-out path.
+  const manifestRel = 'versions/0.7/content/manifest.js';
+  fs.copyFileSync(path.join(process.cwd(), manifestRel), path.join(root, manifestRel));
 }
 
 function realReleaseJs() {
@@ -4564,7 +4593,7 @@ test('body field with correctly escaped \\${ is accepted and decodes to the two 
 test('checkHandwrittenVersionReferences accepts the real repo hand-maintained files', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-ok-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     // This also proves historical 0.6.4 / 0.7.0 / 2026-08-23 mentions in the
     // real files never trip the check: only current-version anchors match.
     await assert.doesNotReject(() =>
@@ -4577,7 +4606,7 @@ test('checkHandwrittenVersionReferences accepts the real repo hand-maintained fi
 test('checkHandwrittenVersionReferences rejects a stale versions.ktav stable.version', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-stable-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replace('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
@@ -4595,7 +4624,7 @@ test('checkHandwrittenVersionReferences rejects a stale versions.ktav stable.ver
 test('checkHandwrittenVersionReferences rejects stable pointing at versions/0.6', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-path-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replace('path: versions/0.7', 'path: versions/0.6'));
@@ -4610,7 +4639,7 @@ test('checkHandwrittenVersionReferences rejects stable pointing at versions/0.6'
 test('checkHandwrittenVersionReferences rejects a stale latest.version', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-latest-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     // Only the `latest` block's version line: it directly follows `latest: {`.
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
@@ -4629,7 +4658,7 @@ test('checkHandwrittenVersionReferences rejects a stale latest.version', async (
 test('checkHandwrittenVersionReferences names only the stale README', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-readme-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const readme = path.join(root, 'README.md');
     fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8')
       .split('\n')
@@ -4654,7 +4683,7 @@ test('checkHandwrittenVersionReferences names only the stale README', async () =
 test('checkHandwrittenVersionReferences rejects a missing required file', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-missing-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     fs.rmSync(path.join(root, 'README.zh.md'));
     await assert.rejects(
       () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
@@ -4667,7 +4696,7 @@ test('checkHandwrittenVersionReferences rejects a missing required file', async 
 test('checkHandwrittenVersionReferences collects all disagreements at once', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-all-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replaceAll('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
@@ -4694,7 +4723,7 @@ test('checkHandwrittenVersionReferences collects all disagreements at once', asy
 test('checkHandwrittenVersionReferences rejects unparseable versions.ktav', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-parse-'));
   try {
-    copyHandwrittenRootFiles(root);
+    copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     // Delete the closing brace line of the stable block (the first standalone "}").
     const text = fs.readFileSync(ktav, 'utf8');
@@ -4704,6 +4733,70 @@ test('checkHandwrittenVersionReferences rejects unparseable versions.ktav', asyn
     await assert.rejects(
       () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
       (e) => /versions\.ktav: cannot parse/u.test(e.message));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects a CHANGELOG still reading unreleased', async () => {
+  // The failure this reproduces actually shipped: specification 0.7.0
+  // went out with its changelog entry undated while release.js already
+  // carried the date, and 0.7.1 nearly repeated it.
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-changelog-'));
+  try {
+    copyDriftCheckInputs(root);
+    const file = path.join(root, 'CHANGELOG.md');
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+      .replace(`## [${REAL_RELEASE.version}] — ${REAL_RELEASE.released}`,
+        `## [${REAL_RELEASE.version}] — unreleased`));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('CHANGELOG.md') &&
+        e.message.includes(REAL_RELEASE.released));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects an Appendix A heading still reading unreleased', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-appendix-'));
+  try {
+    copyDriftCheckInputs(root);
+    const file = path.join(root, APPENDIX_META_REL);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+      .replace(`"— ${REAL_RELEASE.released}"`, '"— unreleased"'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('meta.title.en') &&
+        e.message.includes('unreleased'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects an Appendix A number that disagrees', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-appendix-number-'));
+  try {
+    copyDriftCheckInputs(root);
+    const file = path.join(root, APPENDIX_META_REL);
+    fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+      .replace(`"number": "${REAL_RELEASE.version}"`, '"number": "9.9.9"'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('meta.number') && e.message.includes('9.9.9'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects a missing Appendix A unit', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-appendix-missing-'));
+  try {
+    copyDriftCheckInputs(root);
+    fs.rmSync(path.join(root, APPENDIX_META_REL));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('Appendix A has no unit'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
