@@ -244,8 +244,10 @@ feeds:
   the `@@VERSION@@` / `@@DATE@@` token substitution described above;
 - the section-inventory lock check: the builder validates the lock's
   `version` against it;
-- (a consistency check against `versions.ktav` and the root READMEs is
-  planned for a later change).
+- `node scripts/build_spec.mjs` (write and `--check`) also validates that
+  `versions.ktav` and the three root READMEs reference the current version
+  and date exactly as `release.js` declares; any drift fails the build
+  naming each disagreeing file.
 
 ## README source object
 

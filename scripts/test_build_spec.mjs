@@ -33,6 +33,7 @@ import {
   splitPlan,
   MAX_BODY_PARTS,
   recoverBuildOutputTransaction,
+  checkHandwrittenVersionReferences,
 } from './build_spec.mjs';
 
 function write(p, content) {
@@ -95,6 +96,24 @@ function unitMeta(kind, opts = {}) {
 
 // unit defs: { name, meta, bodies: [[en,ru,zh], ...] }
 const TEST_RELEASE = { version: '4.5.6', released: '2020-06-01' };
+
+// The real repo's hand-maintained root files (versions.ktav + the three root
+// READMEs) must be consistent with this, per versions/0.7/content/release.js.
+const REAL_RELEASE = JSON.parse(
+  fs.readFileSync(path.join(process.cwd(), 'versions', '0.7', 'content', 'release.js'), 'utf8')
+    .replace(/^export default /, ''));
+
+const HANDWRITTEN_ROOT_FILES = ['versions.ktav', 'README.md', 'README.ru.md', 'README.zh.md'];
+
+function copyHandwrittenRootFiles(root) {
+  for (const rel of HANDWRITTEN_ROOT_FILES) {
+    fs.copyFileSync(path.join(process.cwd(), rel), path.join(root, rel));
+  }
+}
+
+function realReleaseJs() {
+  return 'export default ' + JSON.stringify(REAL_RELEASE, null, 2) + '\n';
+}
 
 function makeContent(dir, unitDefs, manifestNames) {
   write(path.join(dir, 'content', 'package.json'), '{\n  "type": "module"\n}\n');
@@ -2799,12 +2818,14 @@ test('--check reports pending transaction artifacts without removing or rewritin
     fs.copyFileSync(path.join(process.cwd(), 'scripts', 'build_spec.mjs'), path.join(scriptDir, 'build_spec.mjs'));
     const fixtures = baseFixtures();
     makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    write(path.join(contentDir, 'release.js'), realReleaseJs());
     write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),
-        version: TEST_RELEASE.version,
+        version: REAL_RELEASE.version,
       }, null, 2) + '\n');
+    copyHandwrittenRootFiles(temp);
     const build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
     writeBuildOutputs(versionDir, contentDir, build);
     const torn = path.join(versionDir, '.build-spec.transaction.json.tmp');
@@ -2834,12 +2855,14 @@ test('normal CLI write recovers pre-journal outputs before closed-world validati
       path.join(scriptDir, 'build_spec.mjs'));
     const fixtures = baseFixtures();
     makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
+    write(path.join(contentDir, 'release.js'), realReleaseJs());
     write(path.join(scriptDir, 'locks', 'section-inventory.0.7.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),
-        version: TEST_RELEASE.version,
+        version: REAL_RELEASE.version,
       }, null, 2) + '\n');
+    copyHandwrittenRootFiles(temp);
     const expected = await buildBuffers(contentDir);
     const scriptUrl = pathToFileURL(path.join(scriptDir, 'build_spec.mjs')).href;
     const source = `
@@ -4536,4 +4559,152 @@ test('body field with correctly escaped \\${ is accepted and decodes to the two 
   assert.equal(part.en, 'cost ${x\n');
   assert.equal(part.ru, 'цена ${y\n');
   assert.equal(part.zh, '价格 ${z\n');
+});
+
+test('checkHandwrittenVersionReferences accepts the real repo hand-maintained files', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-ok-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    // This also proves historical 0.6.4 / 0.7.0 / 2026-08-23 mentions in the
+    // real files never trip the check: only current-version anchors match.
+    await assert.doesNotReject(() =>
+      checkHandwrittenVersionReferences(root, REAL_RELEASE));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects a stale versions.ktav stable.version', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-stable-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const ktav = path.join(root, 'versions.ktav');
+    fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
+      .replace('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('versions.ktav') &&
+        e.message.includes('stable') &&
+        e.message.includes('"0.7.0"') &&
+        e.message.includes(JSON.stringify(REAL_RELEASE.version)));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects stable pointing at versions/0.6', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-path-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const ktav = path.join(root, 'versions.ktav');
+    fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
+      .replace('path: versions/0.7', 'path: versions/0.6'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => /versions\.ktav: stable\.path is "versions\/0\.6"/u.test(e.message));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects a stale latest.version', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-latest-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const ktav = path.join(root, 'versions.ktav');
+    // Only the `latest` block's version line: it directly follows `latest: {`.
+    fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
+      .replace(/(latest: \{\n\s*version: )([^\n]+)/u,
+        `$10.0.1`));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('latest') &&
+        e.message.includes('"0.0.1"') &&
+        !/latest\.path/u.test(e.message));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences names only the stale README', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-readme-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const readme = path.join(root, 'README.md');
+    fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8')
+      .split('\n')
+      .map((line) => line.includes('**Current stable:**')
+        ? line.replaceAll(REAL_RELEASE.version, '0.7.0')
+        : line)
+      .join('\n'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => {
+        assert.ok(e.message.includes('README.md'), e.message);
+        assert.ok(!e.message.includes('README.ru.md'), e.message);
+        assert.ok(!e.message.includes('README.zh.md'), e.message);
+        assert.ok(!e.message.includes('versions.ktav'), e.message);
+        return true;
+      });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects a missing required file', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-missing-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    fs.rmSync(path.join(root, 'README.zh.md'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => e.message.includes('README.zh.md'));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences collects all disagreements at once', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-all-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const ktav = path.join(root, 'versions.ktav');
+    fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
+      .replaceAll('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
+    const readme = path.join(root, 'README.md');
+    fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8')
+      .split('\n')
+      .map((line) => line.includes('**Current stable:**')
+        ? line.replaceAll(REAL_RELEASE.version, '0.7.0')
+        : line)
+      .join('\n'));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => {
+        assert.ok(e.message.includes('stable'), e.message);
+        assert.ok(e.message.includes('latest'), e.message);
+        assert.ok(e.message.includes('README.md'), e.message);
+        return true;
+      });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('checkHandwrittenVersionReferences rejects unparseable versions.ktav', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-parse-'));
+  try {
+    copyHandwrittenRootFiles(root);
+    const ktav = path.join(root, 'versions.ktav');
+    // Delete the closing brace line of the stable block (the first standalone "}").
+    const text = fs.readFileSync(ktav, 'utf8');
+    const firstClose = text.indexOf('\n}\n');
+    assert.notEqual(firstClose, -1);
+    fs.writeFileSync(ktav, text.slice(0, firstClose) + '\n' + text.slice(firstClose + 3));
+    await assert.rejects(
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      (e) => /versions\.ktav: cannot parse/u.test(e.message));
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

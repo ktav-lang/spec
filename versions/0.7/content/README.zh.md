@@ -219,8 +219,10 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 - frontmatter 单元的 `**Version:**` / `**Date:**` 行——通过上文描述的
   `@@VERSION@@` / `@@DATE@@` 令牌替换;
 - section-inventory lock 检查:Builder 用它校验 lock 的 `version`;
-- (与 `versions.ktav` 及根目录 README 的一致性检查计划在后续改动中
-  加入)。
+- `node scripts/build_spec.mjs`（write 与 `--check`）还会校验
+  `versions.ktav` 与三个根目录 README 对当前版本和日期的引用与
+  `release.js` 声明完全一致;任何漂移都会使构建失败,并逐个指出
+  不一致的文件。
 
 ## README 源对象
 

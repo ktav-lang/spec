@@ -245,8 +245,10 @@ feeds:
   the \`@@VERSION@@\` / \`@@DATE@@\` token substitution described above;
 - the section-inventory lock check: the builder validates the lock's
   \`version\` against it;
-- (a consistency check against \`versions.ktav\` and the root READMEs is
-  planned for a later change).
+- \`node scripts/build_spec.mjs\` (write and \`--check\`) also validates that
+  \`versions.ktav\` and the three root READMEs reference the current version
+  and date exactly as \`release.js\` declares; any drift fails the build
+  naming each disagreeing file.
 
 ## README source object
 
@@ -664,8 +666,10 @@ MUST совпадать с соответствующими полями \`meta.
 - строки \`**Version:**\` / \`**Date:**\` юнита frontmatter — через
   подстановку токенов \`@@VERSION@@\` / \`@@DATE@@\`, описанную выше;
 - проверку section-inventory lock: Builder сверяет \`version\` lock-а с ним;
-- (сверку с \`versions.ktav\` и корневыми README планируется добавить
-  позднее).
+- \`node scripts/build_spec.mjs\` (write и \`--check\`) также
+  проверяет, что \`versions.ktav\` и три корневых README ссылаются на
+  текущие версию и дату в точности как объявляет \`release.js\`; любое
+  расхождение валит сборку, называя каждый расходящийся файл.
 
 ## Исходный объект README
 
@@ -1052,8 +1056,10 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 - frontmatter 单元的 \`**Version:**\` / \`**Date:**\` 行——通过上文描述的
   \`@@VERSION@@\` / \`@@DATE@@\` 令牌替换;
 - section-inventory lock 检查:Builder 用它校验 lock 的 \`version\`;
-- (与 \`versions.ktav\` 及根目录 README 的一致性检查计划在后续改动中
-  加入)。
+- \`node scripts/build_spec.mjs\`（write 与 \`--check\`）还会校验
+  \`versions.ktav\` 与三个根目录 README 对当前版本和日期的引用与
+  \`release.js\` 声明完全一致;任何漂移都会使构建失败,并逐个指出
+  不一致的文件。
 
 ## README 源对象
 
