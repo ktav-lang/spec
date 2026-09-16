@@ -2990,6 +2990,9 @@ flag, but MUST treat a document as 0.7.0 by default unless the
 caller explicitly selects a different target version — this
 specification defines no in-document version marker.
 
+A claim at either level is supported only by a corpus run performed
+by a conformance test runner that satisfies § 8.5.
+
 ### 8.5 Conformance Runner Contract
 
 `versions/0.7/tests/manifest.json` is a machine-readable inventory of
@@ -2997,21 +3000,25 @@ this section's conformance corpus: the closed set of category
 directories under `versions/0.7/tests/`, the exact fixture count for
 each one, and every fixture whose primary input is not decodable as
 text and is instead given to the implementation under test as a raw
-byte sequence. A conformance test runner for Ktav 0.7.0 MUST load
+byte sequence. A conformance test runner for Ktav 0.7 MUST load
 this file before enumerating any fixture, and MUST reject a manifest
 whose `schema_version` field names a schema newer than the runner
-implements rather than guess at its shape.
+implements rather than guess at its shape. Such a runner:
 
 - Hard-fails, without executing any fixture, if a directory named
   in the manifest's `categories` map is absent from the tests
   directory being run, or if a directory present under the tests
   directory is not named in that map; an unknown category directory
   MUST NOT be silently skipped or silently accepted.
-- Hard-fails if the number of fixtures actually present in a
-  category differs from the `count` declared for it — the corpus
-  MUST run at its full declared size, not at whatever smaller size
-  a stale checkout, a wrong path, or an earlier spec version's
-  directory happens to contain.
+- Hard-fails if the number of fixtures present in a category differs
+  from the `count` declared for it. This check is over the corpus
+  checkout, not over what a given run executes: which categories an
+  implementation exercises follows from the level it claims (§ 8.1,
+  § 8.2), so a parser-only implementation legitimately does not
+  execute the writer-only `unrepresentable/` fixtures — but every
+  declared category MUST still be present and complete in the
+  checkout. What this forbids is running against a stale checkout, a
+  wrong path, or an earlier specification version's directory.
 - For every fixture the manifest's `fixture_flags` marks with the
   `raw_bytes` flag, reads that fixture's primary input as a byte
   sequence and passes those exact bytes to the implementation under
@@ -3025,6 +3032,13 @@ These checks bound the corpus itself — which fixtures exist, how
 many, and how their bytes reach the implementation under test — and
 are independent of, and do not replace, § 8.1's and § 8.2's
 per-fixture acceptance, rejection, and equivalence requirements.
+
+A claim of parser- or writer-conformance (§ 8.4) is supported only
+by a corpus run performed by a runner that satisfies this section.
+This section defines no separate conformance level for runners: a
+runner is not an implementation and makes no claim of its own, so
+the requirements above take effect as conditions on the evidence for
+an implementation's claim.
 
 ## 9. Security Considerations
 
