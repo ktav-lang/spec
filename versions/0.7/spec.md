@@ -1,8 +1,8 @@
 # Ktav — The Written Configuration Format
 
 **Languages:** **English** · [Русский](spec.ru.md) · [简体中文](spec.zh.md)
-**Version:** 0.7.0
-**Date:** 2026-09-10
+**Version:** 0.7.1
+**Date:** 2026-09-16
 
 ## Abstract
 
@@ -3310,7 +3310,34 @@ shorter output (§ 10.4).
 
 ## Appendix A. Changes
 
-### 0.7.0 — unreleased
+### 0.7.1 — unreleased
+
+Editorial. No change to what a conforming parser or writer does: every
+0.7.0 document parses to the same Value, and every canonical rendering
+is unchanged byte for byte.
+
+- **§ 8.5 — new.** Specifies how a conformance run is verified, and
+  adds `versions/0.7/tests/manifest.json`: a machine-readable inventory
+  of the corpus naming the closed set of category directories, the exact
+  fixture count for each, and every fixture whose primary input must be
+  handed to the implementation as raw bytes rather than decoded text.
+  This adds no obligation. § 8.1 already requires a parser-conforming
+  implementation to accept *every* fixture under `valid/`, and § 8.2
+  the writer equivalent; § 8.5 only makes that "every" checkable, after
+  several independent runners were found reporting success while
+  executing a truncated corpus, the wrong version's corpus, or a
+  fixture whose bytes had been altered by a lossy text decode before
+  the implementation ever saw them.
+- **§ 8.4 — clarified.** A claim of parser- or writer-conformance is
+  supported only by a corpus run performed by a runner satisfying
+  § 8.5. § 8.5 introduces no separate conformance level for runners: a
+  runner is not an implementation and makes no claim of its own, so its
+  requirements take effect as conditions on the evidence for an
+  implementation's claim.
+- **Appendix A — corrected.** The 0.7.0 entry was still headed
+  "unreleased" after 0.7.0 shipped; it now carries the release date.
+
+### 0.7.0 — 2026-09-10
 
 - **Breaking:** § 3.3 whitespace changes from
   ASCII-mandatory-plus-Unicode-`MAY` to a fixed, exhaustively

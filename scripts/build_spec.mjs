@@ -1506,8 +1506,8 @@ function validateSectionInventoryLock(manifest, lockPath, units = null) {
   if (lock.format !== 'ktav-section-inventory') {
     fail(`${lockPath} has unsupported format ${JSON.stringify(lock.format)}`);
   }
-  if (lock.version !== '0.7.0') {
-    fail(`${lockPath} must be version "0.7.0"; got ${JSON.stringify(lock.version)}`);
+  if (lock.version !== '0.7.1') {
+    fail(`${lockPath} must be version "0.7.1"; got ${JSON.stringify(lock.version)}`);
   }
   if (!Array.isArray(lock.units) || lock.units.length === 0) {
     fail(`${lockPath}.units must be a non-empty array of structural records`);

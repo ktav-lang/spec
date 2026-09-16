@@ -95,6 +95,7 @@ export default [
   "sec-10.7",
   "sec-11",
   "named-appendix-a",
+  "sec-0.7.1",
   "sec-0.7.0",
   "sec-0.6.0",
   "sec-0.5.0",

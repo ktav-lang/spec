@@ -674,6 +674,13 @@
       "sep": null
     },
     {
+      "unit": "sec-0.7.1",
+      "kind": "numbered",
+      "number": "0.7.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
       "unit": "sec-0.7.0",
       "kind": "numbered",
       "number": "0.7.0",
@@ -730,5 +737,5 @@
       "sep": null
     }
   ],
-  "version": "0.7.0"
+  "version": "0.7.1"
 }

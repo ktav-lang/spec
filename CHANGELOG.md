@@ -21,6 +21,46 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.7.1] — unreleased
+
+Editorial. No change to what a conforming parser or writer does: every
+0.7.0 document parses to the same Value, and every canonical rendering
+is unchanged byte for byte. Implementations pinned to 0.7.0 remain
+conformant to the format; what changes is how a conformance run is
+verified.
+
+### Added
+
+- **§ 8.5 — conformance runner contract**, and
+  `versions/0.7/tests/manifest.json`: a machine-readable inventory of
+  the corpus naming the closed set of category directories, the exact
+  fixture count for each, and every fixture whose primary input must
+  reach the implementation as raw bytes rather than decoded text.
+
+  This adds no obligation. § 8.1 already requires a parser-conforming
+  implementation to accept *every* fixture under `valid/`, and § 8.2
+  the writer equivalent — § 8.5 only makes that "every" checkable.
+  It exists because several independent runners were found reporting
+  success while executing a truncated corpus, a previous version's
+  corpus, or a fixture whose bytes had been altered by a lossy text
+  decode before the implementation ever saw them. That is the reason
+  this ships as a PATCH: the requirement is not new, only its
+  verification is.
+
+### Changed
+
+- **§ 8.4** — a claim of parser- or writer-conformance is supported
+  only by a corpus run performed by a runner satisfying § 8.5. § 8.5
+  introduces no separate conformance level for runners: a runner is
+  not an implementation and makes no claim of its own, so its
+  requirements take effect as conditions on the evidence for an
+  implementation's claim.
+
+### Fixed
+
+- **Appendix A** — the 0.7.0 entry was still headed "unreleased" after
+  0.7.0 shipped; it now carries the release date.
+
 ## [0.7.0] — 2026-09-10
 
 Normative text and conformance fixtures for 0.7.0, under

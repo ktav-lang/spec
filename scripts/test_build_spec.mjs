@@ -153,7 +153,7 @@ async function validate(fixtures, manifest, mutate, options = {}) {
         format: 'ktav-section-inventory',
         units: options.lock.map((unit) => typeof unit === 'string'
           ? lockUnits(fixtures, [unit])[0] : unit),
-        version: '0.7.0',
+        version: '0.7.1',
       }, null, 2) + '\n');
       validateOptions.sectionInventoryLockPath = lockPath;
     }
@@ -1329,7 +1329,7 @@ test('production-shaped content uses the default section inventory lock under re
     write(lockPath, JSON.stringify({
       format: 'ktav-section-inventory',
       units: lockUnits(baseFixtures(), manifest),
-      version: '0.7.0',
+      version: '0.7.1',
     }, null, 2) + '\n');
 
     assert.equal(defaultSectionInventoryLockPath(contentDir), lockPath);
@@ -1908,7 +1908,7 @@ test('write build restores missing generated content READMEs from README.source.
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, manifest),
-        version: '0.7.0',
+        version: '0.7.1',
       }, null, 2) + '\n');
     for (const lang of LANGS) fs.rmSync(path.join(contentDir, README_FILES[lang]));
 
@@ -2677,7 +2677,7 @@ test('--check reports pending transaction artifacts without removing or rewritin
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),
-        version: '0.7.0',
+        version: '0.7.1',
       }, null, 2) + '\n');
     const build = await buildBuffers(contentDir, { requireSectionInventoryLock: true });
     writeBuildOutputs(versionDir, contentDir, build);
@@ -2712,7 +2712,7 @@ test('normal CLI write recovers pre-journal outputs before closed-world validati
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),
-        version: '0.7.0',
+        version: '0.7.1',
       }, null, 2) + '\n');
     const expected = await buildBuffers(contentDir);
     const scriptUrl = pathToFileURL(path.join(scriptDir, 'build_spec.mjs')).href;

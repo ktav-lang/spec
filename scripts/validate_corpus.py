@@ -128,7 +128,7 @@ CORPUS_LAYOUT_PROFILES = {
         "files": frozenset(),
         "error_categories": ERROR_CATEGORIES_V0_6,
     },
-    "0.7.0": {
+    "0.7.1": {
         "directories": frozenset({
             "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
         }),

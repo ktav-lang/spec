@@ -7,10 +7,10 @@
 **Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
 
 > **版本范围:** 本 README 的功能概览与示例遵循当前稳定规范 Ktav
-> 0.7.0。仍以 0.6.4 为目标的实现应使用
+> 0.7.1。仍以 0.6.4 为目标的实现应使用
 > [0.6.4 规范](versions/0.6/spec.zh.md)
 > 与其[一致性套件](versions/0.6/tests/);两者之间的差异范围见
-> [0.7.0 规范附录 D](versions/0.7/spec.zh.md)。
+> [0.7.1 规范附录 D](versions/0.7/spec.zh.md)。
 
 **演练场：** 在浏览器中互转 JSON / YAML / TOML / INI ⇄ Ktav — **[ktav-lang.github.io](https://ktav-lang.github.io/)**。
 
@@ -354,7 +354,7 @@ timeout: null
 
 ## 完整规范
 
-- **当前稳定版本：** [Ktav 0.7.0](versions/0.7/spec.zh.md) — 发布于 2026-09-10;本 README 的功能概览遵循该版本。
+- **当前稳定版本：** [Ktav 0.7.1](versions/0.7/spec.zh.md) — 发布于 2026-09-16;本 README 的功能概览遵循该版本。
 - **上一个稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23。
 - **已发布/稳定版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.zh.md`](CHANGELOG.zh.md)。
@@ -362,7 +362,7 @@ timeout: null
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.7/tests/)。0.7.0 语料库有四个
+[`versions/<v>/tests/`](versions/0.7/tests/)。0.7.1 语料库有四个
 fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
 `parseable-unrepresentable/`)外加一个顶层元数据文件。更早的 0.6.4
 语料库只有 `valid/` 与 `invalid/`。一致性 runner MUST 遍历目标版本中
