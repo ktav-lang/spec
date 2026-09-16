@@ -31,6 +31,10 @@ This directory is the **per-section source of truth** for
 - \`README.source.js\` is the single \`{ en, ru, zh }\` source object for the
   three README files in this directory. The builder statically validates it
   and generates \`README.md\`, \`README.ru.md\`, and \`README.zh.md\` from it.
+- \`release.js\` is the single release declaration: \`version\` + \`released\`
+  (see below). It has the same canonical \`export default\` + JSON shape as
+  \`meta.js\` and is the one place the current version and release date are
+  written.
 - \`manifest.js\` — the ordered list of units (see below).
 - \`package.json\` — \`{"type":"module"}\`. Historical: it was required back when
   \`build_spec.mjs\` dynamically imported \`meta.js\`/\`body-*.js\` as ES modules.
@@ -171,6 +175,13 @@ then wrap the result in backticks. Backslashes must be replaced **first**,
 or you double-escape them. **Never retype content by hand — script this
 transformation.**
 
+**Release tokens.** Any unit body may contain the plain-ASCII tokens
+\`@@VERSION@@\` and \`@@DATE@@\`; \`@\` has no template meaning here, so no
+escaping is needed. At build time the builder substitutes them with the
+\`version\` / \`released\` values from \`release.js\` in every language. A
+surviving token in a spec output fails the build; README.source.js is never
+substituted and may mention the tokens literally.
+
 **Splitting rule (exact numbers).** Let \`L\` = max line count over the unit's
 three language bodies.
 
@@ -220,6 +231,22 @@ The \`kind\`, \`number\`, \`level\`, and \`sep\` values MUST match the
 corresponding \`meta.js\` fields. Titles and body prose remain editable and are
 not locked. Both files MUST be updated together when a section is intentionally
 added or removed; manifest-only or hierarchy-metadata changes are rejected.
+
+### \`release.js\`
+
+\`release.js\` holds exactly \`{ version, released }\`, in that key order:
+the current spec version and its release date. Like \`meta.js\`, the file
+must be byte-identical to \`export default \` +
+\`JSON.stringify(value, null, 2)\` + one newline; any other serialization is
+rejected. It is the single place the version and date are written, and it
+feeds:
+
+- the \`**Version:**\` / \`**Date:**\` lines in the frontmatter unit, via
+  the \`@@VERSION@@\` / \`@@DATE@@\` token substitution described above;
+- the section-inventory lock check: the builder validates the lock's
+  \`version\` against it;
+- (a consistency check against \`versions.ktav\` and the root READMEs is
+  planned for a later change).
 
 ## README source object
 
@@ -413,6 +440,10 @@ push/PR.
 - \`README.source.js\` — единый source object \`{ en, ru, zh }\` для трёх README
   этой директории. Builder статически проверяет его и генерирует
   \`README.md\`, \`README.ru.md\` и \`README.zh.md\`.
+- \`release.js\` — единственное объявление релиза: \`version\` + \`released\`
+  (см. ниже). У него та же каноническая форма \`export default\` + JSON, что
+  и у \`meta.js\`, и это единственное место, где записаны текущие версия и
+  дата релиза.
 - \`manifest.js\` — упорядоченный список юнитов (см. ниже).
 - \`package.json\` — \`{"type":"module"}\`. Исторически: был нужен, пока
   \`build_spec.mjs\` динамически импортировал \`meta.js\`/\`body-*.js\` как
@@ -560,6 +591,13 @@ export default {
 не перенабирайте содержимое вручную — автоматизируйте это
 преобразование.**
 
+**Релизные токены.** Любое тело юнита может содержать ASCII-токены
+\`@@VERSION@@\` и \`@@DATE@@\`; у \`@\` нет шаблонного значения, поэтому
+экранирование не нужно. При сборке Builder подставляет вместо них значения
+\`version\` / \`released\` из \`release.js\` на всех языках. Токен,
+прорвавшийся в spec-вывод, роняет сборку; README.source.js не
+подставляется никогда и может упоминать токены буквально.
+
 **Правило разбиения (точные числа).** Пусть \`L\` — максимум числа строк
 по трём языковым телам юнита.
 
@@ -613,6 +651,21 @@ MUST совпадать с соответствующими полями \`meta.
 остаются редактируемыми и lock-ом не защищаются. При намеренном добавлении или
 удалении секции оба файла MUST обновляться вместе; изменения только manifest
 или иерархических meta-полей отвергаются.
+
+### \`release.js\`
+
+\`release.js\` содержит ровно \`{ version, released }\`, именно в этом
+порядке ключей: текущую версию спецификации и дату её релиза. Как и
+\`meta.js\`, файл должен быть байт-в-байт идентичен \`export default \` +
+\`JSON.stringify(value, null, 2)\` + один перевод строки; любая иная
+сериализация отвергается. Это единственное место, где записаны версия и
+дата; они питают:
+
+- строки \`**Version:**\` / \`**Date:**\` юнита frontmatter — через
+  подстановку токенов \`@@VERSION@@\` / \`@@DATE@@\`, описанную выше;
+- проверку section-inventory lock: Builder сверяет \`version\` lock-а с ним;
+- (сверку с \`versions.ktav\` и корневыми README планируется добавить
+  позднее).
 
 ## Исходный объект README
 
@@ -809,6 +862,9 @@ push/PR.
 - \`README.source.js\` —— 本目录三个 README 共用的 \`{ en, ru, zh }\` source
   object。Builder 会静态检查它并据此生成 \`README.md\`、\`README.ru.md\` 和
   \`README.zh.md\`。
+- \`release.js\` —— 唯一的发布声明:\`version\` + \`released\`(见下文)。
+  它与 \`meta.js\` 一样采用规范的 \`export default\` + JSON 形态,是唯一
+  写有当前版本号与发布日期的地方。
 - \`manifest.js\` —— 单元的有序列表(见下文)。
 - \`package.json\` —— \`{"type":"module"}\`。历史遗留:曾用于
   \`build_spec.mjs\` 把 \`meta.js\`/\`body-*.js\` 当作 ES 模块动态导入的阶段。
@@ -939,6 +995,12 @@ export default {
 然后把结果用反引号包裹。反斜杠必须**最先**替换,否则会被双重转义。
 **切勿手工重新键入内容——请用脚本完成这一变换。**
 
+**发布令牌。**任何单元正文都可以包含纯 ASCII 令牌 \`@@VERSION@@\` 与
+\`@@DATE@@\`;\`@\` 在这里没有模板含义,因此无需转义。构建时 Builder 会在
+所有语言中把它们替换为 \`release.js\` 的 \`version\` / \`released\` 值。残留到
+spec 输出中的令牌会使构建失败;README.source.js 永不被替换,可按字面
+提及这些令牌。
+
 **拆分规则(精确数字)。**令 \`L\` 为该单元三种语言正文行数的最大值。
 
 - 若 \`L <= 120\`,则 \`N = 1\`(单个 \`body-1.js\`)。
@@ -979,6 +1041,19 @@ N-1 个切割点;如果距离相等,则选择较早的空行边界。若某语�
 \`kind\`、\`number\`、\`level\` 和 \`sep\` MUST 与对应的 \`meta.js\`
 字段一致。标题文字和正文仍可编辑,不受 lock 保护。有意新增或删除章节时,
 两个文件 MUST 同时更新;仅修改 manifest 或层级 meta 字段会被拒绝。
+
+### \`release.js\`
+
+\`release.js\` 恰好包含 \`{ version, released }\`,且键序正是如此:当前
+规范版本号及其发布日期。与 \`meta.js\` 一样,该文件必须与 \`export default \`
++ \`JSON.stringify(value, null, 2)\` + 一个换行逐字节一致;任何其他序列化
+都会被拒绝。它是唯一写有版本号与日期的地方,并供给:
+
+- frontmatter 单元的 \`**Version:**\` / \`**Date:**\` 行——通过上文描述的
+  \`@@VERSION@@\` / \`@@DATE@@\` 令牌替换;
+- section-inventory lock 检查:Builder 用它校验 lock 的 \`version\`;
+- (与 \`versions.ktav\` 及根目录 README 的一致性检查计划在后续改动中
+  加入)。
 
 ## README 源对象
 

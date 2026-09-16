@@ -6,7 +6,14 @@
 // decoded by a raw-source scanner without running its code, and manifest.js /
 // meta.js are decoded as strict UTF-8 and parsed as JSON, and must be
 // byte-identical to the canonical serialization (`export default ` +
-// JSON.stringify(value, null, 2) + one newline).
+// JSON.stringify(value, null, 2) + one newline). release.js is the single
+// release declaration (version + release date), read the same canonical way.
+// Unit bodies may carry the plain tokens @@VERSION@@ / @@DATE@@; both are
+// substituted with the release.js values at build time on the decoded text,
+// and the build fails if a token survives into any of the three spec
+// outputs. README.source.js is documentation, is never substituted, and may
+// mention the tokens literally. The section-inventory
+// lock's version must equal release.version.
 // Node ESM, built-ins only. Usage:
 //   node scripts/build_spec.mjs            write the three spec files and READMEs
 //   node scripts/build_spec.mjs --check    verify outputs byte-identical, no writes
@@ -30,6 +37,9 @@ export const LANGS = ['en', 'ru', 'zh'];
 export const OUT_FILES = { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' };
 export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.zh.md' };
 export const README_SOURCE_FILE = 'README.source.js';
+export const RELEASE_FILE = 'release.js';
+export const VERSION_TOKEN = '@@VERSION@@';
+export const DATE_TOKEN = '@@DATE@@';
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
 
 const NUMBERED_HEADING_PREFIX_RE = /^\d+(?:\.\d+)*/u;
@@ -1417,7 +1427,7 @@ function validateBodySourceShape(unit, k, src, label = `body-${k}.js`) {
 
 const TOP_LEVEL_ALLOWED_FILES = new Set([
   'README.md', 'README.ru.md', 'README.zh.md', README_SOURCE_FILE,
-  'manifest.js', 'package.json',
+  RELEASE_FILE, 'manifest.js', 'package.json',
 ]);
 
 function readJsonDefault(filePath) {
@@ -1493,7 +1503,53 @@ function structuralMeta(unit, meta) {
   };
 }
 
-function validateSectionInventoryLock(manifest, lockPath, units = null) {
+export function substituteReleaseTokens(text, release) {
+  return text.replaceAll(VERSION_TOKEN, release.version)
+    .replaceAll(DATE_TOKEN, release.released);
+}
+
+const RELEASE_KEY_ORDER = ['version', 'released'];
+const RELEASE_VERSION_RE = /^\d+\.\d+\.\d+$/u;
+const RELEASE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/u;
+
+function readRelease(contentDir) {
+  const releasePath = path.join(contentDir, RELEASE_FILE);
+  const release = readJsonDefault(releasePath);
+  const CANONICAL_PREFIX = 'export default ';
+  const canonical = CANONICAL_PREFIX + JSON.stringify(release, null, 2) + '\n';
+  if (fs.readFileSync(releasePath, 'utf8') !== canonical) {
+    fail(`${RELEASE_FILE} must be byte-identical to the canonical serialization (${CANONICAL_PREFIX} + JSON.stringify(value, null, 2) + one newline)`);
+  }
+  if (typeof release !== 'object' || release === null || Array.isArray(release)) {
+    fail(`${RELEASE_FILE} must export an object`);
+  }
+  const keys = Object.keys(release);
+  const extra = keys.filter((key) => !RELEASE_KEY_ORDER.includes(key));
+  const missing = RELEASE_KEY_ORDER.filter((key) => !keys.includes(key));
+  if (extra.length || missing.length ||
+      keys.some((key, i) => key !== RELEASE_KEY_ORDER[i])) {
+    const bits = [];
+    if (extra.length) bits.push(`unexpected key(s) ${extra.map((k) => JSON.stringify(k)).join(', ')}`);
+    if (missing.length) bits.push(`missing key(s) ${missing.map((k) => JSON.stringify(k)).join(', ')}`);
+    fail(`${RELEASE_FILE} must have exactly the keys {version, released} in that order` +
+      (bits.length ? `; got ${bits.join('; ')}` : ''));
+  }
+  if (typeof release.version !== 'string' || release.version.length === 0) {
+    fail(`${RELEASE_FILE} field version must be a non-empty string`);
+  }
+  if (!RELEASE_VERSION_RE.test(release.version)) {
+    fail(`${RELEASE_FILE} field version must match /^\\d+\\.\\d+\\.\\d+$/u; got ${JSON.stringify(release.version)}`);
+  }
+  if (typeof release.released !== 'string' || release.released.length === 0) {
+    fail(`${RELEASE_FILE} field released must be a non-empty string`);
+  }
+  if (!RELEASE_DATE_RE.test(release.released)) {
+    fail(`${RELEASE_FILE} field released must match /^\\d{4}-\\d{2}-\\d{2}$/u; got ${JSON.stringify(release.released)}`);
+  }
+  return { version: release.version, released: release.released };
+}
+
+function validateSectionInventoryLock(manifest, lockPath, units = null, expectedVersion) {
   const lock = readCanonicalJson(lockPath);
   if (typeof lock !== 'object' || lock === null || Array.isArray(lock)) {
     fail(`${lockPath} must export an object`);
@@ -1506,8 +1562,8 @@ function validateSectionInventoryLock(manifest, lockPath, units = null) {
   if (lock.format !== 'ktav-section-inventory') {
     fail(`${lockPath} has unsupported format ${JSON.stringify(lock.format)}`);
   }
-  if (lock.version !== '0.7.1') {
-    fail(`${lockPath} must be version "0.7.1"; got ${JSON.stringify(lock.version)}`);
+  if (lock.version !== expectedVersion) {
+    fail(`${lockPath} must be version ${JSON.stringify(expectedVersion)}; got ${JSON.stringify(lock.version)}`);
   }
   if (!Array.isArray(lock.units) || lock.units.length === 0) {
     fail(`${lockPath}.units must be a non-empty array of structural records`);
@@ -1711,10 +1767,12 @@ export async function validateContentDir(contentDir, options = {}) {
     fail('manifest.js must export a non-empty array of unique non-empty strings');
   }
 
+  const release = readRelease(contentDir);
+
   const lockPath = options.requireSectionInventoryLock || options.sectionInventoryLockPath
     ? options.sectionInventoryLockPath || defaultSectionInventoryLockPath(contentDir)
     : null;
-  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath);
+  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath, null, release.version);
 
   const manifestSet = new Set(manifest);
 
@@ -1906,13 +1964,13 @@ export async function validateContentDir(contentDir, options = {}) {
     units.set(unit, { meta, parts });
   }
 
-  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath, units);
-  return { manifest, units, readmes };
+  if (lockPath !== null) validateSectionInventoryLock(manifest, lockPath, units, release.version);
+  return { manifest, units, readmes, release };
 }
 
 // Assemble outputs without writing. Returns { bufs, totalLen, manifest, pieces }.
 export async function buildBuffers(contentDir, options = {}) {
-  const { manifest, units, readmes } = await validateContentDir(contentDir, options);
+  const { manifest, units, readmes, release } = await validateContentDir(contentDir, options);
 
   const outputs = { en: [], ru: [], zh: [] };
   const pieces = { en: [], ru: [], zh: [] };
@@ -1921,7 +1979,8 @@ export async function buildBuffers(contentDir, options = {}) {
   for (const unit of manifest) {
     const { meta, parts } = units.get(unit);
     for (const lang of LANGS) {
-      const body = Buffer.from(parts.map((p) => p[lang]).join(''), 'utf8');
+      const bodyText = substituteReleaseTokens(parts.map((p) => p[lang]).join(''), release);
+      const body = Buffer.from(bodyText, 'utf8');
       const arr = outputs[lang];
       if (meta.kind !== 'frontmatter') {
         const headingLine = generatedHeadingLine(meta, lang);
@@ -1950,7 +2009,14 @@ export async function buildBuffers(contentDir, options = {}) {
   }
   const readmeBufs = {};
   for (const lang of LANGS) readmeBufs[lang] = Buffer.from(readmes[lang], 'utf8');
-  return { bufs, totalLen, manifest, pieces, readmeBufs };
+  for (const lang of LANGS) {
+    for (const token of [VERSION_TOKEN, DATE_TOKEN]) {
+      if (bufs[lang].includes(token)) {
+        fail(`built ${OUT_FILES[lang]} still contains release placeholder ${token} (substitution is mandatory; a surviving token means the token text also occurs literally somewhere the builder does not substitute)`);
+      }
+    }
+  }
+  return { bufs, totalLen, manifest, pieces, readmeBufs, release };
 }
 
 function assertRegularDestination(destination) {

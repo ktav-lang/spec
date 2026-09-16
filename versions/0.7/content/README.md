@@ -30,6 +30,10 @@ This directory is the **per-section source of truth** for
 - `README.source.js` is the single `{ en, ru, zh }` source object for the
   three README files in this directory. The builder statically validates it
   and generates `README.md`, `README.ru.md`, and `README.zh.md` from it.
+- `release.js` is the single release declaration: `version` + `released`
+  (see below). It has the same canonical `export default` + JSON shape as
+  `meta.js` and is the one place the current version and release date are
+  written.
 - `manifest.js` — the ordered list of units (see below).
 - `package.json` — `{"type":"module"}`. Historical: it was required back when
   `build_spec.mjs` dynamically imported `meta.js`/`body-*.js` as ES modules.
@@ -170,6 +174,13 @@ then wrap the result in backticks. Backslashes must be replaced **first**,
 or you double-escape them. **Never retype content by hand — script this
 transformation.**
 
+**Release tokens.** Any unit body may contain the plain-ASCII tokens
+`@@VERSION@@` and `@@DATE@@`; `@` has no template meaning here, so no
+escaping is needed. At build time the builder substitutes them with the
+`version` / `released` values from `release.js` in every language. A
+surviving token in a spec output fails the build; README.source.js is never
+substituted and may mention the tokens literally.
+
 **Splitting rule (exact numbers).** Let `L` = max line count over the unit's
 three language bodies.
 
@@ -219,6 +230,22 @@ The `kind`, `number`, `level`, and `sep` values MUST match the
 corresponding `meta.js` fields. Titles and body prose remain editable and are
 not locked. Both files MUST be updated together when a section is intentionally
 added or removed; manifest-only or hierarchy-metadata changes are rejected.
+
+### `release.js`
+
+`release.js` holds exactly `{ version, released }`, in that key order:
+the current spec version and its release date. Like `meta.js`, the file
+must be byte-identical to `export default ` +
+`JSON.stringify(value, null, 2)` + one newline; any other serialization is
+rejected. It is the single place the version and date are written, and it
+feeds:
+
+- the `**Version:**` / `**Date:**` lines in the frontmatter unit, via
+  the `@@VERSION@@` / `@@DATE@@` token substitution described above;
+- the section-inventory lock check: the builder validates the lock's
+  `version` against it;
+- (a consistency check against `versions.ktav` and the root READMEs is
+  planned for a later change).
 
 ## README source object
 
