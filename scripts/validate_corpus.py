@@ -53,6 +53,9 @@ import stat
 import sys
 from decimal import Decimal, InvalidOperation
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import release_info
+
 PROGRAMMATIC_UNREPRESENTABLE_REASONS = frozenset({
     "ScalarRoot",
     "EmptyKeyName",
@@ -122,20 +125,48 @@ KTAV_WHITESPACE = frozenset(
     )
 )
 CORPUS_INVENTORY_FIELDS = frozenset({"version", "files"})
-CORPUS_LAYOUT_PROFILES = {
+# Frozen historical profile: versions/0.6 is frozen and gains no release
+# declaration (content/release.js), so its profile stays a literal here.
+FROZEN_CORPUS_LAYOUT_PROFILES = {
     "0.6.4": {
         "directories": frozenset({"valid", "invalid"}),
         "files": frozenset(),
         "error_categories": ERROR_CATEGORIES_V0_6,
     },
-    "0.7.1": {
-        "directories": frozenset({
-            "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
-        }),
-        "files": frozenset({"boundary-fixtures.json", "manifest.json"}),
-        "error_categories": ERROR_CATEGORIES_V0_7,
-    },
 }
+# Structural facts of the current corpus generation. The KEY under which this
+# profile is registered comes from the sibling content/release.js declaration
+# (via corpus_layout_profiles), never from a literal here.
+CURRENT_CORPUS_LAYOUT = {
+    "directories": frozenset({
+        "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
+    }),
+    "files": frozenset({"boundary-fixtures.json", "manifest.json"}),
+}
+
+
+class ReleaseFamilyError(ValueError):
+    """The validator has no ERROR_CATEGORIES entry for a release family."""
+
+
+def corpus_layout_profiles(release_version):
+    """Layout profiles keyed by corpus version for the given release family.
+
+    `release_version` comes from the sibling content/release.js declaration;
+    None selects only the frozen historical profiles.
+    """
+    profiles = dict(FROZEN_CORPUS_LAYOUT_PROFILES)
+    if release_version is not None:
+        family = release_version.rsplit(".", 1)[0]
+        if family not in ERROR_CATEGORIES_BY_VERSION:
+            raise ReleaseFamilyError(
+                "validator needs an ERROR_CATEGORIES entry for release "
+                "family %r (declared version %r)" % (family, release_version))
+        profiles[release_version] = {
+            **CURRENT_CORPUS_LAYOUT,
+            "error_categories": ERROR_CATEGORIES_BY_VERSION[family],
+        }
+    return profiles
 IGNORED_CORPUS_TOP_LEVEL_NAMES = frozenset({
     "docs_local", ".idea", ".vscode", ".DS_Store", "Thumbs.db", "desktop.ini",
 })
@@ -1767,13 +1798,32 @@ def _validate_hash_mapping(value, results, rpath, locked_dirs, locked_files):
     return valid
 
 
-def load_corpus_inventory_lock(lock_path, results):
+def load_corpus_inventory_lock(lock_path, results, release_version=None,
+                               release_hint=None):
     """Load one inventory lock and return (data, layout profile).
 
     The caller uses the profile for semantic checks and passes the parsed data
     to the inventory checker, so malformed locks produce one diagnostic only.
+    `release_version` is the version declared by the sibling
+    content/release.js (None when absent/unreadable); `release_hint` is
+    appended to the unsupported-version diagnostic when release_version is
+    None, pointing at the expected declaration path.
     """
     category = "corpus inventory lock"
+    try:
+        profiles = corpus_layout_profiles(release_version)
+    except ReleaseFamilyError as e:
+        results.fail(category, "--corpus-inventory-lock %s: release "
+                     "declaration declares version %r which this validator "
+                     "does not know: %s"
+                     % (lock_path, release_version, e))
+        # Still register the declared version structurally (with the union
+        # of known categories) so the lock diagnostic lists it as supported.
+        profiles = dict(FROZEN_CORPUS_LAYOUT_PROFILES)
+        profiles[release_version] = {
+            **CURRENT_CORPUS_LAYOUT,
+            "error_categories": DEFAULT_ERROR_CATEGORIES,
+        }
     try:
         with open(lock_path, "r", encoding="utf-8") as f:
             lock_text = f.read()
@@ -1806,12 +1856,15 @@ def load_corpus_inventory_lock(lock_path, results):
     if "version" not in lock_data:
         return lock_data, None
     version = lock_data["version"]
-    profile = (CORPUS_LAYOUT_PROFILES.get(version)
+    profile = (profiles.get(version)
                if isinstance(version, str) else None)
     if profile is None:
-        supported = ", ".join(repr(item) for item in sorted(CORPUS_LAYOUT_PROFILES))
+        supported = ", ".join(repr(item) for item in sorted(profiles))
+        hint = ""
+        if release_version is None and release_hint:
+            hint = " (%s)" % release_hint
         results.fail(category, "%s: unsupported corpus inventory version %r "
-                     "(supported: %s)" % (lock_path, version, supported))
+                     "(supported: %s)%s" % (lock_path, version, supported, hint))
         return lock_data, None
     return lock_data, profile
 
@@ -1879,9 +1932,25 @@ def main(argv):
     results = Results()
     inventory_lock = None
     inventory_profile = None
+    release_hint = None
     if args.corpus_inventory_lock is not None:
+        release_path = release_info.release_path_for_tests(tests_dir)
+        release_version = None
+        if not _is_regular_file(release_path):
+            # Legitimate: frozen versions and synthetic corpora carry no
+            # release declaration.
+            release_hint = (
+                "no release declaration found at %s; the current version's "
+                "layout profile is derived from it" % release_path)
+        else:
+            try:
+                release_version =                     release_info.load_release_file(release_path)["version"]
+            except release_info.ReleaseInfoError as e:
+                results.fail("corpus inventory lock", str(e))
+                release_version = None
         inventory_lock, inventory_profile = load_corpus_inventory_lock(
-            args.corpus_inventory_lock, results
+            args.corpus_inventory_lock, results,
+            release_version=release_version, release_hint=release_hint
         )
     parsed = check_utf8_json(tests_dir, results)
     check_valid(tests_dir, results, parsed)

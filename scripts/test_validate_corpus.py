@@ -22,7 +22,16 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import release_info
 import validate_corpus
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+CURRENT_RELEASE = release_info.load_release_file(
+    os.path.join(REPO_ROOT, "versions", "0.7", "content", "release.js"))
+CURRENT_VERSION = CURRENT_RELEASE["version"]
+CURRENT_RELEASE_JS = ("export default "
+                      + json.dumps(CURRENT_RELEASE, ensure_ascii=False, indent=2)
+                      + chr(10))
 
 KTAV_DOC = "host: localhost\nport: 8080\n"
 ALPHA_JSON = '{"host": "localhost", "port": 8080}'
@@ -92,9 +101,24 @@ class CorpusTestCase(unittest.TestCase):
         return code, out.getvalue()
 
     def write_corpus_lock(self, tests_dir, relpath="lock/corpus.json",
-                          version="0.7.0"):
+                          version=None):
+        if version is None:
+            # Root-cause fix of the stale-literal failure mode: the default
+            # comes from content/release.js, never a hand-bumped literal.
+            version = CURRENT_VERSION
+        if version == CURRENT_VERSION:
+            # Simulate the repo layout: the current corpus's sibling
+            # content/release.js declaration, which main() consults for the
+            # layout-profile key. Frozen versions carry no declaration.
+            content_dir = os.path.join(
+                os.path.dirname(os.path.abspath(tests_dir)), "content")
+            os.makedirs(content_dir, exist_ok=True)
+            with open(os.path.join(content_dir, "release.js"), "w",
+                      encoding="utf-8", newline=chr(10)) as f:
+                f.write(CURRENT_RELEASE_JS)
         files = {}
-        profile = validate_corpus.CORPUS_LAYOUT_PROFILES[version]
+        profile = validate_corpus.corpus_layout_profiles(
+            CURRENT_VERSION if version == CURRENT_VERSION else None)[version]
         for dirname in sorted(profile["directories"]):
             directory = os.path.join(tests_dir, dirname)
             for root, _dirs, names in os.walk(directory):
@@ -1104,7 +1128,7 @@ class CorpusTestCase(unittest.TestCase):
     def test_corpus_inventory_lock_happy_paths_for_both_profiles(self):
         cases = [
             ("versions/0.6/tests", "0.6.4", self.build_minimal),
-            ("versions/0.7/tests", "0.7.0", self.build_full),
+            ("versions/0.7/tests", CURRENT_VERSION, self.build_full),
         ]
         for index, (root, version, builder) in enumerate(cases):
             with self.subTest(version=version):
@@ -1130,7 +1154,7 @@ class CorpusTestCase(unittest.TestCase):
 
         tests = self.build_minimal("cross-07/tests")
         lock_path = self.write_corpus_lock(
-            tests, "lock/cross-07.json", version="0.7.0"
+            tests, "lock/cross-07.json", version=CURRENT_VERSION
         )
         code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 1)
@@ -1152,7 +1176,7 @@ class CorpusTestCase(unittest.TestCase):
         self.assertIn("invalid canonical corpus path 'unrepresentable/case.json'", out)
 
     def test_corpus_inventory_lock_rejects_unknown_versions(self):
-        for index, version in enumerate(("0.8.0", [0, 8, 0])):
+        for index, version in enumerate(("0.6.5", [0, 8, 0])):
             with self.subTest(version=version):
                 tests = self.build_full("unknown-%d/tests" % index)
                 lock_path = self.write(
@@ -1296,6 +1320,71 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
+
+    def test_corpus_inventory_profile_key_is_derived_from_release_declaration(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
+        # Removing the sibling declaration must make the current version's
+        # layout profile unresolvable: the lock then fails as unsupported.
+        declaration = os.path.join(
+            os.path.dirname(os.path.abspath(tests)), "content", "release.js")
+        os.remove(declaration)
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        os.remove(declaration)
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("unsupported corpus inventory version", out)
+        self.assertIn(release_info.release_path_for_tests(tests), out)
+
+    def test_corpus_inventory_profile_key_tracks_the_declaration_value(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        declaration = os.path.join(
+            os.path.dirname(os.path.abspath(tests)), "content", "release.js")
+        self.write_declaration(declaration, {"version": "9.9.9",
+                                             "released": "2020-01-01"})
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn(
+            "unsupported corpus inventory version '%s'" % CURRENT_VERSION, out)
+        self.assertIn("supported: '0.6.4', '9.9.9'", out)
+
+    def test_malformed_release_declaration_fails_loudly(self):
+        tests = self.build_full()
+        lock_path = self.write_corpus_lock(tests)
+        declaration = os.path.join(
+            os.path.dirname(os.path.abspath(tests)), "content", "release.js")
+        with open(declaration, "w", encoding="utf-8", newline=chr(10)) as f:
+            f.write("export default {")
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 1)
+        self.assertIn("corpus inventory lock", out)
+        self.assertIn(declaration, out)
+        self.assertIn("invalid JSON", out)
+
+    def test_frozen_0_6_lock_path_does_not_read_a_release_declaration(self):
+        tests = self.build_minimal("versions/0.6/tests")
+        declaration = os.path.join(
+            os.path.dirname(os.path.abspath(tests)), "content")
+        self.assertFalse(os.path.exists(declaration))
+        lock_path = self.write_corpus_lock(
+            tests, "lock/frozen.json", version="0.6.4")
+        self.assertFalse(os.path.exists(declaration))
+        code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
+        self.assertEqual(code, 0, out)
+        self.assertIn("OVERALL: PASS", out)
+
+    def write_declaration(self, path, release):
+        with open(path, "w", encoding="utf-8", newline=chr(10)) as f:
+            f.write("export default "
+                    + json.dumps(release, ensure_ascii=False, indent=2)
+                    + chr(10))
+        return path
 
     # -- manifest.json (Sec 8.5 runner contract) -------------------------
 
