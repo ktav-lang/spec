@@ -21,7 +21,7 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
-## [0.7.1] — unreleased
+## [0.7.1] — 2026-09-16
 
 Editorial. No change to what a conforming parser or writer does: every
 0.7.0 document parses to the same Value, and every canonical rendering

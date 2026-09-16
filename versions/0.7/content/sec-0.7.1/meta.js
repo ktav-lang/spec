@@ -4,9 +4,9 @@ export default {
   "sep": " ",
   "level": 3,
   "title": {
-    "en": "— unreleased",
-    "ru": "— не выпущено",
-    "zh": "—— 未发布"
+    "en": "— 2026-09-16",
+    "ru": "— 2026-09-16",
+    "zh": "—— 2026-09-16"
   },
   "bodyParts": 1
 }

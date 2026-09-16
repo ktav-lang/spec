@@ -18,7 +18,7 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
-## [0.7.1] —— 未发布
+## [0.7.1] —— 2026-09-16
 
 编辑性发布。一致性 parser 与 writer 的行为不变:每个 0.7.0 文档解析为
 相同的 Value,每个规范化输出逐字节不变。固定在 0.7.0 的实现对该格式
