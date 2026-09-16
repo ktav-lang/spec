@@ -2990,6 +2990,42 @@ flag, but MUST treat a document as 0.7.0 by default unless the
 caller explicitly selects a different target version — this
 specification defines no in-document version marker.
 
+### 8.5 Conformance Runner Contract
+
+`versions/0.7/tests/manifest.json` is a machine-readable inventory of
+this section's conformance corpus: the closed set of category
+directories under `versions/0.7/tests/`, the exact fixture count for
+each one, and every fixture whose primary input is not decodable as
+text and is instead given to the implementation under test as a raw
+byte sequence. A conformance test runner for Ktav 0.7.0 MUST load
+this file before enumerating any fixture, and MUST reject a manifest
+whose `schema_version` field names a schema newer than the runner
+implements rather than guess at its shape.
+
+- Hard-fails, without executing any fixture, if a directory named
+  in the manifest's `categories` map is absent from the tests
+  directory being run, or if a directory present under the tests
+  directory is not named in that map; an unknown category directory
+  MUST NOT be silently skipped or silently accepted.
+- Hard-fails if the number of fixtures actually present in a
+  category differs from the `count` declared for it — the corpus
+  MUST run at its full declared size, not at whatever smaller size
+  a stale checkout, a wrong path, or an earlier spec version's
+  directory happens to contain.
+- For every fixture the manifest's `fixture_flags` marks with the
+  `raw_bytes` flag, reads that fixture's primary input as a byte
+  sequence and passes those exact bytes to the implementation under
+  test; it MUST NOT first pass them through a text-decoding step
+  whose behavior on invalid encoding is to substitute or drop
+  bytes, and a decode failure or substitution occurring before the
+  implementation under test receives the bytes does not satisfy
+  this requirement.
+
+These checks bound the corpus itself — which fixtures exist, how
+many, and how their bytes reach the implementation under test — and
+are independent of, and do not replace, § 8.1's and § 8.2's
+per-fixture acceptance, rejection, and equivalence requirements.
+
 ## 9. Security Considerations
 
 ### 9.1 Resource Exhaustion

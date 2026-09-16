@@ -80,6 +80,7 @@ export default [
   "sec-8.2",
   "sec-8.3",
   "sec-8.4",
+  "sec-8.5",
   "sec-9",
   "sec-9.1",
   "sec-9.2",
