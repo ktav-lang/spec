@@ -1944,7 +1944,8 @@ def main(argv):
                 "layout profile is derived from it" % release_path)
         else:
             try:
-                release_version =                     release_info.load_release_file(release_path)["version"]
+                release_version = release_info.load_release_file(
+                    release_path)["version"]
             except release_info.ReleaseInfoError as e:
                 results.fail("corpus inventory lock", str(e))
                 release_version = None
