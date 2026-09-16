@@ -150,6 +150,7 @@
                   "invalid/unterminated_quoted_key/in_established_object.ktav":  "eac84e40d46b0332c29be30f42bb15aca8200265f92d053593b36aeae3884c7e",
                   "invalid/unterminated_quoted_key/single_quote_in_object.json":  "405e5d993a6edd79eb1b6648a72d4e3396831963f8baf801b0b234c3912a642d",
                   "invalid/unterminated_quoted_key/single_quote_in_object.ktav":  "8868e0c44037671e699b64be768b7eff10281b2a5d65e3a27a1abedca79ce507",
+                  "manifest.json":  "35f2fb1addb9aca8201424dcce39988273151adfdba511da414334acbc36c286",
                   "parseable-unrepresentable/both_forms_required.json":  "73a1e987312d14ee2730cd09569adbbeacf5c133c48811deeaf5ddbab8910969",
                   "parseable-unrepresentable/both_forms_required.ktav":  "8b3fea9390aeae07df2cabe5aa7b744357fdde02a53e72aca20cf6ab45bfdaf0",
                   "parseable-unrepresentable/cr_byte.json":  "0e82c43006ccc81b3d8739a0577cbec7a4add25b5f96f9c9e24b6d8b7e8d82f0",

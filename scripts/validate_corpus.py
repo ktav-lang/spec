@@ -132,7 +132,7 @@ CORPUS_LAYOUT_PROFILES = {
         "directories": frozenset({
             "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
         }),
-        "files": frozenset({"boundary-fixtures.json"}),
+        "files": frozenset({"boundary-fixtures.json", "manifest.json"}),
         "error_categories": ERROR_CATEGORIES_V0_7,
     },
 }
@@ -157,6 +157,16 @@ I64_MAX = (1 << 63) - 1
 JSON_PARSE_FAILED = object()
 JSON_RECURSION_ERROR = "maximum recursion depth exceeded while parsing JSON"
 SENTINEL_POLICIES = frozenset({"allow", "ordinary"})
+
+# manifest.json (§ 8.5): schema versions this validator understands, its
+# closed top-level/category/flag-entry field sets, and the closed set of
+# recognized per-fixture flags.
+MANIFEST_SCHEMA_VERSIONS = frozenset({1})
+MANIFEST_REQUIRED_FIELDS = frozenset({"schema_version", "categories", "fixture_flags"})
+MANIFEST_OPTIONAL_FIELDS = frozenset({"$comment"})
+MANIFEST_CATEGORY_ENTRY_FIELDS = frozenset({"count"})
+MANIFEST_FLAG_ENTRY_FIELDS = frozenset({"category", "fixture", "flags", "note"})
+KNOWN_FIXTURE_FLAGS = frozenset({"raw_bytes"})
 
 
 def _is_float_sentinel(value):
@@ -347,6 +357,9 @@ def check_utf8_json(tests_dir, results):
     n_json = 0
     n_exempt = 0
     parsed = {}  # relpath -> parsed object, or JSON_PARSE_FAILED on failure
+    invalid_utf8_rpaths = []  # every file whose raw bytes are not valid UTF-8,
+                               # exempt or not -- consumed by check_manifest
+                               # to cross-check manifest.json's raw_bytes flags.
     for root, files in _walk_safe(tests_dir, tests_dir, results, category):
         for fname in files:
             path = os.path.join(root, fname)
@@ -361,6 +374,7 @@ def check_utf8_json(tests_dir, results):
                     raw = f.read()
                 text = raw.decode("utf-8", errors="strict")
             except UnicodeDecodeError as e:
+                invalid_utf8_rpaths.append(rpath)
                 if (is_deliberately_invalid_utf8(rpath)
                         and _sibling_declares_invalid_utf8(path)):
                     n_exempt += 1
@@ -388,7 +402,7 @@ def check_utf8_json(tests_dir, results):
                                  % (rel(path, tests_dir), JSON_RECURSION_ERROR))
                     parsed[rel(path, tests_dir)] = JSON_PARSE_FAILED
     results.set_count(category, n_files=n_files, n_json=n_json, n_exempt=n_exempt,
-                       parsed=parsed)
+                       parsed=parsed, invalid_utf8_rpaths=invalid_utf8_rpaths)
     return parsed
 
 
@@ -1421,6 +1435,227 @@ def check_boundary_fixtures(tests_dir, results, parsed, require=False, lock_path
     return True
 
 
+def _manifest_fixture_path_issue(fixture):
+    """Validate a manifest.json fixture path before it reaches filesystem
+    APIs. Same safety rules as _fixture_path_issue (boundary-fixtures.json),
+    generalized to any category directory rather than only valid/."""
+    issue = _manifest_string_issue(fixture)
+    if issue is not None:
+        return issue
+    if not fixture:
+        return "must be a non-empty string"
+    if ":" in fixture:
+        return ("resolves outside the category directory (drive syntax is "
+                "not allowed)")
+    if ("\\" in fixture
+            or any(part in ("", ".", "..") for part in fixture.split("/"))):
+        return ("must be a '/'-separated path of plain name segments (no "
+                "'..', '.', empty segments, backslashes, or drive syntax)")
+    return None
+
+
+def _category_fixture_stems(category_dir, tests_dir, results, label):
+    """Return the set of fixture stems (rel-path WITHIN category_dir, minus
+    the recognized suffix) present under one category directory -- one
+    entry per shared basename, regardless of how many sibling files
+    (.ktav/.json/.canonical.ktav) that basename has. This is the "fixture"
+    identity manifest.json's category counts and fixture_flags entries are
+    defined in terms of (§ 8.5) -- relative to the category directory
+    itself, the same convention boundary-fixtures.json's 'fixture' field
+    uses relative to valid/."""
+    stems = set()
+    for root, files in _walk_regular_category_files(
+            category_dir, tests_dir, results, label):
+        for fname in files:
+            if fname.endswith(".canonical.ktav"):
+                stem = fname[: -len(".canonical.ktav")]
+            elif fname.endswith(".ktav"):
+                stem = fname[: -len(".ktav")]
+            elif fname.endswith(".json"):
+                stem = fname[: -len(".json")]
+            else:
+                continue  # unexpected file type; reported by other checks
+            stems.add(rel(os.path.join(root, stem), category_dir))
+    return stems
+
+
+def check_manifest(tests_dir, results, invalid_utf8_rpaths, require=False):
+    """Check manifest.json (§ 8.5): the closed category/count inventory and
+    the raw_bytes per-fixture flags, cross-checked against the corpus as it
+    actually stands on disk -- not merely that the file parses.
+
+    With require=True a missing manifest.json is a failure instead of a
+    skip (mirroring --require-boundary/--require-unrepresentable)."""
+    category = "manifest.json"
+    manifest_path = os.path.join(tests_dir, "manifest.json")
+    if not _is_regular_file(manifest_path):
+        if require:
+            results.fail(category, "manifest.json not present (required)")
+            return False
+        results.set_count(category, skipped=True)
+        return False
+    rpath = rel(manifest_path, tests_dir)
+    try:
+        with open(manifest_path, "r", encoding="utf-8") as f:
+            text = f.read()
+    except (OSError, UnicodeError) as e:
+        results.fail(category, "%s: unreadable: %s" % (rpath, e))
+        return True
+    try:
+        manifest = loads_strict(text)
+    except (json.JSONDecodeError, ValueError) as e:
+        results.fail(category, "%s: invalid JSON: %s" % (rpath, _ascii_safe_text(e)))
+        return True
+    except RecursionError:
+        results.fail(category, "%s: invalid JSON: %s" % (rpath, JSON_RECURSION_ERROR))
+        return True
+    if not isinstance(manifest, dict):
+        results.fail(category, "%s: root must be a JSON object" % rpath)
+        return True
+
+    fields = set(manifest)
+    allowed = MANIFEST_REQUIRED_FIELDS | MANIFEST_OPTIONAL_FIELDS
+    missing = sorted(MANIFEST_REQUIRED_FIELDS - fields)
+    extra = sorted(fields - allowed)
+    if missing:
+        results.fail(category, "%s: missing required field(s): %s"
+                     % (rpath, ", ".join(repr(f) for f in missing)))
+    if extra:
+        results.fail(category, "%s: unexpected field(s): %s"
+                     % (rpath, ", ".join(repr(f) for f in extra)))
+
+    schema_version = manifest.get("schema_version")
+    if not (isinstance(schema_version, int) and not isinstance(schema_version, bool)
+            and schema_version in MANIFEST_SCHEMA_VERSIONS):
+        supported = ", ".join(str(v) for v in sorted(MANIFEST_SCHEMA_VERSIONS))
+        results.fail(category, "%s: unsupported schema_version %r "
+                     "(supported: %s) -- refusing to guess its shape"
+                     % (rpath, schema_version, supported))
+        return True  # shape beyond this point is not trustworthy
+
+    # -- categories: closed set of category directory names + exact counts --
+    categories = manifest.get("categories")
+    n_categories = 0
+    declared = {}
+    if not isinstance(categories, dict):
+        results.fail(category, "%s: 'categories' must be an object" % rpath)
+        categories = {}
+    for name in sorted(categories):
+        entry = categories[name]
+        label = "%s: categories[%r]" % (rpath, name)
+        if not isinstance(entry, dict) or set(entry) != MANIFEST_CATEGORY_ENTRY_FIELDS:
+            results.fail(category, "%s: must be an object with exactly field(s): %s"
+                         % (label, ", ".join(sorted(MANIFEST_CATEGORY_ENTRY_FIELDS))))
+            continue
+        count = entry["count"]
+        if not (isinstance(count, int) and not isinstance(count, bool) and count >= 0):
+            results.fail(category, "%s: 'count' must be a non-negative integer" % label)
+            continue
+        declared[name] = count
+
+    try:
+        actual_top_level = {
+            entry.name for entry in os.scandir(tests_dir)
+            if not _is_ignored_corpus_top_level(entry.name)
+            and _is_regular_directory(entry.path)
+        }
+    except OSError as e:
+        results.fail(category, "%s: cannot inspect top level: %s" % (rpath, e))
+        actual_top_level = set(declared)  # avoid a spurious mismatch cascade
+
+    for name in sorted(set(declared) - actual_top_level):
+        results.fail(category, "%s: 'categories' names %r but no such directory "
+                     "exists under %s" % (rpath, name, rel(tests_dir, tests_dir) or "."))
+    unknown = sorted(actual_top_level - set(declared))
+    for name in unknown:
+        results.fail(category, "%s: unknown fixture category directory %r is not "
+                     "listed in 'categories'" % (rpath, name))
+
+    actual_stems_by_category = {}
+    for name in sorted(set(declared) & actual_top_level):
+        stems = _category_fixture_stems(
+            os.path.join(tests_dir, name), tests_dir, results, category)
+        actual_stems_by_category[name] = stems
+        if len(stems) != declared[name]:
+            results.fail(category, "%s: categories[%r].count is %d but %d "
+                         "fixture(s) are actually present"
+                         % (rpath, name, declared[name], len(stems)))
+        else:
+            n_categories += 1
+
+    # -- fixture_flags: per-fixture handling flags, cross-checked against
+    # the corpus's real UTF-8 validity for the 'raw_bytes' flag --
+    flags_list = manifest.get("fixture_flags")
+    n_flags = 0
+    flagged_ktav_rpaths = set()
+    if not isinstance(flags_list, list):
+        results.fail(category, "%s: 'fixture_flags' must be a list" % rpath)
+        flags_list = []
+    seen_pairs = {}
+    for i, entry in enumerate(flags_list):
+        label = "%s: fixture_flags[%d]" % (rpath, i)
+        if not isinstance(entry, dict) or set(entry) != MANIFEST_FLAG_ENTRY_FIELDS:
+            results.fail(category, "%s: must be an object with exactly field(s): %s"
+                         % (label, ", ".join(sorted(MANIFEST_FLAG_ENTRY_FIELDS))))
+            continue
+        entry_category = entry["category"]
+        fixture = entry["fixture"]
+        flags = entry["flags"]
+        note = entry["note"]
+        ok = True
+        if not isinstance(entry_category, str) or entry_category not in declared:
+            results.fail(category, "%s: 'category' %r is not one of manifest's "
+                         "declared categories" % (label, entry_category))
+            ok = False
+        if not isinstance(fixture, str):
+            results.fail(category, "%s: 'fixture' must be a string" % label)
+            ok = False
+        else:
+            issue = _manifest_fixture_path_issue(fixture)
+            if issue is not None:
+                results.fail(category, "%s: 'fixture' %s: %r" % (label, issue, fixture))
+                ok = False
+        if not isinstance(flags, list) or not flags:
+            results.fail(category, "%s: 'flags' must be a non-empty list" % label)
+            ok = False
+        elif any(not isinstance(f, str) or f not in KNOWN_FIXTURE_FLAGS for f in flags):
+            results.fail(category, "%s: 'flags' entries must all be one of: %s"
+                         % (label, ", ".join(sorted(KNOWN_FIXTURE_FLAGS))))
+            ok = False
+        if not isinstance(note, str) or note == "":
+            results.fail(category, "%s: 'note' must be a non-empty string" % label)
+            ok = False
+        if not ok:
+            continue
+        pair = (entry_category, fixture)
+        if pair in seen_pairs:
+            results.fail(category, "%s: duplicate (category, fixture) pair %r: "
+                         "entries %d and %d" % (rpath, pair, seen_pairs[pair], i))
+        else:
+            seen_pairs[pair] = i
+        if entry_category in actual_stems_by_category:
+            if fixture not in actual_stems_by_category[entry_category]:
+                results.fail(category, "%s: fixture %r does not exist under "
+                             "category %r" % (label, fixture, entry_category))
+            elif "raw_bytes" in flags:
+                ktav_rpath = rel(
+                    os.path.join(tests_dir, entry_category, *fixture.split("/"))
+                    + ".ktav", tests_dir)
+                flagged_ktav_rpaths.add(ktav_rpath)
+                if ktav_rpath not in invalid_utf8_rpaths:
+                    results.fail(category, "%s: flagged 'raw_bytes', but %s is "
+                                 "actually valid UTF-8" % (label, ktav_rpath))
+        n_flags += 1
+
+    actual_invalid_ktav = {p for p in invalid_utf8_rpaths if p.endswith(".ktav")}
+    for missing_rpath in sorted(actual_invalid_ktav - flagged_ktav_rpaths):
+        results.fail(category, "%s: %s is not valid UTF-8 but is not flagged "
+                     "'raw_bytes' in 'fixture_flags'" % (rpath, missing_rpath))
+
+    results.set_count(category, n_categories=n_categories, n_flags=n_flags)
+    return True
+
+
 def _is_ignored_corpus_top_level(name):
     return (name in IGNORED_CORPUS_TOP_LEVEL_NAMES
             or name.endswith(IGNORED_CORPUS_TOP_LEVEL_SUFFIXES))
@@ -1629,6 +1864,9 @@ def main(argv):
                         help="path to a versioned lock file whose complete "
                         "corpus relative-path to SHA-256 mapping must match "
                         "exactly")
+    parser.add_argument("--require-manifest", action="store_true",
+                        help="treat a missing manifest.json as a failure "
+                        "instead of a skip")
     args = parser.parse_args(argv)
 
     tests_dir = args.tests_dir
@@ -1659,6 +1897,10 @@ def main(argv):
     has_boundary = check_boundary_fixtures(tests_dir, results, parsed,
                                            require=args.require_boundary,
                                            lock_path=args.boundary_manifest_lock)
+    invalid_utf8_rpaths = results.counts.get(
+        "UTF-8/JSON validity", {}).get("invalid_utf8_rpaths", [])
+    has_manifest = check_manifest(tests_dir, results, invalid_utf8_rpaths,
+                                  require=args.require_manifest)
     if (args.corpus_inventory_lock is not None
             and inventory_lock is not None and inventory_profile is not None):
         check_corpus_inventory_lock(
@@ -1702,6 +1944,11 @@ def main(argv):
             if c.get("skipped"):
                 return "file not present"
             return "%d entries OK" % c.get("n_entries", 0)
+        if category == "manifest.json":
+            if c.get("skipped"):
+                return "file not present"
+            return ("%d categories OK, %d fixture_flags entries OK"
+                    % (c.get("n_categories", 0), c.get("n_flags", 0)))
         if category == "corpus inventory lock":
             return "%d files match SHA-256 lock" % c.get("n_files", 0)
         return ""
@@ -1709,20 +1956,22 @@ def main(argv):
     order = ["UTF-8/JSON validity", "valid/ triples", "invalid/ pairs",
              "invalid_utf8 oracle consistency", "unrepresentable/",
              "parseable-unrepresentable/", "boundary-fixtures.json",
-             "corpus inventory lock"]
+             "manifest.json", "corpus inventory lock"]
+    file_categories = frozenset({"boundary-fixtures.json", "manifest.json"})
     skipped_map = {
         "unrepresentable/": not has_unrep and not args.require_unrepresentable,
         "parseable-unrepresentable/": (not has_parseable_unrep
                                         and not args.require_unrepresentable),
         "boundary-fixtures.json": (not has_boundary and not args.require_boundary
                                    and args.boundary_manifest_lock is None),
+        "manifest.json": not has_manifest and not args.require_manifest,
     }
     overall = "PASS"
     for category in order:
         probs = failures.get(category, [])
         if skipped_map.get(category):
             label = ("file not present"
-                     if category == "boundary-fixtures.json"
+                     if category in file_categories
                      else "directory not present")
             print("[SKIP] %s: %s" % (category, label))
         elif probs:

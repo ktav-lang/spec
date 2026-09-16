@@ -73,6 +73,16 @@ class CorpusTestCase(unittest.TestCase):
             {"boundary_dependent_leaves": [
                 {"fixture": "boundary", "path": "/overflow",
                  "boundary_class": "integer_range"}]}))
+        self.write(root + "/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2},
+                "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [],
+        }))
         return tests
 
     def run_main(self, tests_dir, *flags):
@@ -1286,6 +1296,220 @@ class CorpusTestCase(unittest.TestCase):
         code, out = self.run_main(tests, "--corpus-inventory-lock", lock_path)
         self.assertEqual(code, 0, out)
         self.assertIn("OVERALL: PASS", out)
+
+    # -- manifest.json (Sec 8.5 runner contract) -------------------------
+
+    def test_manifest_happy_path_passes_without_flag(self):
+        tests = self.build_full()
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+        self.assertIn("[PASS] manifest.json:", out)
+
+    def test_manifest_missing_is_skipped_without_require_flag(self):
+        tests = self.build_minimal()
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+        self.assertIn("[SKIP] manifest.json: file not present", out)
+
+    def test_manifest_missing_is_rejected_when_required(self):
+        tests = self.build_minimal()
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("manifest.json not present (required)", out)
+
+    def test_manifest_rejects_unsupported_schema_version(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 2,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("unsupported schema_version 2", out)
+
+    def test_manifest_rejects_missing_and_extra_top_level_fields(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {},
+            "extra_field": True,
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("missing required field(s): 'fixture_flags'", out)
+        self.assertIn("unexpected field(s): 'extra_field'", out)
+
+    def test_manifest_rejects_category_count_mismatch(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 999}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("categories['valid'].count is 999 but 2 fixture(s) "
+                      "are actually present", out)
+
+    def test_manifest_rejects_declared_category_with_no_directory(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+                "future": {"count": 0},
+            },
+            "fixture_flags": [],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("'categories' names 'future' but no such directory exists",
+                      out)
+
+    def test_manifest_rejects_unknown_category_directory(self):
+        tests = self.build_full()
+        self.write("tests/unknown_category/note.ktav", "value")
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("unknown fixture category directory 'unknown_category' "
+                      "is not listed in 'categories'", out)
+
+    def test_manifest_rejects_stale_raw_bytes_flag(self):
+        # A fixture is flagged raw_bytes, but its bytes are actually valid
+        # UTF-8 -- the flag no longer describes reality.
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [{
+                "category": "invalid", "fixture": "bad", "flags": ["raw_bytes"],
+                "note": "stale",
+            }],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("flagged 'raw_bytes', but invalid/bad.ktav is actually "
+                      "valid UTF-8", out)
+
+    def test_manifest_rejects_missing_raw_bytes_flag_for_genuinely_invalid_utf8(self):
+        # A .ktav fixture is genuinely not valid UTF-8, but manifest.json
+        # does not flag it -- this is exactly the C#/JS false-green bug
+        # class (Sec 6.15) the flag exists to prevent.
+        tests = self.build_full()
+        ktav_path = os.path.join(tests, "invalid", "invalid_utf8", "bad_utf8.ktav")
+        os.makedirs(os.path.dirname(ktav_path), exist_ok=True)
+        with open(ktav_path, "wb") as f:
+            f.write(b"\xff")
+        self.write("tests/invalid/invalid_utf8/bad_utf8.json",
+                   '{"expected_error": "InvalidUtf8"}')
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 2},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("invalid/invalid_utf8/bad_utf8.ktav is not valid UTF-8 "
+                      "but is not flagged 'raw_bytes'", out)
+
+    def test_manifest_accepts_correct_raw_bytes_flag(self):
+        tests = self.build_full()
+        ktav_path = os.path.join(tests, "invalid", "invalid_utf8", "bad_utf8.ktav")
+        os.makedirs(os.path.dirname(ktav_path), exist_ok=True)
+        with open(ktav_path, "wb") as f:
+            f.write(b"\xff")
+        self.write("tests/invalid/invalid_utf8/bad_utf8.json",
+                   '{"expected_error": "InvalidUtf8"}')
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 2},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [{
+                "category": "invalid", "fixture": "invalid_utf8/bad_utf8",
+                "flags": ["raw_bytes"], "note": "deliberately invalid UTF-8",
+            }],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 0, out)
+
+    def test_manifest_rejects_fixture_flags_path_traversal_and_bad_category(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [
+                {"category": "invalid", "fixture": "../bad", "flags": ["raw_bytes"],
+                 "note": "traversal"},
+                {"category": "no-such-category", "fixture": "bad",
+                 "flags": ["raw_bytes"], "note": "bad category"},
+            ],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("plain name segments", out)
+        self.assertIn("'category' 'no-such-category' is not one of manifest's "
+                      "declared categories", out)
+
+    def test_manifest_rejects_unknown_flag_name_and_duplicate_pair(self):
+        tests = self.build_full()
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [
+                {"category": "invalid", "fixture": "bad", "flags": ["not_a_flag"],
+                 "note": "bad flag"},
+            ],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("'flags' entries must all be one of: raw_bytes", out)
+
+    def test_manifest_rejects_duplicate_category_fixture_pair(self):
+        tests = self.build_full()
+        entry = {"category": "invalid", "fixture": "bad", "flags": ["raw_bytes"],
+                 "note": "dup"}
+        self.write("tests/manifest.json", json.dumps({
+            "schema_version": 1,
+            "categories": {
+                "valid": {"count": 2}, "invalid": {"count": 1},
+                "unrepresentable": {"count": 1},
+                "parseable-unrepresentable": {"count": 1},
+            },
+            "fixture_flags": [entry, dict(entry)],
+        }))
+        code, out = self.run_main(tests, "--require-manifest")
+        self.assertEqual(code, 1)
+        self.assertIn("duplicate (category, fixture) pair", out)
 
     # -- mutation 5: missing unrepresentable/ / manifest -----------------
 
