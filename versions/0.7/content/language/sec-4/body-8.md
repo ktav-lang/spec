@@ -32,8 +32,6 @@
                      | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
 <plain-inline-separator> ::= ":" !":"
 
-<inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
-
 >>>>> lang=ru
 <sep-end>       ::= 1*ws | &line-end              ; ≥1 пробельная кодовая точка, либо конец строки
 <raw-line>      ::= any-chars-until-line-end       ; исходные байты до конца строки
@@ -69,6 +67,23 @@
 <plain-inline-separator> ::= ":" !":"
 
 >>>>> lang=zh
+<sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
+<raw-line>      ::= any-chars-until-line-end       ; 行末之前的源字节
+                    ; raw String 的语义体:修剪结尾的 § 3.3 空白;
+                    ; 最大前导序列已由 <sep-end> 吸收
+<value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
+<value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
+                  | "[" (ws) "]" (ws)                ; 空 inline 数组
+                  | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
+                  | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
+                  | "{" (ws) &line-end                ; 对象开启(多行 body)
+                  | "[" (ws) &line-end                ; 数组开启(多行 body)
+                  | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
+                  | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
+                  | "()" (ws)                        ; 空 inline(得到 "")
+                  | "(())" (ws)                      ; 空 inline(得到 "")
+                  | <scalar-body>                    ; 标量值,按 § 5.2 分发
+
 <scalar-body>   ::= (ws) any-chars-until-line-end
                     ; 修剪;按 § 5.2 解释
 
@@ -84,8 +99,4 @@
 <inline-pair>      ::= <key> (ws) "::" (ws) <inline-raw-scalar> (ws)
                      | <key> (ws) <plain-inline-separator> (ws) <inline-value-opt> (ws)
 <plain-inline-separator> ::= ":" !":"
-
-<inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
-
-<inline-value-opt> ::= <inline-value> | ""
 

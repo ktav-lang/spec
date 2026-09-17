@@ -1,4 +1,21 @@
 >>>>> lang=en
+- a raw `"` in the content, as `\"` — the only byte structural
+  inside a quoted segment, since `"` is the fixed delimiter;
+- `\` (backslash), as `\\` — backslash is always the escape lead,
+  in both forms;
+- LF / CR, as `\n` / `\r` — a key MUST remain single-line;
+- any other control byte below `0x20` that is not a § 3.3
+  whitespace member, or DEL, as `\uXXXX` — quoting relaxes which
+  STRUCTURAL bytes need escaping, not the format's separate
+  prohibition on raw invisible, non-whitespace bytes in a key
+  (§ 5.3.3). A control byte that IS a § 3.3 whitespace member (tab,
+  VT, FF) is excluded from this bullet for the same reason it is
+  excluded from bare form's analogous bullet above: § 4's
+  `<dq-char>` / `<sq-char>` / `<bt-char>` already admit it raw, so
+  it needs no `\uXXXX` escape here, whether it occurs at an edge or
+  in the interior of the segment (see the edge-whitespace point
+  below, which is not limited to non-control whitespace).
+
 `.`, `:`, `,`, `{`, `}`, `[`, `]`, `(`, `)`, `'`, and `` ` `` need no
 escaping in quoted form, and neither does edge whitespace: a
 `<quoted-segment>`'s content is never trimmed on re-parse (§ 5.3.3),
@@ -64,6 +81,29 @@ escapes those identically and quoting would not remove the escape.
 экранирование.
 
 >>>>> lang=zh
+- 内容中的裸 `"` —— 作为 `\"` —— quoted 段内部唯一的结构性
+  字节,因为 `"` 是固定分隔符;
+- `\`(反斜杠)—— 作为 `\\` —— 反斜杠在两种形式中始终是
+  escape 前导;
+- LF / CR —— 作为 `\n` / `\r` —— 键 MUST 保持单行;
+- 任何其他不属于 § 3.3 空白成员的 0x20 以下控制字节,或 DEL
+  —— 作为 `\uXXXX` —— 加引号只放宽了对 STRUCTURAL 字节的
+  escape 要求,并不放宽格式另一条「键中不允许裸不可见、非空白
+  字节」的规则。属于 § 3.3 空白成员的控制字节(制表符、VT、
+  FF)不在本条之列,原因与它不在上面裸形式对应条目之列相同:
+  § 4 的 `<dq-char>` / `<sq-char>` / `<bt-char>` 已经允许它以
+  裸形式出现,因此这里无需 `\uXXXX` escape,不论它出现在段的
+  边界还是内部(见下面关于边缘空白的说明,该说明并不限于非
+  控制的空白)。
+
+`.`、`:`、`,`、`{`、`}`、`[`、`]`、`(`、`)`、`'` 与 `` ` `` 在
+quoted 形式中都无需 escape,边缘空白也是如此:`<quoted-segment>`
+的内容在重解析时从不被修剪(§ 5.3.3),所以上面裸形式那一条
+——为在重解析的修剪中幸存而 escape 边缘空白——在这里没有什么
+需要防范的。开头的 `##` 在 quoted 形式中同样无需自身 escape:
+该行以 `"` 开头,而非 `#`,因此 § 5.1 规则 2 的注释风险对
+quoted 键根本不会出现。
+
 这确保规范输出无论采用哪种形式都能 round-trip:规范裸键中未
 escape 的点仅为路径分隔符,结构性字节永远不会在 quoted 段的
 分隔符之外以字面形式出现,不会因重解析时的修剪而丢失任何边缘

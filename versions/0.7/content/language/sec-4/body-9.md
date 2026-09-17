@@ -1,4 +1,6 @@
 >>>>> lang=en
+<inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
 <inline-value-opt> ::= <inline-value> | ""
 
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
@@ -57,6 +59,10 @@
 ```
 
 >>>>> lang=zh
+<inline-item-list> ::= <inline-value> ( (ws) "," (ws) <inline-value> )* ( (ws) "," )?
+
+<inline-value-opt> ::= <inline-value> | ""
+
 <inline-value>     ::= "{" (ws) <inline-pair-list> (ws) "}"
                      | "[" (ws) <inline-item-list> (ws) "]"
                      | "{" (ws) "}"

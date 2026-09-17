@@ -168,19 +168,88 @@ test('equidistant split tie chooses the earlier blank boundary', async () => {
   assert.equal(result.units.get('sec-1').parts[0].en, parts[0]);
 });
 
-test('all languages use the maximum body line count for proportional cut targets', async () => {
+test('every language cuts at the same paragraph boundary, not its own proportional one', async () => {
+  // The languages are deliberately lopsided: 130 lines against 80, the
+  // same ratio English and Chinese actually have. Under a per-language
+  // rule the short one's proportional target lands on its SECOND
+  // boundary; under the shared rule it takes the same boundary INDEX as
+  // the others, which is the first. That is what makes part k the same
+  // fragment in every language instead of three unrelated slices.
   const fx = baseFixtures();
   const en = bodyWithOneInteriorBlank(130, 64);
   const ru = bodyWithInteriorBlanks(80, [29, 59]);
   const zh = bodyWithOneInteriorBlank(130, 64);
+  const ruCuts = interiorBlankCutOffsets(ru);
+  assert.equal(ruCuts.length, 2, 'the short language must offer a choice of boundary');
+
   const enParts = splitBody(en, interiorBlankCutOffsets(en)[0]);
-  const ruParts = splitBody(ru, interiorBlankCutOffsets(ru)[1]);
   const zhParts = splitBody(zh, interiorBlankCutOffsets(zh)[0]);
+  const ruParts = splitBody(ru, ruCuts[0]);
   fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
   fx[2].bodies = zipLanguageBodies(enParts, ruParts, zhParts);
 
   const result = await validate(fx);
   assert.equal(result.units.get('sec-1').parts[0].ru, ruParts[0]);
+
+  // ...and cutting the short language at its own proportional boundary,
+  // which the previous rule mandated, is now rejected.
+  const wrong = baseFixtures();
+  wrong[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  wrong[2].bodies = zipLanguageBodies(enParts, splitBody(ru, ruCuts[1]), zhParts);
+  await assert.rejects(
+    validate(wrong),
+    (e) => /ru: body parts must use the mandated blank-line cut points/.test(e.message)
+  );
+});
+
+test('a body part holds the same paragraph count in every language', async () => {
+  // The property the shared cut exists for: open body-k.md and the three
+  // blocks are translations of each other.
+  const fx = baseFixtures();
+  const en = bodyWithInteriorBlanks(130, [43, 87]);
+  const ru = bodyWithInteriorBlanks(150, [49, 99]);
+  const zh = bodyWithInteriorBlanks(70, [23, 47]);
+  const cut = (body, i) => interiorBlankCutOffsets(body)[i];
+  const three = (body) => [
+    body.slice(0, cut(body, 0)),
+    body.slice(cut(body, 0), cut(body, 1)),
+    body.slice(cut(body, 1)),
+  ];
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 3 });
+  fx[2].bodies = zipLanguageBodies(three(en), three(ru), three(zh));
+
+  const result = await validate(fx);
+  const parts = result.units.get('sec-1').parts;
+  assert.equal(parts.length, 3);
+  const paragraphs = (text) => text.split(/\n\s*\n/).filter((p) => p.trim().length > 0).length;
+  for (const part of parts) {
+    assert.equal(paragraphs(part.ru), paragraphs(part.en), 'ru and en must hold the same fragment');
+    assert.equal(paragraphs(part.zh), paragraphs(part.en), 'zh and en must hold the same fragment');
+  }
+});
+
+test('a translation with fewer paragraph boundaries is named, not silently mis-cut', async () => {
+  // The shared cut is a paragraph-boundary INDEX, so it only means
+  // anything while every language has that boundary. Here Russian has one
+  // interior blank and English has three, and the mandated cut falls on
+  // English's SECOND — an index Russian does not have. The builder must
+  // say the paragraph structure diverged; looking the index up anyway
+  // yields `undefined` and surfaces much later as an unreadable offset.
+  const fx = baseFixtures();
+  const en = bodyWithInteriorBlanks(130, [10, 65, 120]);
+  const zh = bodyWithInteriorBlanks(130, [10, 65, 120]);
+  const ru = bodyWithOneInteriorBlank(40, 19);
+  fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
+  fx[2].bodies = zipLanguageBodies(
+    splitBody(en, interiorBlankCutOffsets(en)[1]),
+    splitBody(ru, interiorBlankCutOffsets(ru)[0]),
+    splitBody(zh, interiorBlankCutOffsets(zh)[1]));
+
+  await assert.rejects(
+    validate(fx),
+    (e) => /ru: has 1 paragraph boundary\/boundaries but the shared cut points need 2 \(chosen in en\)/
+      .test(e.message)
+  );
 });
 
 test('cut selection reserves enough later blanks to preserve the mandated part count', async () => {

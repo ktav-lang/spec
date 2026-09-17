@@ -29,13 +29,6 @@
 - **Null, Bool, Integer**: always
   node-representable.
 
-Node-representability recurses through every Object pair's value and
-every Array item, at any depth, without re-imposing the root-kind
-constraint: a String or Integer nested inside a representable Object
-is node-representable on its own terms — it is never itself required
-to be an Object or an Array. Only the outermost Value handed to a
-writer is subject to the root-kind constraint.
-
 >>>>> lang=ru
 - **Object:** имя каждой пары — непустая строка, и значение каждой
   пары узлово-представимо. Пустое имя узлово-непредставимо:
@@ -67,20 +60,25 @@ writer is subject to the root-kind constraint.
   узлово-представимы.
 
 >>>>> lang=zh
-节点可表示性递归经过 Object 每对的值与 Array 的每一项,深度不限,
-且**不**重新施加上述根类型约束:可表示 Object 内部的 String 或
-Integer 按其自身类型节点可表示 —— 从不要求它们本身是 Object 或
-Array。只有交给 writer 的最外层 Value 才受根类型约束。
-
-writer-conforming 实现 MUST 按 § 5.9 以错误拒绝不可表示的
-Value —— 且 MUST 不输出其任何部分:先输出部分内容再失败不是被
-允许的行为。
-
-可表示性有意窄于可解析性。解析永远不会产生标量根(§ 5.0.1)或
-空对名(§ 4、§ 6.5),任何字面量语法也不产生非有限 Float(§ 3.6)
-—— 但解析可能产生被 § 5.9.7 排除的 String,因为 `CR` 字节经由
-inline 复合值的 `\r` escape,或指称码点 000D 的通用 `\uXXXX`
-escape(§ 3.7、§ 3.7.1)进入 String。这样的文档被
-parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
-这正是不可表示 Value 处于 § 8.3 round-trip 恒等式之外的原因。
+- **Object:** 每对的名是非空字符串,且每对的值节点可表示。空名
+  节点不可表示:§ 4 的语法保证 `<bare-segment>` 非空,而
+  `<quoted-segment>` 的非空则由 § 6.5 的 `EmptyKey` 检查单独保证,
+  而非由 § 4 的语法保证(`<quoted-segment>` 在语法上可以为空)——
+  无论如何,任何文档都不能产生带有空键段的对(解析侧对应
+  `EmptyKey` 错误,§ 6.5)。
+- **Array:** V 的每一项都节点可表示。
+- **Float:** 抽象的程序化 Float 载体可以携带 NaN、+Infinity 与
+  -Infinity 这三个彼此不同的 sentinel,但这些 sentinel 不具备节点可
+  表示性。Float V 只有在有限(既非 NaN 也非 ±Infinity)且属于 § 5
+  声明的 Ktav Float 域时才节点可表示。因此对于非零 V,它至少有一个
+  按该域
+  声明的转换语义精确 round-trip 的有限十进制候选(§ 5.9.8)。正零
+  与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示可能含有
+  没有这种候选的非零有限精确值(例如精确有理数 `1/3`);该值在 Ktav
+  Float 域之外,不构成额外的 writer 错误情形。§ 3.6 的任何字面量
+  语法都不产生非有限 Float(溢出字面量在 § 5.2 规则 14 回退为
+  String),且 § 5.9.8 未为其定义规范文本形式。
+- **String:** V 按 § 5.9.7 的规则节点可表示(无 `CR` 字节,且
+  不属于该节定义的病态多行碰撞情形)。
+- **Null、Bool、Integer**:始终节点可表示。
 

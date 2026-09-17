@@ -14,23 +14,6 @@ content begins with `##` is always quoted, `"##a:b"`, per (d), not
 When quoted form is selected, the writer emits the segment's decoded
 content between two `"` characters, escaping only:
 
-- a raw `"` in the content, as `\"` — the only byte structural
-  inside a quoted segment, since `"` is the fixed delimiter;
-- `\` (backslash), as `\\` — backslash is always the escape lead,
-  in both forms;
-- LF / CR, as `\n` / `\r` — a key MUST remain single-line;
-- any other control byte below `0x20` that is not a § 3.3
-  whitespace member, or DEL, as `\uXXXX` — quoting relaxes which
-  STRUCTURAL bytes need escaping, not the format's separate
-  prohibition on raw invisible, non-whitespace bytes in a key
-  (§ 5.3.3). A control byte that IS a § 3.3 whitespace member (tab,
-  VT, FF) is excluded from this bullet for the same reason it is
-  excluded from bare form's analogous bullet above: § 4's
-  `<dq-char>` / `<sq-char>` / `<bt-char>` already admit it raw, so
-  it needs no `\uXXXX` escape here, whether it occurs at an edge or
-  in the interior of the segment (see the edge-whitespace point
-  below, which is not limited to non-control whitespace).
-
 >>>>> lang=ru
 Канонический writer никогда фактически не доходит до этого
 рецепта для первого сегмента ключа с префиксом `##`: правило (d)
@@ -50,11 +33,15 @@ content between two `"` characters, escaping only:
 содержимое сегмента между двумя символами `"`, экранируя только:
 
 >>>>> lang=zh
-`.`、`:`、`,`、`{`、`}`、`[`、`]`、`(`、`)`、`'` 与 `` ` `` 在
-quoted 形式中都无需 escape,边缘空白也是如此:`<quoted-segment>`
-的内容在重解析时从不被修剪(§ 5.3.3),所以上面裸形式那一条
-——为在重解析的修剪中幸存而 escape 边缘空白——在这里没有什么
-需要防范的。开头的 `##` 在 quoted 形式中同样无需自身 escape:
-该行以 `"` 开头,而非 `#`,因此 § 5.1 规则 2 的注释风险对
-quoted 键根本不会出现。
+规范写入器实际上永远不会对 `##` 前缀键的首段执行这一方案:
+上面的选形规则 (d) 已在考虑裸形式之前就将其导向 quoted 形式,
+因为第 1-3 条中的任何 escape 都不会改变输出行的原始前两个
+字节。`\u0023#a\:b`(仅 escape 开头的 `#`,即本条替代之前
+的原裸形式方案)对键 `##a:b` 而言仍是一种有效、可解码的
+非规范 INPUT 拼写 —— 解析器 MUST 仍然接受它 —— 但它绝不是
+规范 OUTPUT:任何内容以 `##` 开头的键,其规范形式始终是
+quoted 形式 `"##a:b"`(依据 (d)),而不是 `\u0023#a\:b`。
+
+若选择 quoted 形式,writer 将段的解码内容输出在两个 `"` 字符
+之间,只 escape:
 

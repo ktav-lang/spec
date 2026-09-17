@@ -60,23 +60,27 @@ String без LF содержит один сегмент.
 вызывающий код их наблюдает:
 
 >>>>> lang=zh
-| 原因代码                        | 情形                                                                                     |
-|-----------------------------------|--------------------------------------------------------------------------------------------|
-| `ScalarRoot`                      | 文档根既非 Object 也非 Array。                                                              |
-| `EmptyKeyName`                    | Object 某对的名为空字符串。                                                                  |
-| `NonFiniteFloat`                  | Float 为 NaN 或 ±Infinity。                                                                  |
-| `CRByte`                          | String 含 `CR` 字节(§ 5.9.7)。                                                              |
-| `BothFormsRequired`               | String 的多行体同时需要两种形式 —— 一个修剪后为 `))` 的段,以及一个修剪后为 `)` 的段(§ 5.9.7)。 |
-| `TrailingWhitespaceCollision`     | 某段修剪后为 `))`,且某内容行存在尾部空白(§ 5.9.7)。                                          |
-| `LeadingWhitespaceCollision`      | 某段修剪后为 `))`,且每个非空段在同一位置共享前导空白(§ 5.9.7)。                              |
+`value` 映射 MUST 递归检查。Object 的空键是 `EmptyKeyName` 情形的
+见证。String 或 Object 键 MUST NOT 含 lone surrogate。
+编码非有限 Float 的不可表示 fixture MUST 使用恰好含一个字段的
+sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
+或 `{"$float": "-Infinity"}`;其他形状都不是有效 sentinel。这个
+fixture 编码 sentinel 表示抽象 Float 载体中的程序化值,而不是解析所得
+的 Float、规范 Float 或节点可表示的 Float。三种写法 MUST 保持彼此
+不同,以便 writer-conformance 实现能够提供并拒绝每一种。该 fixture
+编码 sentinel 仅允许用于 `unrepresentable/`。该规则不保留
+键名:parser 产生的 Object MAY 像使用其他键一样包含字面键
+`$float`,且其 `value` 根 MUST 是 Object 或 Array。
+只有当该原因情形出现在 Value 树中的某处时,
+原因代码才对该 fixture 有效;`ScalarRoot` 例外,它要求根本身是
+标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
+从 fixture 文件名推导含义。对三个 collision 原因代码,segment 以 LF
+分隔;不含 LF 的 String 有一个 segment。
 
-当一个 Value 同时违反多种情形时,检查有先后:先评估文档根约束
-(Object 或 Array),仅在其通过后才递归评估节点可表示性。若节点
-可表示性随后发现多于一个适用的违反 —— 无论是在 Value 自身、
-Object 对的键上,还是在后代中(例如一个 String 同时满足两条
-冲突规则,一个 Object 同时有空键和另一处
-不可表示的子节点,或两个 Array 项各自因不同原因不可表示)
-—— 实现 MAY 报告其中任意一个适用的原因代码:本规范不规定
-具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
-结构化错误契约(rust#12)。
+`parseable-unrepresentable/` 的 parser 与 writer 义务分别由
+§ 8.1 与 § 8.2 规定。
+
+writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
+error enum、tagged union 等)——规范性的只是代码名称及其标识的
+情形,而非调用方借以观察到它们的 API:
 

@@ -55,5 +55,25 @@ Object или среди потомков (например, String, удовл�
 и отрицательную Infinity.
 
 >>>>> lang=zh
+| 原因代码                        | 情形                                                                                     |
+|-----------------------------------|--------------------------------------------------------------------------------------------|
+| `ScalarRoot`                      | 文档根既非 Object 也非 Array。                                                              |
+| `EmptyKeyName`                    | Object 某对的名为空字符串。                                                                  |
+| `NonFiniteFloat`                  | Float 为 NaN 或 ±Infinity。                                                                  |
+| `CRByte`                          | String 含 `CR` 字节(§ 5.9.7)。                                                              |
+| `BothFormsRequired`               | String 的多行体同时需要两种形式 —— 一个修剪后为 `))` 的段,以及一个修剪后为 `)` 的段(§ 5.9.7)。 |
+| `TrailingWhitespaceCollision`     | 某段修剪后为 `))`,且某内容行存在尾部空白(§ 5.9.7)。                                          |
+| `LeadingWhitespaceCollision`      | 某段修剪后为 `))`,且每个非空段在同一位置共享前导空白(§ 5.9.7)。                              |
+
+当一个 Value 同时违反多种情形时,检查有先后:先评估文档根约束
+(Object 或 Array),仅在其通过后才递归评估节点可表示性。若节点
+可表示性随后发现多于一个适用的违反 —— 无论是在 Value 自身、
+Object 对的键上,还是在后代中(例如一个 String 同时满足两条
+冲突规则,一个 Object 同时有空键和另一处
+不可表示的子节点,或两个 Array 项各自因不同原因不可表示)
+—— 实现 MAY 报告其中任意一个适用的原因代码:本规范不规定
+具体的遍历顺序或确定性的「首个」违反;该问题属于仍未解决的
+结构化错误契约(rust#12)。
+
 三个 `NonFiniteFloat` fixture 分别覆盖 NaN、正 Infinity 与负 Infinity。
 

@@ -1,4 +1,11 @@
 >>>>> lang=en
+Node-representability recurses through every Object pair's value and
+every Array item, at any depth, without re-imposing the root-kind
+constraint: a String or Integer nested inside a representable Object
+is node-representable on its own terms — it is never itself required
+to be an Object or an Array. Only the outermost Value handed to a
+writer is subject to the root-kind constraint.
+
 A writer-conforming implementation MUST reject a non-representable
 Value with an error, per § 5.9 — and MUST do so without emitting any
 part of it: partial output followed by a failure is not a permitted
@@ -54,27 +61,26 @@ with exactly these three fields and no others:
 ровно с тремя полями и без каких-либо других:
 
 >>>>> lang=zh
+节点可表示性递归经过 Object 每对的值与 Array 的每一项,深度不限,
+且**不**重新施加上述根类型约束:可表示 Object 内部的 String 或
+Integer 按其自身类型节点可表示 —— 从不要求它们本身是 Object 或
+Array。只有交给 writer 的最外层 Value 才受根类型约束。
+
+writer-conforming 实现 MUST 按 § 5.9 以错误拒绝不可表示的
+Value —— 且 MUST 不输出其任何部分:先输出部分内容再失败不是被
+允许的行为。
+
+可表示性有意窄于可解析性。解析永远不会产生标量根(§ 5.0.1)或
+空对名(§ 4、§ 6.5),任何字面量语法也不产生非有限 Float(§ 3.6)
+—— 但解析可能产生被 § 5.9.7 排除的 String,因为 `CR` 字节经由
+inline 复合值的 `\r` escape,或指称码点 000D 的通用 `\uXXXX`
+escape(§ 3.7、§ 3.7.1)进入 String。这样的文档被
+parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
+这正是不可表示 Value 处于 § 8.3 round-trip 恒等式之外的原因。
+
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
 `versions/0.7/tests/unrepresentable/` 与
 `versions/0.7/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
 MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
-
-- `value`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
-  数组映射为 Array,null、bool 与字符串映射为对应标量类型。普通
-  JSON 数字的词法 token 不含 `.`、`e` 或 `E` 时映射为 Integer,
-  否则映射为 Float,包括 `-0.0`;该数字 MUST 是有限值。
-- `unrepresentable_reason`:下表七个原因代码之一且只能一个。
-- `note`:非空的说明 String。
-
-仅允许以下类别特定的文件集合与原因代码:
-
-- `unrepresentable/` 每个 fixture 含一个 `<name>.json`,不得有
-  其他文件。原因 MUST 是 `ScalarRoot`、`EmptyKeyName` 或
-  `NonFiniteFloat`;这些 Value 只能以编程方式构造。
-- `parseable-unrepresentable/` 每个 fixture 含一个 `<name>.ktav`
-  和一个 `<name>.json`,不得有其他文件。原因 MUST 是 parser 可产生的
-  String 情形 `CRByte`、`BothFormsRequired`、
-  `TrailingWhitespaceCollision` 或 `LeadingWhitespaceCollision`。
-  MUST NOT 存在 canonical-output 文件。
 

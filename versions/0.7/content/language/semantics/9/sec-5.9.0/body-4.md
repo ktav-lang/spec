@@ -41,27 +41,21 @@ Only the following category-specific file sets and reason codes are allowed:
   присутствовать.
 
 >>>>> lang=zh
-`value` 映射 MUST 递归检查。Object 的空键是 `EmptyKeyName` 情形的
-见证。String 或 Object 键 MUST NOT 含 lone surrogate。
-编码非有限 Float 的不可表示 fixture MUST 使用恰好含一个字段的
-sentinel Object:`{"$float": "NaN"}`、`{"$float": "Infinity"}`
-或 `{"$float": "-Infinity"}`;其他形状都不是有效 sentinel。这个
-fixture 编码 sentinel 表示抽象 Float 载体中的程序化值,而不是解析所得
-的 Float、规范 Float 或节点可表示的 Float。三种写法 MUST 保持彼此
-不同,以便 writer-conformance 实现能够提供并拒绝每一种。该 fixture
-编码 sentinel 仅允许用于 `unrepresentable/`。该规则不保留
-键名:parser 产生的 Object MAY 像使用其他键一样包含字面键
-`$float`,且其 `value` 根 MUST 是 Object 或 Array。
-只有当该原因情形出现在 Value 树中的某处时,
-原因代码才对该 fixture 有效;`ScalarRoot` 例外,它要求根本身是
-标量。其他每个原因的根 MUST 是 Object 或 Array。这些检查 MUST NOT
-从 fixture 文件名推导含义。对三个 collision 原因代码,segment 以 LF
-分隔;不含 LF 的 String 有一个 segment。
+- `value`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
+  数组映射为 Array,null、bool 与字符串映射为对应标量类型。普通
+  JSON 数字的词法 token 不含 `.`、`e` 或 `E` 时映射为 Integer,
+  否则映射为 Float,包括 `-0.0`;该数字 MUST 是有限值。
+- `unrepresentable_reason`:下表七个原因代码之一且只能一个。
+- `note`:非空的说明 String。
 
-`parseable-unrepresentable/` 的 parser 与 writer 义务分别由
-§ 8.1 与 § 8.2 规定。
+仅允许以下类别特定的文件集合与原因代码:
 
-writer-conforming 实现自身的错误类型 MAY 采用任意形式(异常类、
-error enum、tagged union 等)——规范性的只是代码名称及其标识的
-情形,而非调用方借以观察到它们的 API:
+- `unrepresentable/` 每个 fixture 含一个 `<name>.json`,不得有
+  其他文件。原因 MUST 是 `ScalarRoot`、`EmptyKeyName` 或
+  `NonFiniteFloat`;这些 Value 只能以编程方式构造。
+- `parseable-unrepresentable/` 每个 fixture 含一个 `<name>.ktav`
+  和一个 `<name>.json`,不得有其他文件。原因 MUST 是 parser 可产生的
+  String 情形 `CRByte`、`BothFormsRequired`、
+  `TrailingWhitespaceCollision` 或 `LeadingWhitespaceCollision`。
+  MUST NOT 存在 canonical-output 文件。
 

@@ -1,4 +1,6 @@
 >>>>> lang=en
+The following document is therefore an error:
+
 ```
 key: {a: (
     body
@@ -56,6 +58,14 @@ inline-значение: если первая непробельная кодо
 inline-значения.
 
 >>>>> lang=zh
+因此,以下文档是一个错误:
+
+```
+key: {a: (
+    body
+)}
+```
+
 **不**是 inline 值首个非空白码点的 `{` / `[` 是字面字符,**不**
 打开嵌套复合值。解析器在开始读取 inline 值时做一次性决定:首个
 非空白码点为 `{` / `[` 时,值为嵌套复合值;否则值为 inline 标量,

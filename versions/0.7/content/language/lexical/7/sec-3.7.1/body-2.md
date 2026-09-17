@@ -1,4 +1,12 @@
 >>>>> lang=en
+`\uXXXX` is recognised only where escape sequences are recognised at
+all: inline scalar values and keys. It is **not** processed inside
+multi-line scalar values, multi-line string content (`(…)` /
+`((…))`, § 5.6), or comments — in those contexts the six bytes
+`\`, `u`, and four following characters are literal content, exactly
+as any other unrecognised-elsewhere escape form would be (§ 3.7,
+"Escape sequences are NOT processed in", above).
+
 A canonical writer emits ordinary Unicode content as UTF-8 directly;
 it is under no obligation to represent any code point as `\uXXXX`
 instead. In canonical output this discretion is exercised nowhere
@@ -54,6 +62,12 @@ MUST быть в верхнем регистре (`0-9A-F`) — парсинг �
 результат (требование детерминизма § 5.9).
 
 >>>>> lang=zh
+`\uXXXX` 仅在识别 escape 序列的位置被识别:inline 标量值与键。
+它**不**在多行标量值、多行字符串内容(`(…)` / `((…))`,§ 5.6)或
+注释中被处理 —— 在这些语境中,`\`、`u` 及随后四个字符是字面内容,
+与其他在这些语境中未被识别的 escape 形式一样(见上文「Escape 序列
+不在以下场景处理」)。
+
 规范 writer 直接以 UTF-8 输出普通 Unicode 内容;它没有义务将任何
 码点表示为 `\uXXXX`。在规范输出中,这种自由裁量权仅在键段
 (§ 5.9.10)内被行使:非空标量的体在规范形式下从不被转义

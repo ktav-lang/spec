@@ -26,8 +26,6 @@ respectively. If no inline terminator occurs before the end of the line, the
 outer inline compound yields `UnterminatedInlineCompound` (§ 6.11).
 Multi-line string openers are not permitted inside inline compounds.
 
-The following document is therefore an error:
-
 >>>>> lang=ru
 
 - Многострочные строки (`(`/`((` — опенеры). Inline-составное по
@@ -81,12 +79,4 @@ inline 终止符(`,`、`}` 或 `]`)。随后在原始字节上修剪周围空白
 如果直到行末都没有出现 inline 终止符,外层 inline 复合值则给出
 `UnterminatedInlineCompound`(§ 6.11)错误。
 多行字符串开启符不允许出现在 inline 复合值内。
-
-因此,以下文档是一个错误:
-
-```
-key: {a: (
-    body
-)}
-```
 

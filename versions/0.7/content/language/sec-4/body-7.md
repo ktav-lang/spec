@@ -67,20 +67,3 @@
                                        —— 与上面 `x.y\.z: v` 相比:
                                        中间段是 quoted 而非 bare-with-escape,但结果相同
 
-<sep-end>       ::= 1*ws | &line-end              ; ≥1 个空白码点,或行末
-<raw-line>      ::= any-chars-until-line-end       ; 行末之前的源字节
-                    ; raw String 的语义体:修剪结尾的 § 3.3 空白;
-                    ; 最大前导序列已由 <sep-end> 吸收
-<value-part-opt> ::= <value-start> | ""             ; value-part 可选;"" ⇒ 空 String
-<value-start>   ::= "{" (ws) "}" (ws)                ; 空 inline 对象
-                  | "[" (ws) "]" (ws)                ; 空 inline 数组
-                  | "{" (ws) <inline-pair-list> (ws) "}" ; inline 对象 (§ 5.8)
-                  | "[" (ws) <inline-item-list> (ws) "]" ; inline 数组 (§ 5.8)
-                  | "{" (ws) &line-end                ; 对象开启(多行 body)
-                  | "[" (ws) &line-end                ; 数组开启(多行 body)
-                  | "(" (ws) &line-end                ; 多行字符串开启 (stripped)
-                  | "((" (ws) &line-end               ; 多行字符串开启 (verbatim)
-                  | "()" (ws)                        ; 空 inline(得到 "")
-                  | "(())" (ws)                      ; 空 inline(得到 "")
-                  | <scalar-body>                    ; 标量值,按 § 5.2 分发
-

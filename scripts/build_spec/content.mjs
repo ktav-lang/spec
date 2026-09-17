@@ -255,6 +255,7 @@ export function splitPlan(body, partCount, targetLineCount) {
   }
 
   const cuts = [];
+  const cutIndices = [];
   let previousBlankIndex = -1;
   const cutCount = partCount - 1;
   for (let i = 1; i < partCount; i++) {
@@ -281,9 +282,26 @@ export function splitPlan(body, partCount, targetLineCount) {
     if (bestBlankIndex === undefined) break;
     const bestBlank = blankLines[bestBlankIndex];
     cuts.push(offsets[bestBlank + 1]);
+    cutIndices.push(bestBlankIndex);
     previousBlankIndex = bestBlankIndex;
   }
-  return { lineCount, blankLineCount: blankLines.length, cuts };
+  return {
+    lineCount,
+    blankLineCount: blankLines.length,
+    cuts,
+    // WHICH paragraph boundaries were chosen, not just where they landed.
+    // The boundary index is the language-independent part: boundary i is
+    // the i-th paragraph break, and that is the same break in every
+    // translation. See cutsAtBoundaries below.
+    cutIndices,
+    boundaryOffsets: blankLines.map((b) => offsets[b + 1]),
+  };
+}
+
+// The character offsets, in THIS language, of a set of paragraph-boundary
+// indices chosen elsewhere.
+function cutsAtBoundaries(layout, indices) {
+  return indices.map((i) => layout.boundaryOffsets[i]);
 }
 
 function bodySplitPlan(parts) {
@@ -304,11 +322,32 @@ function bodySplitPlan(parts) {
     lineCountPartCount,
     ...LANGS.map((lang) => layouts[lang].blankLineCount + 1)
   );
+
+  // The cut points are chosen ONCE and shared, as paragraph-boundary
+  // indices. Boundary i is the i-th paragraph break, which is the same
+  // break in every translation, so part k holds the same fragment in every
+  // language — a file you can open and compare, rather than three slices
+  // that happen to carry the same total.
+  //
+  // Choosing per language is what this replaces, and it was visibly wrong:
+  // Chinese runs about half the length of English for the same meaning, so
+  // its proportional target landed somewhere else and its part boundaries
+  // drifted away from the other two. Nothing was lost — the generator
+  // concatenates — but the source was unreviewable.
+  //
+  // The reference for WHERE to cut is the longest language, since the part
+  // size mandate is expressed in its lines; ties break on LANGS order so
+  // the choice is deterministic.
+  const reference = LANGS.find((lang) => lineCounts[lang] === maxLines);
+  const cutIndices = splitPlan(bodies[reference], partCount, maxLines).cutIndices;
   const plans = Object.fromEntries(
-    LANGS.map((lang) => [lang, splitPlan(bodies[lang], partCount, maxLines)])
+    LANGS.map((lang) => [lang, {
+      ...layouts[lang],
+      cuts: cutsAtBoundaries(layouts[lang], cutIndices),
+    }])
   );
 
-  return { lineCounts, maxLines, partCount, plans };
+  return { lineCounts, maxLines, partCount, reference, cutIndices, plans };
 }
 
 function validateBodySplitting(unit, meta, parts) {
@@ -318,6 +357,26 @@ function validateBodySplitting(unit, meta, parts) {
       `bodyParts ${meta.bodyParts} does not match the mandated split count ` +
       `${plan.partCount} for ${plan.maxLines} body lines (the limit is ` +
       `${BODY_LINE_LIMIT}; target size is ${BODY_TARGET_LINES})`);
+  }
+
+  // A cut is a paragraph-boundary INDEX chosen once, in the reference
+  // language, and then looked up in each of the others. That lookup only
+  // means something while the translations agree on where the paragraphs
+  // are. When one of them has fewer boundaries the index names nothing,
+  // and the honest report is that the paragraph structure diverged -- a
+  // content defect -- rather than a cut offset of `undefined` surfacing
+  // later as an unreadable mismatch against the actual parts.
+  const neededBoundaries = plan.cutIndices.length === 0
+    ? 0
+    : Math.max(...plan.cutIndices) + 1;
+  for (const lang of LANGS) {
+    const available = plan.plans[lang].boundaryOffsets.length;
+    if (available < neededBoundaries) {
+      failUnit(unit,
+        `${lang}: has ${available} paragraph boundary/boundaries but the shared cut ` +
+        `points need ${neededBoundaries} (chosen in ${plan.reference}); every language ` +
+        `must keep the same paragraph structure so part k is the same fragment`);
+    }
   }
 
   for (const lang of LANGS) {

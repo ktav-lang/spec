@@ -1,4 +1,17 @@
 >>>>> lang=en
+The three quote escapes (`\"`, `\'`, `` \` ``) exist for the quoted
+key form (§ 5.3.3): inside a `<quoted-segment>`, only the segment's
+own opening delimiter is structural (its first unescaped occurrence
+closes the segment); the two other quote characters are ordinary
+content there and need no escape. `\"` / `\'` / `` \` `` are
+recognised uniformly in every context where escapes are recognised
+at all — bare key segments, quoted key segments, and inline scalar
+values alike. In an inline value a recognised escape has no structural
+effect, but it is not semantically redundant: § 5.2 classifies any
+body containing a recognised escape as String, even when the decoded
+body would otherwise be a keyword or numeric literal. This applies
+equally to `\.` and `\:` in values.
+
 Any other `\X` form (including `\#`, `\t`, `\ <space>`,
 `\<any-other>`) is a `BadEscapeSequence` error (§ 6.13). See
 § 3.7.1 below for the specific validity rules of `\uXXXX`.
@@ -46,6 +59,20 @@ Escape-последовательности НЕ обрабатываются в
 последовательность байтов `\X` — это два символа (`\`, затем `X`).
 
 >>>>> lang=zh
+三个引号 escape(`\"`、`\'`、`` \` ``)是为了支持带引号的键形式
+(§ 5.3.3)而存在:在 `<quoted-segment>` 内部,只有该段自身的
+开启分隔符是结构性的(其第一次未转义出现即关闭该段);另外两种
+引号字符在其中是普通内容,无需转义。`\"` / `\'` / `` \` `` 在
+每一个识别 escape 的上下文中都一致地被识别 —— 无论是裸键段、
+带引号的键段,还是 inline 标量值。inline 值中的已识别 escape 没有
+结构性作用,但在语义上并非多余:§ 5.2 将任何含有已识别 escape 的体
+分类为 String,即使解码后的体本来会像关键字或数字字面量。这同样
+适用于值中的 `\.` 与 `\:`。
+
+其他任何 `\X` 形式(包括 `\#`、`\t`、`\<空格>`、
+`\<其他任意>`)是 `BadEscapeSequence` 错误(§ 6.13)。
+`\uXXXX` 的具体有效性规则见下文 § 3.7.1。
+
 Escape 序列**不**在以下场景处理:
 
 - 多行标量值(占整行内容的对体或数组项体,§ 5.3 / § 5.4)。

@@ -1,4 +1,21 @@
 >>>>> lang=en
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         The maximal leading and trailing (ws) are trimmed
+                         before dispatching to <quoted-segment> or <bare-segment>;
+                         whitespace inside the dispatched segment is preserved.
+<unescaped-dot>      ::= "." that is NOT preceded by an odd number of "\\"
+<segment>            ::= <quoted-segment> | <bare-segment>
+<bare-segment>       ::= <bare-first-token> <key-token>*
+<bare-first-token>   ::= <key-escape> | <non-quote-key-char>
+<key-token>          ::= <key-escape> | <key-char>
+<non-quote-key-char> ::= <key-char> excluding "\"", "'", "`"
+<key-escape>         ::= "\\" <escapable-byte>
+                        | "\\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+                        | "." | ":" | "\"" | "'" | "`"
+<hex-digit>          ::= [0-9a-fA-F]
+
 <quoted-segment> ::= "\"" <dq-token>* "\""       ; § 5.3.3
                   | "'" <sq-token>* "'"
                   | "`" <bt-token>* "`"
@@ -46,6 +63,23 @@
                     "\"" исключён "`" (собственный разделитель)
 
 >>>>> lang=zh
+<key>                ::= <raw-segment> ( <unescaped-dot> <raw-segment> )*
+<raw-segment>        ::= (ws) <segment> (ws)
+                         在分发到 <quoted-segment> 或 <bare-segment> 之前,
+                         删除最长的首尾 (ws);
+                         分发后的段内部空白保留。
+<unescaped-dot>      ::= 非由奇数个 "\\" 前导的 "."
+<segment>            ::= <quoted-segment> | <bare-segment>
+<bare-segment>       ::= <bare-first-token> <key-token>*
+<bare-first-token>   ::= <key-escape> | <non-quote-key-char>
+<key-token>          ::= <key-escape> | <key-char>
+<non-quote-key-char> ::= <key-char>,但排除 "\"", "'", "`"
+<key-escape>         ::= "\\" <escapable-byte>
+                        | "\\" "u" <hex-digit> <hex-digit> <hex-digit> <hex-digit>
+<escapable-byte>     ::= "\\" | "," | "}" | "]" | "{" | "[" | "n" | "r"
+                        | "." | ":" | "\"" | "'" | "`"
+<hex-digit>          ::= [0-9a-fA-F]
+
 <quoted-segment> ::= "\"" <dq-token>* "\""       ; § 5.3.3
                   | "'" <sq-token>* "'"
                   | "`" <bt-token>* "`"
