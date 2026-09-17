@@ -8,5 +8,5 @@ export default {
     "ru": "Parser-conforming",
     "zh": "Parser-conforming"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

@@ -8,5 +8,5 @@ export default {
     "ru": "Что НЕ может содержать inline-составное",
     "zh": "inline 复合值不能包含"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

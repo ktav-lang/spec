@@ -8,5 +8,5 @@ export default {
     "ru": "Корень документа",
     "zh": "文档根"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

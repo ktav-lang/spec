@@ -120,9 +120,11 @@ test('bodyParts accepts safe existing values and rejects invalid or excessive co
   }
 });
 
-test('bodyParts rejects needless splitting of a unit with at most 120 lines', async () => {
+test('bodyParts rejects needless splitting of a unit at the line limit', async () => {
   const fx = baseFixtures();
-  const body = bodyWithOneInteriorBlank(120, 59);
+  // Exactly BODY_LINE_LIMIT lines: at the limit, not over it, so the
+  // mandate is one part however many blank boundaries are available.
+  const body = bodyWithOneInteriorBlank(40, 19);
   fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
   fx[2].bodies = sameLanguageBodies(splitBody(body, body.indexOf('\n\n') + 2));
   await assert.rejects(
@@ -155,11 +157,14 @@ test('splitPlan scales to the maximum part count with dense blank boundaries', (
 
 test('equidistant split tie chooses the earlier blank boundary', async () => {
   const fx = baseFixtures();
-  const body = bodyWithInteriorBlanks(130, [63, 65]);
+  // Sixty lines mandate two parts, so there is exactly one cut to place,
+  // and its proportional target is line 30 — equidistant from the two
+  // blank boundaries at 29 and 31.
+  const body = bodyWithInteriorBlanks(60, [28, 30]);
   const cuts = interiorBlankCutOffsets(body);
   assert.equal(cuts.length, 2);
-  assert.equal(body.slice(0, cuts[0]).split('\n').length - 1, 64);
-  assert.equal(body.slice(0, cuts[1]).split('\n').length - 1, 66);
+  assert.equal(body.slice(0, cuts[0]).split('\n').length - 1, 29);
+  assert.equal(body.slice(0, cuts[1]).split('\n').length - 1, 31);
   const parts = splitBody(body, cuts[0]);
   fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
   fx[2].bodies = sameLanguageBodies(parts);

@@ -16,36 +16,6 @@ by at least one byte of surrounding structure (a parent key, a
 separator, a line terminator, indentation, a compound opener, or an
 array-item marker).
 
-- **Root Object, first-serialized key.** If the root is a non-empty
-  Object and the first segment of its first-serialized key's decoded
-  content begins with U+FEFF, § 5.9.10's form-selection rule forces
-  quoted form for that segment (rule (c)). The segment is then
-  written \`"…"\`, so byte offset 0 of the document is \`"\` (\`0x22\`),
-  never the raw encoding of U+FEFF; the U+FEFF itself appears later
-  in the byte stream, as ordinary quoted content, and needs no
-  escape of its own (§ 5.3.3 permits U+FEFF raw inside a
-  \`<quoted-segment>\` — it is neither a control byte nor DEL).
-- **Root Array, first item.** If the root is a non-empty Array and
-  its first item is a String whose canonical form would otherwise be
-  the bare, one-line form of § 5.9.7 with content beginning with
-  U+FEFF, the writer MUST instead use the raw-marker form
-  (\`:: <body>\`, § 5.9.6) for that one item, even though § 5.9.7's
-  ordinary bare-form conditions are otherwise satisfied. The
-  raw-marker's own two bytes (\`::\`) occupy byte offset 0, so the
-  item's content — including the leading U+FEFF, carried through
-  unescaped since the raw-marker form applies no escape processing
-  (§ 5.4 rule 1: "literal String, no type inference") — begins only
-  after \`:: \`, never at byte offset 0.
-
-Both cases are narrow, form-selection overrides: they change which
-of two already-normative forms the writer must pick for the one
-position (the root's first-serialized key, or its first item) whose
-content the format ever places at byte offset 0. They do not add a
-new non-representability case to § 5.9.0 — a key or first-item
-String beginning with U+FEFF remains representable — and they do
-not apply to any other key or item position, since no other
-position's content can ever reach byte offset 0 of the document.
-
 `,
   ru: `
 § 3.1 требует, чтобы conforming-читатель снимал ровно один ведущий
@@ -64,38 +34,6 @@ Value не может достичь байтового смещения 0, по
 позиции предшествует хотя бы один байт окружающей структуры
 (родительский ключ, разделитель, завершитель строки, отступ,
 открывающая скобка составного значения или маркер элемента массива).
-
-- **Корневой Object, первый сериализуемый ключ.** Если корень —
-  непустой Object, а первый сегмент его первого сериализуемого ключа
-  начинается декодированным содержимым с U+FEFF, правило выбора формы
-  § 5.9.10 вынуждает квотированную форму для этого сегмента
-  (правило (c)). Сегмент тогда выводится как \`"…"\`, так что байтовое
-  смещение 0 документа — это \`"\` (\`0x22\`), никогда не сырая кодировка
-  U+FEFF; сам U+FEFF появляется позже в потоке байтов, как обычное
-  квотированное содержимое, и не нуждается в собственном
-  экранировании (§ 5.3.3 разрешает U+FEFF сырым внутри
-  \`<quoted-segment>\` — это не управляющий байт и не DEL).
-- **Корневой Array, первый элемент.** Если корень — непустой Array,
-  а его первый элемент — String, чья каноническая форма иначе была
-  бы голой однострочной формой § 5.9.7 с содержимым, начинающимся с
-  U+FEFF, writer MUST вместо этого использовать форму raw-маркера
-  (\`:: <тело>\`, § 5.9.6) для этого одного элемента, даже если в
-  остальном обычные условия голой формы § 5.9.7 выполнены. Два байта
-  самого raw-маркера (\`::\`) занимают байтовое смещение 0, так что
-  содержимое элемента — включая ведущий U+FEFF, перенесённый без
-  экранирования, поскольку форма raw-маркера не применяет обработку
-  escape (§ 5.4 правило 1: «литеральная String, без вывода типа») —
-  начинается только после \`:: \`, никогда на байтовом смещении 0.
-
-Оба случая — узкие переопределения выбора формы: они меняют, какую
-из двух уже нормативных форм должен выбрать writer для единственной
-позиции (первого сериализуемого ключа корня или его первого
-элемента), чьё содержимое формат вообще когда-либо размещает на
-байтовом смещении 0. Они не добавляют новый случай непредставимости
-к § 5.9.0 — ключ или первый элемент String, начинающийся с U+FEFF,
-остаётся представимым — и не применяются ни к какой другой позиции
-ключа или элемента, поскольку содержимое никакой другой позиции
-никогда не может достичь байтового смещения 0 документа.
 
 `,
   zh: `
@@ -127,13 +65,6 @@ Value 自身的内容都不可能到达字节偏移 0,因为其余每个位置�
   raw-marker 形式不做任何 escape 处理(§ 5.4 规则 1:「字面
   String,不做类型推断」)—— 只在 \`:: \` 之后才开始,绝不在字节
   偏移 0。
-
-这两种情形都是狭窄的、针对形式选择的例外:它们只改变 writer
-必须为唯一会落在字节偏移 0 的位置(根的首个序列化键,或其首项)
-在两种既有规范形式之间做出的选择。它们并未给 § 5.9.0 增加新的
-不可表示情形 —— 以 U+FEFF 开头的键或首项 String 仍然是可表示的
-—— 也不适用于任何其他键或项的位置,因为其他任何位置的内容都
-绝不可能到达文档的字节偏移 0。
 
 `,
 };

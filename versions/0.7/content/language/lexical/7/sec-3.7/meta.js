@@ -8,5 +8,5 @@ export default {
     "ru": "Escape-последовательности",
     "zh": "Escape 序列"
   },
-  "bodyParts": 1
+  "bodyParts": 3
 }

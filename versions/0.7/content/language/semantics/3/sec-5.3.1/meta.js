@@ -8,5 +8,5 @@ export default {
     "ru": "Валидация ключа",
     "zh": "键校验"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

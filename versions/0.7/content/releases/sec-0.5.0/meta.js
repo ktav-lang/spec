@@ -8,5 +8,5 @@ export default {
     "ru": "— 2026-05-28",
     "zh": "—— 2026-05-28"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

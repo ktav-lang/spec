@@ -8,5 +8,5 @@ export default {
     "ru": "Выбор формы String",
     "zh": "String 形式选择"
   },
-  "bodyParts": 1
+  "bodyParts": 4
 }

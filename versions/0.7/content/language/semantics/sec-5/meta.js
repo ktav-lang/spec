@@ -8,5 +8,5 @@ export default {
     "ru": "Семантика",
     "zh": "语义"
   },
-  "bodyParts": 1
+  "bodyParts": 3
 }

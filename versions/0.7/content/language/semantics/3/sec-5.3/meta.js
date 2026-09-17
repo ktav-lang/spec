@@ -8,5 +8,5 @@ export default {
     "ru": "Pair Lines",
     "zh": "Pair 行"
   },
-  "bodyParts": 1
+  "bodyParts": 3
 }

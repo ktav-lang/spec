@@ -8,5 +8,5 @@ export default {
     "ru": "Маркеры элементов массива",
     "zh": "数组项标记"
   },
-  "bodyParts": 1
+  "bodyParts": 3
 }

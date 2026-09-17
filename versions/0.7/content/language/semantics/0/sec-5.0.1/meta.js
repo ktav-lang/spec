@@ -8,5 +8,5 @@ export default {
     "ru": "Определение типа корня",
     "zh": "顶层类型的判定"
   },
-  "bodyParts": 1
+  "bodyParts": 4
 }

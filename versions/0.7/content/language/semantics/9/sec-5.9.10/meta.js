@@ -8,5 +8,5 @@ export default {
     "ru": "Ключи",
     "zh": "键"
   },
-  "bodyParts": 2
+  "bodyParts": 6
 }

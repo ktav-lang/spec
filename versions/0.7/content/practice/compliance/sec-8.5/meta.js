@@ -8,5 +8,5 @@ export default {
     "ru": "Контракт раннера конформанс-тестов",
     "zh": "Conformance 测试运行器契约"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

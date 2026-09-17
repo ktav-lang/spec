@@ -8,5 +8,5 @@ export default {
     "ru": "Канонизация чисел",
     "zh": "数字规范化"
   },
-  "bodyParts": 1
+  "bodyParts": 3
 }

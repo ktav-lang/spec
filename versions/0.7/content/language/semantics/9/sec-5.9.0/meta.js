@@ -8,5 +8,5 @@ export default {
     "ru": "Представимые значения",
     "zh": "可表示的值"
   },
-  "bodyParts": 2
+  "bodyParts": 6
 }

@@ -8,5 +8,5 @@ export default {
     "ru": "Квотированные ключи",
     "zh": "带引号的键"
   },
-  "bodyParts": 3
+  "bodyParts": 4
 }

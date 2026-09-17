@@ -8,5 +8,5 @@ export default {
     "ru": "Почему минимальное экранирование?",
     "zh": "为什么采用最小 escape?"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

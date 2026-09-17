@@ -8,5 +8,5 @@ export default {
     "ru": "Unicode-escape (`\\uXXXX`)",
     "zh": "Unicode Escape(`\\uXXXX`)"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

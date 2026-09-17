@@ -8,5 +8,5 @@ export default {
     "ru": "Защита первого байта вывода",
     "zh": "首字节防护"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

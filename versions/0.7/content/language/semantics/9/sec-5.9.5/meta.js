@@ -8,5 +8,5 @@ export default {
     "ru": "Разделители пар",
     "zh": "对分隔符"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

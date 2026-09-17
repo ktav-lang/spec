@@ -8,5 +8,5 @@ export default {
     "ru": "Пробельные символы",
     "zh": "空白"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

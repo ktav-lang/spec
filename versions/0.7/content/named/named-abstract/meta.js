@@ -7,5 +7,5 @@ export default {
     "ru": "Аннотация",
     "zh": "摘要"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

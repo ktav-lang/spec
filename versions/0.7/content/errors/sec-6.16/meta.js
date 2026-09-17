@@ -8,5 +8,5 @@ export default {
     "ru": "Незакрытый квотированный ключ",
     "zh": "未终止的带引号的键"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

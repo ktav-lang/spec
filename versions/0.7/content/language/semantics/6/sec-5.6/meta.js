@@ -8,5 +8,5 @@ export default {
     "ru": "Многострочные строки",
     "zh": "多行字符串"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }
