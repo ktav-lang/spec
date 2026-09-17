@@ -1,13 +1,56 @@
-import test from 'node:test';
+// Release token substitution: version and date are rendered into every
+// language body, README.source.js passes them through verbatim, and a
+// token surviving in a meta title fails the build -- because meta is
+// never substituted and Appendix A headings are historical records.
+
+import {
+  LANGS,
+  README_SOURCE_FILE,
+  buildBuffers,
+  validateContentDir,
+} from '../../build_spec.mjs';
+import {
+  TEST_RELEASE,
+  baseFixtures,
+  bodyJs,
+  lockUnits,
+  makeContent,
+  unitMeta,
+  validate,
+  write,
+} from '../helpers.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import test from 'node:test';
 
-import { LANGS, README_SOURCE_FILE, validateContentDir } from '../build_spec.mjs';
-import {
-  TEST_RELEASE, baseFixtures, bodyJs, buildInTemp, lockUnits, makeContent, tokenFixtures, unitMeta, validate, write,
-} from './helpers.mjs';
+test('well-formed minimal fixture passes cleanly', async () => {
+  const { manifest } = await validate(baseFixtures());
+  assert.deepEqual(manifest, ['frontmatter', 'named-abstract', 'sec-1']);
+});
+
+async function buildInTemp(fixtures, mutate) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-release-'));
+  try {
+    makeContent(dir, fixtures, fixtures.map((u) => u.name));
+    if (mutate) mutate(path.join(dir, 'content'));
+    return await buildBuffers(path.join(dir, 'content'));
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+function tokenFixtures() {
+  const fmBody = [
+    '# Fm\n\n**Version:** @@VERSION@@\n**Date:** @@DATE@@\n\n',
+    '# Fm\n\n**Версия:** @@VERSION@@\n**Дата:** @@DATE@@\n\n',
+    '# Fm\n\n**版本:** @@VERSION@@\n**日期:** @@DATE@@\n\n',
+  ];
+  const fx = baseFixtures();
+  fx[0].bodies = [fmBody];
+  return fx;
+}
 
 test('release token substitution renders version and date in every language', async () => {
   const { bufs } = await buildInTemp(tokenFixtures());
@@ -108,4 +151,3 @@ test('section inventory lock version must match release.js version', async () =>
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
-

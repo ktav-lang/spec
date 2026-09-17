@@ -1,0 +1,216 @@
+// The closed-world shape of a content directory: which files a unit may
+// hold, which keys meta.js and a body may carry, what a stray file or a
+// symlink does, and how the final chunk of each language body must end.
+
+import {
+  baseFixtures,
+  bodyJs,
+  symlinksSupported,
+  unitMeta,
+  validate,
+  write,
+} from '../helpers.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import test from 'node:test';
+
+test('legacy en.md/ru.md/zh.md without body files', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      for (const f of ['en.md', 'ru.md', 'zh.md']) {
+        write(path.join(c, 'sec-1', f), 'Hello\n');
+      }
+    }),
+    (e) => /unit "sec-1": legacy per-language file en\.md is not allowed under content\/; edit body-\*\.js instead/.test(e.message)
+  );
+});
+
+test('legacy en.md/ru.md/zh.md alongside correct body files', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      for (const f of ['en.md', 'ru.md', 'zh.md']) {
+        write(path.join(c, 'named-abstract', f), 'Hello\n');
+      }
+    }),
+    (e) => /unit "named-abstract": legacy per-language file en\.md/.test(e.message)
+  );
+});
+
+test('two units both with kind frontmatter', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('frontmatter');
+  fx[1].bodies = [['fm2.\n\n', 'фм2.\n\n', '前言2。\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": frontmatter unit must be manifest\[0\], found at index 1/.test(e.message)
+  );
+});
+
+test('manifest[0] is not "frontmatter"', async () => {
+  const fx = baseFixtures();
+  const reordered = [fx[2], fx[0], fx[1]];
+  await assert.rejects(
+    validate(reordered),
+    (e) => /manifest\.js must start with "frontmatter"; got "sec-1"/.test(e.message)
+  );
+});
+
+test('non-last unit ru final chunk ends "\\n" instead of "\\n\\n" (per-language)', async () => {
+  const fx = baseFixtures();
+  fx[0].bodies = [['# Frontmatter\n\nfm.\n\n', '# Frontmatter\n\nфм.\n', '# Frontmatter\n\n前言。\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "frontmatter": ru: non-last unit's final chunk must end with "\\n\\n"/.test(e.message)
+  );
+});
+
+test('last unit final chunk ends "\\n\\n" in en (ru/zh correct)', async () => {
+  const fx = baseFixtures();
+  fx[2].bodies = [['end.\n\n', 'конец.\n', '结束。\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "sec-1": en: last unit's final chunk must end with a single "\\n" but ends with "\\n\\n"/.test(e.message)
+  );
+});
+
+test('stray top-level file TODO.txt is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => write(path.join(c, 'TODO.txt'), 'x\n')),
+    (e) => /unexpected file under content\/: "TODO\.txt"/.test(e.message)
+  );
+});
+
+test('rogue top-level directory is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => fs.mkdirSync(path.join(c, 'rogue'))),
+    (e) => /unexpected directory under content\/: "rogue"/.test(e.message)
+  );
+});
+
+test('meta.js with an extra key is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = { ...unitMeta('named'), altText: { en: 'x', ru: 'y', zh: 'z' } };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": meta\.js keys must be exactly .*unexpected key\(s\) "altText"/.test(e.message)
+  );
+});
+
+test('body-1.js with a 4th key is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'), bodyJs('a\n', 'b\n', 'c\n').replace('};', '  de: "d",\n};'))),
+    (e) => /unit "sec-1": body-1\.js: expected exactly ",\\n\};\\n" after the zh field/.test(e.message)
+  );
+});
+
+test('body-1.js with a missing key is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-1.js'),
+        'export default {\n  en: `a\n`,\n  ru: `b\n`,\n};\n')),
+    (e) => /unit "sec-1": body-1\.js: expected exactly ",\\n  zh: `" after the ru field/.test(e.message)
+  );
+});
+
+test('unit directory without meta.js is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => fs.rmSync(path.join(c, 'sec-1', 'meta.js'))),
+    (e) => /unit "sec-1": missing meta\.js/.test(e.message)
+  );
+});
+
+test('oddly-numbered stray body-0.js is named in the error', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) =>
+      write(path.join(c, 'sec-1', 'body-0.js'), bodyJs('x\n', 'y\n', 'z\n'))),
+    (e) => /unit "sec-1": unexpected body file\(s\) body-0\.js/.test(e.message)
+  );
+});
+
+test('zero-padded body aliases are rejected instead of satisfying body membership', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      fs.renameSync(path.join(c, 'sec-1', 'body-1.js'), path.join(c, 'sec-1', 'body-01.js'));
+    }),
+    (e) => /unit "sec-1": unexpected body file\(s\) body-01\.js/.test(e.message)
+  );
+});
+
+test('subdirectory inside a unit dir is rejected', async () => {
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => fs.mkdirSync(path.join(c, 'sec-1', 'nested'))),
+    (e) => /unit "sec-1": subdirectory "nested" is not allowed/.test(e.message)
+  );
+});
+
+test('symlink named body-1.js inside a unit dir is rejected', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      const outside = path.join(c, '..', 'outside-body.js');
+      fs.writeFileSync(outside, bodyJs('x\n', 'y\n', 'z\n'));
+      fs.rmSync(path.join(c, 'sec-1', 'body-1.js'));
+      fs.symlinkSync(outside, path.join(c, 'sec-1', 'body-1.js'), 'file');
+    }),
+    (e) => /unit "sec-1": entry "body-1\.js" is not a regular file/.test(e.message)
+  );
+});
+
+test('symlink named meta.js inside a unit dir is rejected', async (t) => {
+  if (!symlinksSupported()) {
+    t.skip('symlink creation unavailable without privileges (Windows without admin/Developer Mode); this test MUST run on POSIX CI');
+    return;
+  }
+  await assert.rejects(
+    validate(baseFixtures(), null, (c) => {
+      const outside = path.join(c, '..', 'outside-meta.js');
+      fs.writeFileSync(outside, bodyJs('x\n', 'y\n', 'z\n'));
+      fs.rmSync(path.join(c, 'sec-1', 'meta.js'));
+      fs.symlinkSync(outside, path.join(c, 'sec-1', 'meta.js'), 'file');
+    }),
+    (e) => /unit "sec-1": entry "meta\.js" is not a regular file/.test(e.message)
+  );
+});
+
+test('meta.js title with an extra 4th key is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title = { en: 'Abstract', ru: 'Аннотация', zh: '摘要', de: 'Zusammenfassung' };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": title keys must be exactly \{en, ru, zh\}; got unexpected key\(s\) "de"/.test(e.message)
+  );
+});
+
+test('meta.js title missing a key is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].meta = unitMeta('named');
+  fx[1].meta.title = { en: 'Abstract', ru: 'Аннотация' };
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": title keys must be exactly \{en, ru, zh\}; got missing key\(s\) "zh"/.test(e.message)
+  );
+});
+
+test('non-last unit en final chunk ends "\\n\\n\\n" (extra blank line) is rejected', async () => {
+  const fx = baseFixtures();
+  fx[0].bodies = [['# Frontmatter\n\nfm.\n\n\n', '# Frontmatter\n\nфм.\n\n', '# Frontmatter\n\n前言。\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "frontmatter": en: non-last unit's final chunk must end with "\\n\\n".*got "\\n\\n\\n" or more/.test(e.message)
+  );
+});
+
+test('non-last unit zh final chunk ends "\\n\\n\\n\\n" (four LFs) is rejected', async () => {
+  const fx = baseFixtures();
+  fx[1].bodies = [['mid.\n\n', 'середина.\n\n', '中间。\n\n\n\n']];
+  await assert.rejects(
+    validate(fx),
+    (e) => /unit "named-abstract": zh: non-last unit's final chunk must end with "\\n\\n".*got "\\n\\n\\n" or more/.test(e.message)
+  );
+});

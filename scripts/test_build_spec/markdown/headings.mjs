@@ -1,8 +1,12 @@
-import test from 'node:test';
-import assert from 'node:assert/strict';
+// A unit body may not introduce a heading. Proving that means following
+// CommonMark far past ATX syntax: Setext precedence over empty list
+// markers, blockquote and list container normalization, fence scoping
+// and tab expansion, lazy continuations, and interrupted lists.
 
 import { LANGS } from '../../build_spec.mjs';
 import { baseFixtures, sameLanguageBodies, validate } from '../helpers.mjs';
+import assert from 'node:assert/strict';
+import test from 'node:test';
 
 test('unit bodies reject injected ATX headings independently in EN, RU and ZH', async () => {
   for (const langIndex of [0, 1, 2]) {
@@ -501,4 +505,3 @@ test('tabs after blockquote markers preserve CommonMark heading boundaries', asy
     await assert.doesNotReject(validate(fx), body);
   }
 });
-
