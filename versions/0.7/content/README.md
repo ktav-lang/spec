@@ -36,10 +36,10 @@ This directory is the **per-section source of truth** for
   written.
 - `manifest.js` — the ordered list of units (see below).
 - `package.json` — `{"type":"module"}`. Historical: it was required back when
-  `build_spec.mjs` dynamically imported `meta.js`/`body-*.js` as ES modules.
+  `build_spec.mjs` dynamically imported `meta.js`/`body-*.md` as ES modules.
   Since the closed-world hardening that stopped executing any content source
   (nothing under `content/` is ever dynamic-`import()`ed anymore — `manifest.js`
-  and `meta.js` are read as UTF-8 text and `JSON.parse`d, `body-*.js` is
+  and `meta.js` are read as UTF-8 text and `JSON.parse`d, `body-*.md` is
   statically shape-scanned and decoded), this file is no longer functionally
   required, but is kept in place and still allowed at the top level.
 
@@ -66,7 +66,7 @@ This directory is the **per-section source of truth** for
 
 ## Unit contents
 
-Each unit directory contains exactly: `meta.js`, `body-1.js`, ..., `body-N.js`
+Each unit directory contains exactly: `meta.js`, `body-1.md`, ..., `body-N.md`
 (N >= 1). The only `.md` files under `content/` are the three root READMEs
 (`README.md`, `README.ru.md`, `README.zh.md`); Markdown is forbidden
 entirely inside unit directories.
@@ -120,7 +120,7 @@ trailing newline: one key per line, 2-space indent, LF line endings, no
 trailing semicolon. The payload after `export default ` is parsed as JSON
 (`JSON.parse`), **not** evaluated as a JavaScript object literal — trailing
 commas, comments, unquoted keys, and semicolons are never valid there
-(unlike `body-<k>.js`, which is JS source, just narrowly restricted).
+(unlike `body-<k>.md`, which is Markdown and holds no code at all).
 Duplicate keys are rejected too: the builder compares the file byte-for-byte
 against the canonical serialization above, and a repeated key makes the raw
 file differ from it.
@@ -140,42 +140,58 @@ Field meanings:
   must reproduce each heading byte-exactly, so the actual separator is
   recorded per unit. Only `". "` and `" "` are legal. The extraction script
   enforces that all three languages use the same `sep` for a unit.
-- `bodyParts` — the integer count of `body-*.js` files for the unit
-  (N in `body-1.js` .. `body-N.js`). Always >= 1. Present on ALL units,
+- `bodyParts` — the integer count of `body-*.md` files for the unit
+  (N in `body-1.md` .. `body-N.md`). Always >= 1. Present on ALL units,
   including `frontmatter`, and always appended **last**. The builder
   accepts at most 4096 parts per unit and rejects larger values before reading
   body files.
 
-### `body-<k>.js`
+### `body-<k>.md`
 
-Each `body-<k>.js` has exactly this shape (2-space indent, template
-literals, real multi-line prose inside, no added whitespace inside the
-literals, trailing newline after `};`):
+Each `body-<k>.md` is Markdown carrying one block per language, each
+introduced by its own separator line:
 
-```js
-export default {
-  en: `...raw text chunk k for English...`,
-  ru: `...`,
-  zh: `...`,
-};
+```text
+ >>>>> lang=en
+ ...raw text chunk k for English...
+ >>>>> lang=ru
+ ...
+ >>>>> lang=zh
+ ...
 ```
+
+The example above is indented by one space on purpose: a separator is
+recognised only at the very start of a line, so an indented one is
+ordinary content. That is also the escape hatch if a body ever has to
+quote a separator literally.
+
+A block runs from the line after its separator to the line before the next
+separator, or to end of file for the last one. The block therefore keeps
+its own trailing newline, and a chunk ending in a blank line keeps that
+blank line.
+
+**There is no escaping.** The content is stored as itself: a code fence is
+written as a code fence, a backslash is a backslash, `${` is two ordinary
+characters. This is why the format is Markdown rather than a string
+literal — the specification is full of fenced examples, and every one of
+them used to be spelled with escaped backticks.
+
+The one thing the content may not contain is a line beginning
+`>>>>> lang=`. That spelling was chosen because it is not syntax this
+document uses: a Markdown heading marker would have competed with the
+prose it delimits. A stray or duplicated separator is a build error, never
+a silent block boundary.
+
+The format itself names no languages and fixes no order — the decoded
+result is a map. What it requires is that a language appear at most once
+per file. That every source carries the same set, and that the set is
+exactly `en`, `ru`, `zh`, is this specification's own rule layered on top.
 
 The unit's full body text for a language is the **concatenation** of chunks
 1..N, in order, with **no separator** between chunks.
 
-**Escaping rule (mechanical, in this exact order).** To embed raw text `t`
-in a template literal:
-
-1. replace every `\` with `\\`;
-2. replace every backtick with `` \` ``;
-3. replace every `${` with `\${`;
-
-then wrap the result in backticks. Backslashes must be replaced **first**,
-or you double-escape them. **Never retype content by hand — script this
-transformation.**
-
 **Release tokens.** Any unit body may contain the plain-ASCII tokens
-`@@VERSION@@` and `@@DATE@@`; `@` has no template meaning here, so no
+`@@VERSION@@` and `@@DATE@@`; they are ordinary text here, so no
 escaping is needed. At build time the builder substitutes them with the
 `version` / `released` values from `release.js` in every language. A
 surviving token in a spec output fails the build; README.source.js is never
@@ -184,8 +200,8 @@ substituted and may mention the tokens literally.
 **Splitting rule (exact numbers).** Let `L` = max line count over the unit's
 three language bodies.
 
-- If `L <= 120`, `N = 1` (a single `body-1.js`).
-- If `L > 120`, `N = ceil(L / 100)`.
+- If `L <= 40`, `N = 1` (a single `body-1.md`).
+- If `L > 40`, `N = ceil(L / 30)`.
 
 Each language is split **independently** into N chunks by cutting only at
 blank-line boundaries (an empty line — never mid-line), choosing the N-1 cut
@@ -198,8 +214,8 @@ across languages is **not** a goal — this is file-size hygiene only.
 
 ## Body files (critical for byte-exactness)
 
-The unit body in each language is the concatenation of `body-1.js` ..
-`body-N.js` string values, in order, with **no separator inserted between
+The unit body in each language is the concatenation of `body-1.md` ..
+`body-N.md` string values, in order, with **no separator inserted between
 chunks**. The generator inserts nothing between units either, so
 blank-line separation lives at the END of the **last chunk of the unit**:
 
@@ -271,8 +287,8 @@ HTML-like text inside a confirmed fenced code block remains allowed.
 
 `scripts/build_spec.mjs` walks the manifest in order. For each unit it reads
 `manifest.js`/`meta.js` as strict UTF-8 text and `JSON.parse`s the payload after
-`export default `, then statically shape-scans and decodes `body-1.js` ..
-`body-N.js` **in order** (no code under `content/` is ever executed), then:
+`export default `, then statically shape-scans and decodes `body-1.md` ..
+`body-N.md` **in order** (no code under `content/` is ever executed), then:
 
 - for `frontmatter`: emit the concatenation of the `en` / `ru` / `zh`
   strings of `body-1` .. `body-N`, verbatim;
@@ -337,7 +353,7 @@ with subsection `### 9.9.1 Widget Modes`, using space-only separators.
 
 Steps:
 
-1. Create the folders, `meta.js` (with `"bodyParts": 1`), and `body-1.js`
+1. Create the folders, `meta.js` (with `"bodyParts": 1`), and `body-1.md`
    per unit (mind the trailing-blank-line rule above).
 2. Insert both folder names into `manifest.js` and the lock's `units` array at
    the correct document positions (after the unit preceding section 9.9).
@@ -367,11 +383,11 @@ for `## 9.9 Widget Frobnication` it is `" "`. Record what you actually
 wrote, and be consistent. For the subsection `### 9.9.1 Widget Modes`,
 `sec-9.9.1/meta.js` is the same shape with `"number": "9.9.1"`, `"level": 3`.
 
-`sec-9.9/body-1.js` (fictional placeholder content), marking where the
+`sec-9.9/body-1.md` (fictional placeholder content), marking where the
 trailing newline rules apply:
 
 ```js
-// sec-9.9/body-1.js  (last unit in manifest order? then en must end "\n", else "\n\n")
+// sec-9.9/body-1.md  (last unit in manifest order? then en must end "\n", else "\n\n")
 export default {
   en: `Frobnicate the widget.
 
@@ -383,7 +399,7 @@ export default {
 ```
 
 The trailing blank line before the next unit's heading is the LAST bytes of
-the LAST chunk of the unit (here `body-1.js`, since `"bodyParts": 1`): the
+the LAST chunk of the unit (here `body-1.md`, since `"bodyParts": 1`): the
 `en` string above ends `"\n\n"` (exactly one blank line) unless 9.9 is the
 last unit in manifest order, in which case it ends with a single `"\n"`.
 Earlier chunks (in a multi-chunk unit) carry no such trailing bytes.
@@ -394,7 +410,7 @@ This layout was created by a one-time mechanical migration, recorded in
 `scripts/archive/extract_content_units.py`: it sliced the then-current
 three `.md` files into units by line-range byte-slicing (no text was
 retyped) and verified byte-identical reconstruction. It was later extended
-to emit the current `body-*.js` schema directly — `meta.js` with
+to emit the current `body-*.md` schema directly — `meta.js` with
 `bodyParts` plus `body-1..N` per unit. The script is kept for provenance
 only, not as a routine tool: it refuses to overwrite an existing
 `content/` and has no override flag. Rebuilding from scratch means
