@@ -365,6 +365,34 @@ export async function validateContentDir(contentDir, options = {}) {
       new Set(manifest).size !== manifest.length) {
     fail('manifest.js must export a non-empty array of unique non-empty strings');
   }
+  // A unit may live in a group directory, so an entry is a relative path
+  // and not just a name. The shape is deliberately narrow: forward
+  // slashes only, no empty segment, no `.` or `..`, nothing absolute and
+  // no backslash — a path that escapes content/ must never reach
+  // path.join below, and a Windows-style separator must not become one
+  // segment on one platform and two on another.
+  for (const unit of manifest) {
+    const bad = (why) => fail(`manifest.js entry ${JSON.stringify(unit)} ${why}`);
+    if (unit.includes('\\')) bad('must use "/" as its separator, never "\\"');
+    if (unit.startsWith('/')) bad('must be relative to content/, not absolute');
+    const segments = unit.split('/');
+    if (segments.some((s) => s === '')) bad('must not contain an empty path segment');
+    if (segments.some((s) => s === '.' || s === '..')) bad('must not contain "." or ".."');
+  }
+  // Two units may not disagree about whether a directory holds units or
+  // holds other directories.
+  const groupDirs = new Set();
+  for (const unit of manifest) {
+    const segments = unit.split('/');
+    for (let i = 1; i < segments.length; i++) {
+      groupDirs.add(segments.slice(0, i).join('/'));
+    }
+  }
+  for (const unit of manifest) {
+    if (groupDirs.has(unit)) {
+      fail(`manifest.js entry ${JSON.stringify(unit)} is both a unit and the parent of another unit`);
+    }
+  }
 
   const release = readRelease(contentDir);
 
@@ -375,24 +403,40 @@ export async function validateContentDir(contentDir, options = {}) {
 
   const manifestSet = new Set(manifest);
 
-  // 1. Top-level allowlist + 2. exact directory-set match.
+  // 1. Top-level allowlist + 2. exact directory-set match, applied at
+  // every level. A group directory holds nothing but more directories;
+  // only the top level may hold files, and only the allowlisted ones.
+  // Anything the manifest did not name is rejected wherever it appears,
+  // so nesting widens the tree without widening what is accepted.
   const actualDirs = new Set();
   const actualFiles = new Set();
-  for (const ent of entries) {
-    if (ent.isDirectory()) {
-      if (!manifestSet.has(ent.name)) {
-        fail(`unexpected directory under content/: "${ent.name}" (not in manifest.js)`);
+
+  const walkLevel = (rel, levelEntries) => {
+    for (const ent of levelEntries) {
+      const child = rel === '' ? ent.name : `${rel}/${ent.name}`;
+      if (ent.isDirectory()) {
+        if (manifestSet.has(child)) {
+          actualDirs.add(child);
+        } else if (groupDirs.has(child)) {
+          walkLevel(child, fs.readdirSync(path.join(contentDir, child), { withFileTypes: true }));
+        } else {
+          fail(`unexpected directory under content/: "${child}" (not in manifest.js)`);
+        }
+      } else if (ent.isFile()) {
+        if (rel !== '') {
+          fail(`unexpected file under content/: "${child}" (a group directory holds only unit directories)`);
+        }
+        if (!TOP_LEVEL_ALLOWED_FILES.has(ent.name)) {
+          fail(`unexpected file under content/: "${ent.name}"`);
+        }
+        actualFiles.add(ent.name);
+      } else {
+        fail(`unexpected entry under content/: "${child}"`);
       }
-      actualDirs.add(ent.name);
-    } else if (ent.isFile()) {
-      if (!TOP_LEVEL_ALLOWED_FILES.has(ent.name)) {
-        fail(`unexpected file under content/: "${ent.name}"`);
-      }
-      actualFiles.add(ent.name);
-    } else {
-      fail(`unexpected entry under content/: "${ent.name}"`);
     }
-  }
+  };
+  walkLevel('', entries);
+
   for (const name of manifest) {
     if (!actualDirs.has(name)) {
       fail(`manifest lists unit "${name}" but its directory is missing under content/`);

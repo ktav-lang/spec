@@ -96,7 +96,9 @@ export function validateMeta(unit, meta) {
     if (typeof meta.number !== 'string' || !/^\d+(\.\d+)*$/.test(meta.number)) {
       failUnit(unit, `bad number ${JSON.stringify(meta.number)}`);
     }
-    if (unit !== 'sec-' + meta.number) {
+    // The unit may sit in a group directory; its NAME is the last
+    // segment, and that is what has to match the number.
+    if (unit.slice(unit.lastIndexOf('/') + 1) !== 'sec-' + meta.number) {
       failUnit(unit, `unit name does not match sec-${meta.number}`);
     }
     if (meta.sep !== '. ' && meta.sep !== ' ') {

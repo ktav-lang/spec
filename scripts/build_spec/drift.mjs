@@ -271,14 +271,19 @@ function checkAppendixHeading(root, release, disagreements) {
     // with this tree is reported by the builder's own validation.
     return;
   }
-  if (!Array.isArray(manifest) || !manifest.some((u) => APPENDIX_UNIT_RE.test(u))) {
+  const unitName = (u) => u.slice(u.lastIndexOf('/') + 1);
+  if (!Array.isArray(manifest) || !manifest.some((u) => APPENDIX_UNIT_RE.test(unitName(u)))) {
     // This tree has no Appendix A. The real repository always does, and
     // losing every entry at once would already fail the section-inventory
     // lock, so nothing is silently skipped here that is not caught there.
     return;
   }
 
-  const rel = `${RELEASE_PATH}/content/sec-${release.version}/meta.js`;
+  // The unit may live in a group directory, so its location comes from
+  // the manifest rather than from the name alone.
+  const appendixUnit = manifest.find(
+    (u) => typeof u === 'string' && unitName(u) === `sec-${release.version}`);
+  const rel = `${RELEASE_PATH}/content/${appendixUnit ?? `sec-${release.version}`}/meta.js`;
   const metaPath = path.join(root, rel);
   let stat = null;
   try {

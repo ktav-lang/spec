@@ -23,6 +23,7 @@ import './test_build_spec/content/release-tokens.mjs';
 import './test_build_spec/markdown/headings.mjs';
 import './test_build_spec/markdown/html-and-links.mjs';
 import './test_build_spec/content/structure.mjs';
+import './test_build_spec/content/nesting.mjs';
 import './test_build_spec/content/diagnostics.mjs';
 import './test_build_spec/markdown/nesting.mjs';
 import './test_build_spec/content/shape.mjs';
