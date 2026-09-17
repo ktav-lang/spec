@@ -1,1 +1,0 @@
-{"expected_error": "OrphanLineAfterTopLevelInline", "note": "First content line is a closed inline object `{a: 1}` — the root Value is fully built; any subsequent non-blank, non-comment line is forbidden (§ 5.0.1 rule 2)."}

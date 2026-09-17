@@ -1,1 +1,0 @@
-{"cfg": {"a": "hello{world", "b": "x"}, "arr": ["hello{world", "mid[bracket", "plain"], "nested": {"x": "a{b{c", "y": "q"}}

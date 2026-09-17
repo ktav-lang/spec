@@ -8,9 +8,10 @@
 
 > **Version scope:** the feature overview and examples in this README follow
 > Ktav 0.7.1, the current stable specification. Implementations still
-> targeting 0.6.4 should use the [0.6.4 specification](versions/0.6/spec.md)
-> and its [conformance suite](versions/0.6/tests/); what changed between
-> them is scoped in
+> targeting 0.6.4 should check out the
+> [`v0.6.4` tag](https://github.com/ktav-lang/spec/tree/v0.6.4), which
+> carries that specification and its conformance suite; what changed
+> between them is scoped in
 > [Appendix D of the 0.7.1 specification](versions/0.7/spec.md).
 
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
@@ -385,7 +386,10 @@ timeout: null
 ## Full specification
 
 - **Current stable:** [Ktav 0.7.1](versions/0.7/spec.md) — released 2026-09-16; this README's feature overview follows it.
-- **Previous stable:** [Ktav 0.6.4](versions/0.6/spec.md) — released 2026-08-23.
+- **Previous stable:** Ktav 0.6.4 — released 2026-08-23, and no longer
+  carried in the working tree. Check out the
+  [`v0.6.4` tag](https://github.com/ktav-lang/spec/tree/v0.6.4) for its
+  specification and conformance suite.
 - **Machine-readable index** of released/stable versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
 
@@ -394,11 +398,12 @@ timeout: null
 Every version ships a language-agnostic test suite under
 [`versions/<v>/tests/`](versions/0.7/tests/). The 0.7.1 corpus
 has four fixture categories (`valid/`, `invalid/`, `unrepresentable/`, and
-`parseable-unrepresentable/`) plus one top-level metadata file. The older
-0.6.4 corpus has only `valid/` and `invalid/`. A conformance runner MUST
-walk every fixture category present in the version it targets — silently
-skipping one it doesn't recognise reports false-green, which is worse than
-having no fixtures for it at all.
+`parseable-unrepresentable/`) plus one top-level metadata file. Older
+corpora carry fewer — the 0.6.4 suite, at the `v0.6.4` tag, has only
+`valid/` and `invalid/`. A conformance runner MUST walk every fixture
+category present in the version it targets — silently skipping one it
+doesn't recognise reports false-green, which is worse than having no
+fixtures for it at all.
 
 - **`boundary-fixtures.json`** *(0.7+, not a fixture category)* — a
   leaf-level list of individual Object fields, inside otherwise-normal
@@ -448,17 +453,13 @@ having no fixtures for it at all.
   allowed. These are intentionally pairs, with no other files and no
   canonical-output file.
 
-The versioned `scripts/locks/corpus-inventory.0.6.lock.json` maps every
-corpus-relative file path in the stable 0.6.4 `valid/` and `invalid/`
-directories to its SHA-256 digest. The versioned
-`scripts/locks/corpus-inventory.0.7.lock.json` maps every 0.7 path in
-`valid/`, `invalid/`, `unrepresentable/`, and
-`parseable-unrepresentable/`, plus `boundary-fixtures.json`. CI passes the
-matching lock to `validate_corpus.py --corpus-inventory-lock`:
+The versioned `scripts/locks/corpus-inventory.0.7.lock.json` maps every
+corpus-relative 0.7 path in `valid/`, `invalid/`, `unrepresentable/`, and
+`parseable-unrepresentable/`, plus `boundary-fixtures.json`, to its
+SHA-256 digest. CI passes the matching lock to
+`validate_corpus.py --corpus-inventory-lock`:
 
 ```sh
-python scripts/validate_corpus.py versions/0.6/tests \
-  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
 python scripts/validate_corpus.py versions/0.7/tests \
   --require-unrepresentable --require-boundary \
   --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
@@ -526,7 +527,6 @@ pin to a version directory by path.
 │   ├── archive/                           (0.7+) archived one-time content-unit bootstrap
 │   │   └── extract_content_units.py         see content/README.md; refuses to overwrite content/
 │   └── locks/                             versioned corpus, boundary, and section-inventory lock files
-│       ├── corpus-inventory.0.6.lock.json  (0.6.4 valid/ and invalid/ paths + SHA-256)
 │       ├── corpus-inventory.0.7.lock.json  (0.7 corpus paths + SHA-256)
 │       ├── boundary-fixtures.0.7.lock.json (0.7 boundary leaves: fixture, path, class)
 │       └── section-inventory.0.7.lock.json (0.7 ordered sections + structural metadata)
@@ -569,12 +569,12 @@ native extension rather than the C ABI, and JS ships several
 runtime-specific artifacts — WASM for browsers, N-API for Node, plus
 a C ABI path — instead of a single binding shape. All of them parse
 whatever format version the underlying Rust core supports (currently
-0.6.4 stable); the language-agnostic `tests/` suite below runs
+0.7.1 stable); the language-agnostic `tests/` suite below runs
 against all of them on every release.
 
 Building a new implementation? Start with your target version's
-[`spec.md`](versions/0.6/spec.md) (section 8 — Compliance) and run
-the [`tests/`](versions/0.6/tests/) suite against your parser.
+[`spec.md`](versions/0.7/spec.md) (section 8 — Compliance) and run
+the [`tests/`](versions/0.7/tests/) suite against your parser.
 
 ## Contributing
 

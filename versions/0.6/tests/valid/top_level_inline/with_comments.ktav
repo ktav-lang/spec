@@ -1,4 +1,0 @@
-## leading comments are ignored
-
-## another one
-{name: alice, port: 8080}

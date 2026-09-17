@@ -1,4 +1,0 @@
-    ## comments may have leading whitespace
-host: localhost
-        ## indented comment
-port: 8080

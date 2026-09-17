@@ -7,9 +7,9 @@
 **Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
 
 > **版本范围:** 本 README 的功能概览与示例遵循当前稳定规范 Ktav
-> 0.7.1。仍以 0.6.4 为目标的实现应使用
-> [0.6.4 规范](versions/0.6/spec.zh.md)
-> 与其[一致性套件](versions/0.6/tests/);两者之间的差异范围见
+> 0.7.1。仍以 0.6.4 为目标的实现请检出
+> [`v0.6.4` 标签](https://github.com/ktav-lang/spec/tree/v0.6.4),
+> 该标签同时携带那份规范与其一致性套件;两者之间的差异范围见
 > [0.7.1 规范附录 D](versions/0.7/spec.zh.md)。
 
 **演练场：** 在浏览器中互转 JSON / YAML / TOML / INI ⇄ Ktav — **[ktav-lang.github.io](https://ktav-lang.github.io/)**。
@@ -355,7 +355,9 @@ timeout: null
 ## 完整规范
 
 - **当前稳定版本：** [Ktav 0.7.1](versions/0.7/spec.zh.md) — 发布于 2026-09-16;本 README 的功能概览遵循该版本。
-- **上一个稳定版本：** [Ktav 0.6.4](versions/0.6/spec.zh.md) — 发布于 2026-08-23。
+- **上一个稳定版本：** Ktav 0.6.4 — 发布于 2026-08-23,工作树中已不再
+  保留。其规范与一致性套件可在
+  [`v0.6.4` 标签](https://github.com/ktav-lang/spec/tree/v0.6.4)处取得。
 - **已发布/稳定版本的机器可读索引：** [`versions.ktav`](versions.ktav)。
 - **跨版本的历史记录：** [`CHANGELOG.zh.md`](CHANGELOG.zh.md)。
 
@@ -364,8 +366,9 @@ timeout: null
 每个版本都附带一份与语言无关的测试套件，位于
 [`versions/<v>/tests/`](versions/0.7/tests/)。0.7.1 语料库有四个
 fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
-`parseable-unrepresentable/`)外加一个顶层元数据文件。更早的 0.6.4
-语料库只有 `valid/` 与 `invalid/`。一致性 runner MUST 遍历目标版本中
+`parseable-unrepresentable/`)外加一个顶层元数据文件。更早的语料库类别
+更少——位于 `v0.6.4` 标签的 0.6.4 套件只有 `valid/` 与 `invalid/`。
+一致性 runner MUST 遍历目标版本中
 存在的每个 fixture 类别——静默跳过不认识的类别会得到假绿色结果,比该
 类别完全没有 fixture 还糟。
 
@@ -411,16 +414,13 @@ fixture 类别(`valid/`、`invalid/`、`unrepresentable/` 和
   `LeadingWhitespaceCollision`;这些是 pair 而非 triple,没有其他文件,
   也没有 canonical-output 文件。
 
-Versioned `scripts/locks/corpus-inventory.0.6.lock.json` 将稳定版 0.6.4
-`valid/` 与 `invalid/` 中的每个 corpus-relative 文件路径映射到其
-SHA-256。Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 将 0.7
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json` 将 0.7
 `valid/`、`invalid/`、`unrepresentable/`、`parseable-unrepresentable/` 中的
-每个路径及 `boundary-fixtures.json` 映射到其 SHA-256。CI 将对应的 lock
+每个 corpus-relative 文件路径及 `boundary-fixtures.json` 映射到其
+SHA-256。CI 将对应的 lock
 传给 `validate_corpus.py --corpus-inventory-lock`：
 
 ```sh
-python scripts/validate_corpus.py versions/0.6/tests \
-  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
 python scripts/validate_corpus.py versions/0.7/tests \
   --require-unrepresentable --require-boundary \
   --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
@@ -481,7 +481,6 @@ submodule 引入(或直接拷贝)。
 │   ├── archive/                           (0.7+) 已归档的一次性内容单元引导脚本
 │   │   └── extract_content_units.py         见 content/README.md;拒绝覆盖已存在的 content/
 │   └── locks/                             语料库、boundary 与 section inventory 的 versioned 锁文件
-│       ├── corpus-inventory.0.6.lock.json  (0.6.4: valid/ 与 invalid/ 路径 + SHA-256)
 │       ├── corpus-inventory.0.7.lock.json  (0.7: 语料库路径 + SHA-256)
 │       ├── boundary-fixtures.0.7.lock.json (0.7: 边界叶节点 — fixture、path、class)
 │       └── section-inventory.0.7.lock.json (0.7: 有序节列表 + 结构元数据)
@@ -521,13 +520,13 @@ PHP 和 C# 通过预构建的 `ktav_cabi`(C-ABI 包装)使用它,其函数接口
 函数的签名保持不变。Python 附带专用的 PyO3 原生扩展而非 C ABI;
 JS 则为不同运行时提供多种构件——浏览器用 WASM、Node 用 N-API,
 另有 C ABI 路径——而非单一的绑定形态。它们解析的都是底层 Rust
-核心所支持的格式版本(当前为稳定版 0.6.4);
+核心所支持的格式版本(当前为稳定版 0.7.1);
 下面与语言无关的
 `tests/` 套件每次发布时都会针对所有实现运行。
 
 打算写新实现?请先读目标版本的 `spec.md`
-([`spec.zh.md`](versions/0.6/spec.zh.md) 的第 8 节 Compliance),
-再让 [`tests/`](versions/0.6/tests/) 套件跑过你的解析器。
+([`spec.zh.md`](versions/0.7/spec.zh.md) 的第 8 节 Compliance),
+再让 [`tests/`](versions/0.7/tests/) 套件跑过你的解析器。
 
 ## 贡献
 

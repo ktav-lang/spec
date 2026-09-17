@@ -1,7 +1,0 @@
-server: {
-    host: 127.0.0.1
-    endpoints.api: /v1
-    endpoints.admin: /admin
-    tls.enabled: true
-    tls.min_version: 1.3
-}

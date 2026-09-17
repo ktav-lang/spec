@@ -1,1 +1,0 @@
-{"expected_error": "MissingSeparator", "note": "Inside Object context (anchored by first line) a bare line without `:` is an error."}

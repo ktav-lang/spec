@@ -8,9 +8,9 @@
 
 > **Область версии:** обзор возможностей и примеры в этом README
 > следуют Ktav 0.7.1 — текущей стабильной спецификации. Реализациям,
-> всё ещё нацеленным на 0.6.4, следует использовать
-> [спецификацию 0.6.4](versions/0.6/spec.ru.md) и её
-> [набор соответствия](versions/0.6/tests/); что изменилось между ними —
+> всё ещё нацеленным на 0.6.4, следует взять
+> [тег `v0.6.4`](https://github.com/ktav-lang/spec/tree/v0.6.4) — там
+> лежат и та спецификация, и её набор соответствия; что изменилось между ними —
 > описано в [Приложении D спецификации 0.7.1](versions/0.7/spec.ru.md).
 
 **Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
@@ -399,7 +399,9 @@ timeout: null
 ## Полная спецификация
 
 - **Текущая стабильная:** [Ktav 0.7.1](versions/0.7/spec.ru.md) — выпущена 2026-09-16; обзор возможностей этого README следует ей.
-- **Предыдущая стабильная:** [Ktav 0.6.4](versions/0.6/spec.ru.md) — выпущена 2026-08-23.
+- **Предыдущая стабильная:** Ktav 0.6.4 — выпущена 2026-08-23 и больше
+  не хранится в рабочем дереве. Её спецификация и набор соответствия
+  доступны по [тегу `v0.6.4`](https://github.com/ktav-lang/spec/tree/v0.6.4).
 - **Машиночитаемый индекс** выпущенных/стабильных версий: [`versions.ktav`](versions.ktav).
 - **История версий:** [`CHANGELOG.ru.md`](CHANGELOG.ru.md).
 
@@ -409,7 +411,8 @@ timeout: null
 [`versions/<v>/tests/`](versions/0.7/tests/). В корпусе 0.7.1
 есть четыре фикстурные категории (`valid/`, `invalid/`, `unrepresentable/` и
 `parseable-unrepresentable/`) плюс один верхнеуровневый файл метаданных.
-В более старом корпусе 0.6.4 есть только `valid/` и `invalid/`. Runner
+В более старых корпусах категорий меньше — в наборе 0.6.4, доступном по
+тегу `v0.6.4`, есть только `valid/` и `invalid/`. Runner
 соответствия MUST обходить каждую фикстурную категорию, присутствующую в
 целевой версии — молчаливый пропуск незнакомой категории даёт ложно-зелёный
 результат, что хуже, чем полное отсутствие фикстур для неё.
@@ -463,16 +466,13 @@ timeout: null
   `TrailingWhitespaceCollision` и `LeadingWhitespaceCollision`, без иных
   файлов и без canonical-output.
 
-Versioned `scripts/locks/corpus-inventory.0.6.lock.json` отображает каждый
-относительный путь файла стабильного корпуса 0.6.4 в `valid/` и `invalid/`
-на его SHA-256. Versioned `scripts/locks/corpus-inventory.0.7.lock.json`
-отображает каждый путь 0.7 в `valid/`, `invalid/`, `unrepresentable/` и
-`parseable-unrepresentable/`, а также `boundary-fixtures.json`. CI передаёт
+Versioned `scripts/locks/corpus-inventory.0.7.lock.json`
+отображает каждый относительный путь 0.7 в `valid/`, `invalid/`,
+`unrepresentable/` и `parseable-unrepresentable/`, а также
+`boundary-fixtures.json`, на его SHA-256. CI передаёт
 соответствующий lock в `validate_corpus.py --corpus-inventory-lock`:
 
 ```sh
-python scripts/validate_corpus.py versions/0.6/tests \
-  --corpus-inventory-lock scripts/locks/corpus-inventory.0.6.lock.json
 python scripts/validate_corpus.py versions/0.7/tests \
   --require-unrepresentable --require-boundary \
   --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
@@ -543,7 +543,6 @@ semantic/schema checks.
 │   ├── archive/                           (0.7+) архивированный одноразовый бутстрап юнитов контента
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
 │   └── locks/                             versioned lock-файлы корпуса, boundary и inventory секций
-│       ├── corpus-inventory.0.6.lock.json  (0.6.4: пути valid/ и invalid/ + SHA-256)
 │       ├── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256)
 │       ├── boundary-fixtures.0.7.lock.json (0.7: boundary-листья — fixture, path, class)
 │       └── section-inventory.0.7.lock.json (0.7: порядок секций + структурные поля)
@@ -585,12 +584,12 @@ Rust crate — эталонный парсер, и каждый биндинг �
 расширение на PyO3 вместо C ABI, а JS — несколько артефактов под
 конкретные среды: WASM для браузеров, N-API для Node и вдобавок путь
 через C ABI. Все они разбирают ту версию формата, которую
-поддерживает ядро Rust (сейчас — стабильная 0.6.4); language-agnostic
+поддерживает ядро Rust (сейчас — стабильная 0.7.1); language-agnostic
 набор `tests/` ниже прогоняется на всех из них при каждом релизе.
 
 Строите новую реализацию? Начните со `spec.md` целевой версии
-([`spec.ru.md`](versions/0.6/spec.ru.md), раздел 8 — Compliance)
-и прогоните набор [`tests/`](versions/0.6/tests/) через свой парсер.
+([`spec.ru.md`](versions/0.7/spec.ru.md), раздел 8 — Compliance)
+и прогоните набор [`tests/`](versions/0.7/tests/) через свой парсер.
 
 ## Вклад
 
