@@ -4534,10 +4534,81 @@ function unitForLine(pieces, lang, offset) {
 
 function usage() {
   process.stdout.write(
-    'Usage: node scripts/build_spec.mjs [--check | -h | --help]\n' +
+    'Usage: node scripts/build_spec.mjs [--check | --write-section-lock | -h | --help]\n' +
     '  (default)   write the three spec files and three content READMEs\n' +
-    '  --check     verify outputs are byte-identical; write nothing; silent on success\n'
+    '  --check     verify outputs are byte-identical; write nothing; silent on success\n' +
+    '  --write-section-lock\n' +
+    '              regenerate scripts/locks/section-inventory.0.7.lock.json from\n' +
+    '              content/, printing every added, removed and changed unit first.\n' +
+    '              The lock exists so that adding or removing a section is a\n' +
+    '              deliberate act: read the printed delta before committing it.\n'
   );
+}
+
+/// Regenerate the section-inventory lock from the current content
+/// directory, reporting the delta.
+///
+/// The delta is the point. A flag that silently rewrites the lock is
+/// worse than editing it by hand, because the lock's only job is to
+/// make a structural change visible — a section quietly added, removed
+/// or renumbered is exactly what it guards against. Printing what
+/// changed keeps the human in the loop that the lock was built to
+/// create.
+export async function writeSectionInventoryLock(contentDir, lockPath, release) {
+  // No lock option here: the point is to rebuild it, so validating
+  // against the old one first would make a legitimate structural change
+  // impossible to record.
+  const { manifest, units } = await validateContentDir(contentDir);
+
+  const next = {
+    format: 'ktav-section-inventory',
+    units: manifest.map((unit) => structuralMeta(unit, units.get(unit).meta)),
+    version: release.version,
+  };
+
+  let previous = null;
+  if (fs.existsSync(lockPath)) {
+    try {
+      previous = readCanonicalJson(lockPath);
+    } catch {
+      process.stdout.write(
+        `build_spec: existing lock could not be decoded; writing a fresh one\n`);
+    }
+  }
+
+  const lines = [];
+  if (previous === null) {
+    lines.push(`  no previous lock: recording ${next.units.length} unit(s)`);
+  } else {
+    const before = new Map((previous.units ?? []).map((u) => [u.unit, u]));
+    const after = new Map(next.units.map((u) => [u.unit, u]));
+    for (const [name, u] of after) {
+      if (!before.has(name)) {
+        lines.push(`  + ${name} (${u.kind}${u.number === null ? '' : ' ' + u.number})`);
+      } else if (JSON.stringify(before.get(name)) !== JSON.stringify(u)) {
+        lines.push(`  ~ ${name}`);
+        lines.push(`      was ${JSON.stringify(before.get(name))}`);
+        lines.push(`      now ${JSON.stringify(u)}`);
+      }
+    }
+    for (const name of before.keys()) {
+      if (!after.has(name)) lines.push(`  - ${name}`);
+    }
+    if (previous.version !== next.version) {
+      lines.push(`  ~ version: ${JSON.stringify(previous.version)} -> ${JSON.stringify(next.version)}`);
+    }
+  }
+
+  if (lines.length === 0) {
+    process.stdout.write('build_spec: section inventory lock is already current; nothing written\n');
+    return;
+  }
+
+  process.stdout.write(
+    'build_spec: section inventory lock changes:\n' + lines.join('\n') + '\n');
+  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  fs.writeFileSync(lockPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  process.stdout.write(`build_spec: wrote ${lockPath}\n`);
 }
 
 export function escapeRegExp(s) {
@@ -4841,11 +4912,21 @@ async function cli() {
 
   const args = process.argv.slice(2);
   if (args.includes('-h') || args.includes('--help')) { usage(); process.exit(0); }
-  if (args.length > 1 || (args.length === 1 && args[0] !== '--check')) {
+  const KNOWN = new Set(['--check', '--write-section-lock']);
+  if (args.length > 1 || (args.length === 1 && !KNOWN.has(args[0]))) {
     usage();
     process.exit(1);
   }
-  const checkMode = args.length === 1;
+  const checkMode = args[0] === '--check';
+  const writeLockMode = args[0] === '--write-section-lock';
+
+  if (writeLockMode) {
+    if (!fs.existsSync(contentDir)) fail(`content dir not found: ${contentDir}`);
+    const release = readRelease(contentDir);
+    await writeSectionInventoryLock(
+      contentDir, defaultSectionInventoryLockPath(contentDir), release);
+    return;
+  }
 
   if (!fs.existsSync(contentDir)) fail(`content dir not found: ${contentDir}`);
 

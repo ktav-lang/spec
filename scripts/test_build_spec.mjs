@@ -34,6 +34,7 @@ import {
   MAX_BODY_PARTS,
   recoverBuildOutputTransaction,
   checkHandwrittenVersionReferences,
+  writeSectionInventoryLock,
 } from './build_spec.mjs';
 
 function write(p, content) {
@@ -4786,6 +4787,48 @@ test('checkHandwrittenVersionReferences rejects an Appendix A number that disagr
       (e) => e.message.includes('meta.number') && e.message.includes('9.9.9'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('writeSectionInventoryLock writes nothing when the lock is already current', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lockgen-current-'));
+  try {
+    const fixtures = baseFixtures();
+    makeContent(dir, fixtures, fixtures.map((u) => u.name));
+    const lockPath = path.join(dir, 'lock.json');
+    await writeSectionInventoryLock(path.join(dir, 'content'), lockPath, TEST_RELEASE);
+    const first = fs.readFileSync(lockPath, 'utf8');
+    const firstMtime = fs.statSync(lockPath).mtimeMs;
+    await writeSectionInventoryLock(path.join(dir, 'content'), lockPath, TEST_RELEASE);
+    assert.equal(fs.readFileSync(lockPath, 'utf8'), first);
+    assert.equal(fs.statSync(lockPath).mtimeMs, firstMtime,
+      'a lock that is already current must not be rewritten at all');
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('writeSectionInventoryLock records a unit the lock was missing', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-lockgen-add-'));
+  try {
+    const fixtures = baseFixtures();
+    makeContent(dir, fixtures, fixtures.map((u) => u.name));
+    const contentDir = path.join(dir, 'content');
+    const lockPath = path.join(dir, 'lock.json');
+    await writeSectionInventoryLock(contentDir, lockPath, TEST_RELEASE);
+
+    const full = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    const dropped = full.units.at(-1).unit;
+    fs.writeFileSync(lockPath, JSON.stringify(
+      { ...full, units: full.units.slice(0, -1) }, null, 2) + '\n');
+
+    await writeSectionInventoryLock(contentDir, lockPath, TEST_RELEASE);
+    const after = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
+    assert.ok(after.units.some((u) => u.unit === dropped),
+      `regeneration must restore ${dropped}`);
+    assert.equal(after.units.length, full.units.length);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
