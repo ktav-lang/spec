@@ -20,6 +20,42 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+// Spawn a build that crashes, and do not return until the operating
+// system agrees the crashed process is gone.
+//
+// `spawnSync` returns when the child has exited as far as THIS process is
+// concerned, which is not the same thing. On Windows the pid stays
+// enumerable for a short window afterwards while its start time is
+// already unreadable, and the lock protocol reads exactly that pair: it
+// refuses to reclaim when a pid is live and its incarnation cannot be
+// observed (transaction/acquire.mjs — `live && (… || observed === null
+// || observed === incarnation)`). That refusal is the right call for the
+// product — a recovery tool must not steal a lock it cannot prove is
+// abandoned — so the fix belongs here. The test's precondition is "the
+// owner crashed and is gone"; without this wait it never established it,
+// and the race widened under machine load until the run went red.
+function spawnCrashAndAwaitReap(source, env) {
+  const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source],
+    { env, encoding: 'utf8' });
+  const pid = crashed.pid;
+  if (typeof pid === 'number') {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      let live;
+      try { process.kill(pid, 0); live = true; } catch (e) { live = e.code !== 'ESRCH'; }
+      if (!live) break;
+      if (Date.now() > deadline) {
+        throw new Error(`crashed child ${pid} was still live 10s after spawnSync returned`);
+      }
+      // Busy-wait: this runs inside a synchronous assertion sequence and
+      // the window being waited out is measured in milliseconds.
+      const until = Date.now() + 5;
+      while (Date.now() < until) { /* spin */ }
+    }
+  }
+  return crashed;
+}
+
 export async function crashBeforeFirstJournalPublicationRecoversDerivedOutputTemporariesImmediately() {  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-prejournal-recovery-'));
   try {
@@ -35,7 +71,7 @@ export async function crashBeforeFirstJournalPublicationRecoversDerivedOutputTem
       writeBuildOutputs(versionDir, contentDir, build);
     `;
     const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_BEFORE_FIRST_JOURNAL: '1' };
-    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    const crashed = spawnCrashAndAwaitReap(source, env);
     assert.notEqual(crashed.status, 0);
     assert.equal(fs.existsSync(path.join(versionDir, '.build-spec.transaction.json')), false);
     const firstTemp = fs.readdirSync(versionDir).find((name) =>
@@ -74,7 +110,7 @@ export async function crashRecoveryRestoresDistinctOldBytesBeforeALaterFullWrite
       writeBuildOutputs(versionDir, contentDir, build);
     `;
     const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: 'install:3' };
-    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    const crashed = spawnCrashAndAwaitReap(source, env);
     assert.notEqual(crashed.status, 0);
     const journal = JSON.parse(fs.readFileSync(path.join(versionDir, '.build-spec.transaction.json'), 'utf8'));
     assert.equal(journal.phase, 'installing');
@@ -128,7 +164,7 @@ export async function distinctByteCrashMatrixCoversBackupAndInstallOffsetsInclud
         writeBuildOutputs(versionDir, contentDir, build);
       `;
       const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: crashPoint };
-      const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+      const crashed = spawnCrashAndAwaitReap(source, env);
       assert.notEqual(crashed.status, 0, `${label} child unexpectedly completed`);
       recoverBuildOutputTransaction(versionDir, contentDir);
       for (let index = 0; index < destinations.length; index++) {
@@ -172,7 +208,7 @@ export async function writeBuildPreservesTheMissingBackupRecoveryErrorWithoutMut
       writeBuildOutputs(versionDir, contentDir, build);
     `;
     const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: 'backup:0' };
-    const crashed = spawnSync(process.execPath, ['--input-type=module', '-e', source], { env, encoding: 'utf8' });
+    const crashed = spawnCrashAndAwaitReap(source, env);
     assert.notEqual(crashed.status, 0);
     const backup = fs.readdirSync(versionDir).find((name) => name.endsWith('.bak'));
     assert.ok(backup);
