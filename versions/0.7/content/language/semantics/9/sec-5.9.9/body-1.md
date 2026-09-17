@@ -8,5 +8,5 @@
 
 >>>>> lang=zh
 
-`null`、`true`、`false` —— 小写,如示。
+`null`、`true`、`false` —— 小写,与所示完全一致。
 

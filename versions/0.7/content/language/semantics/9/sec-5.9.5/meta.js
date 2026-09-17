@@ -6,7 +6,7 @@ export default {
   "title": {
     "en": "Pair separators",
     "ru": "Разделители пар",
-    "zh": "对分隔符"
+    "zh": "Pair 分隔符"
   },
   "bodyParts": 2
 }

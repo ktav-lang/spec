@@ -18,7 +18,8 @@ errors (§ 6.8); their location MAY be absent or implementation-defined.
 
 >>>>> lang=zh
 
-合规解析器 MUST 检测并报告以下每个错误类别。由源文本解析引起的错误 MUST 至少
-携带 1-based 源行号与覆盖错误片段的半开字节偏移 Span `[start, end)`。
+合规解析器 MUST 对表现出相应缺陷的输入检测并报告以下每个错误类别。
+由源文本解析引起的错误 MUST 至少携带 1-based 源行号与覆盖错误片段的
+半开字节偏移 Span `[start, end)`。
 该位置要求不适用于 `Io` 错误(§ 6.8);其位置 MAY 缺失或由实现定义。
 

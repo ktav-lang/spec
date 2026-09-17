@@ -86,7 +86,7 @@ escapes those identically and quoting would not remove the escape.
 - `\`(反斜杠)—— 作为 `\\` —— 反斜杠在两种形式中始终是
   escape 前导;
 - LF / CR —— 作为 `\n` / `\r` —— 键 MUST 保持单行;
-- 任何其他不属于 § 3.3 空白成员的 0x20 以下控制字节,或 DEL
+- 任何其他不属于 § 3.3 空白成员的 `0x20` 以下控制字节,或 DEL
   —— 作为 `\uXXXX` —— 加引号只放宽了对 STRUCTURAL 字节的
   escape 要求,并不放宽格式另一条「键中不允许裸不可见、非空白
   字节」的规则(§ 5.3.3)。属于 § 3.3 空白成员的控制字节(制表符、

@@ -22,7 +22,7 @@ MUST test the following branches in order; exactly one branch applies:
 
 >>>>> lang=zh
 
-对分隔符由值的类型/内容选择。Writer MUST 按以下顺序检查各分支;
+pair 分隔符由值的类型/内容选择。Writer MUST 按以下顺序检查各分支;
 恰好适用一个分支:
 
 - **非 String 标量对:** 输出键、普通 `: ` 分隔符、恰好一个 ASCII

@@ -68,7 +68,7 @@
   没有这种候选的非零有限值(例如精确有理数 `1/3`)属于声明的 Ktav
   Float 域之外,而不是额外的 writer 错误情形。对最小 binary64 域,
   声明的舍入语义 MUST 是 IEEE 754 `roundTiesToEven`。选取的文本
-  形式匹配 § 3.6 的两个候选之一:
+  形式匹配 § 3.6 的两个备选之一:
   - `sign? digits "." digits ("e" sign? digits)?`
   - `sign? digits "e" sign? digits`
 

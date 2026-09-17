@@ -102,7 +102,8 @@
   (§ 6.11, § 6.12, § 6.13).
 - **Добавлено:** Ошибка `OrphanLineAfterTopLevelInline` (§ 6.14)
   как отдельная категория, отдельно от `MissingSeparator`.
-- **Добавлено:** Приложение B — миграция 0.1.x → 0.5.0.
+- **Добавлено:** Приложение B — руководство по миграции
+  0.1.x → 0.5.0.
 - **Удалено:** Категории ошибок `InlineNonEmptyCompound` (§ 6.7),
   `InvalidTypedScalar` (§ 6.9). Номера зарезервированы;
   реализации MUST NOT эмиттить ошибки с этими метками для
@@ -110,7 +111,7 @@
 - **Изменено:** Top-level kind detection (§ 5.0.1) расширено и
   переписано — замкнутые inline-составные на первой
   содержательной строке — корневые inline Object / Array;
-  одиночный `{` / `[` — многострочный корневой опенер.
+  одиночный `{` / `[` — многострочный корневой опенер (см. Breaking выше).
 - **Изменено:** Соответствие (§ 8) разделено на parser-conforming
   (§ 8.1), writer-conforming (§ 8.2) и свойство round-trip (§ 8.3);
   реализации могут заявлять любое из них или оба.
@@ -123,7 +124,8 @@
   注释。
 - **Breaking:** 首条内容行单独的 `{` / `[` 现在为多行根
   Object / Array(§ 5.0.1 规则 4–5)。先前(0.1.1)此打开根级
-  Array 内的单一 Object / Array 项;JSONL 式形式不再被接受。
+  Array 内的单一 Object / Array 项;JSONL 式形式(多个顶层对象)
+  不再被接受。
 - **Breaking:** Float Values 不再保留文本形式;应用数值规范化
   (§ 3.6、§ 5.2、§ 5.9.8)。Value 模型携带数值;规范 writer 输出
   确定性的文本形式。
@@ -143,7 +145,7 @@
 - **新增:** **规范形式(§ 5.9)** —— 每个 Value 的规范 writer
   输出,由 writer-conforming 实现使用,由 `*.canonical.ktav`
   fixture 验证。
-- **新增:** **三元测试套件** —— 每个 valid fixture 有三个文件:
+- **新增:** **三元一致性测试套件** —— 每个 valid fixture 有三个文件:
   `name.ktav`(输入)、`name.json`(Value oracle)、
   `name.canonical.ktav`(writer oracle)。
 - **新增:** 错误 `UnterminatedInlineCompound`、

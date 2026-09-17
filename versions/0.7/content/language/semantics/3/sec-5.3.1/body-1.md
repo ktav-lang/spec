@@ -88,7 +88,7 @@ positionally (§ 5.3.3), and the two forms are validated differently:
   (§ 6.4),畸形的 `\X` escape 仍为 `BadEscapeSequence`
   (§ 6.13),但哪些裸字节是结构性的与裸段不同(§ 5.3.3)。空的
   quoted 段(`""`、`''`、` `` `)仍为 `EmptyKey`(§ 6.5)。关闭
-  分隔符之后、下一个 `<unescaped-dot>` 或对分隔符之前,出现非
+  分隔符之后、下一个 `<unescaped-dot>` 或 pair 分隔符之前,出现非
   空白的内容,为 `InvalidKey`(§ 6.4),依据 § 5.3.3「关闭分隔符
   之后不得跟随任何内容」的规则。未终止的 quoted 段(行末前没有
   匹配的未 escape 关闭分隔符)根本不会作为键校验缺陷到达本节:

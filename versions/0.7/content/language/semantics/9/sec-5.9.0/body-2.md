@@ -29,6 +29,13 @@
 - **Null, Bool, Integer**: always
   node-representable.
 
+Node-representability recurses through every Object pair's value and
+every Array item, at any depth, without re-imposing the root-kind
+constraint: a String or Integer nested inside a representable Object
+is node-representable on its own terms — it is never itself required
+to be an Object or an Array. Only the outermost Value handed to a
+writer is subject to the root-kind constraint.
+
 >>>>> lang=ru
 - **Object:** имя каждой пары — непустая строка, и значение каждой
   пары узлово-представимо. Пустое имя узлово-непредставимо:
@@ -59,6 +66,14 @@
 - **Null, Bool, Integer**: всегда
   узлово-представимы.
 
+Узловая представимость рекурсивно проходит через значение каждой
+пары Object и каждый элемент Array, на любой глубине, повторно не
+навязывая корневое ограничение на вид: String или Integer внутри
+представимого Object узлово-представимы сами по себе — от них
+никогда не требуется быть Object или Array. Корневое ограничение на
+вид применяется только к самому внешнему Value, передаваемому
+writer'у.
+
 >>>>> lang=zh
 - **Object:** 每对的名是非空字符串,且每对的值节点可表示。空名
   节点不可表示:§ 4 的语法保证 `<bare-segment>` 非空,而
@@ -81,4 +96,9 @@
 - **String:** V 按 § 5.9.7 的规则节点可表示(无 `CR` 字节,且
   不属于该节定义的病态多行碰撞情形)。
 - **Null、Bool、Integer**:始终节点可表示。
+
+节点可表示性递归经过 Object 每对的值与 Array 的每一项,深度不限,
+且**不**重新施加上述根类型约束:可表示 Object 内部的 String 或
+Integer 按其自身类型节点可表示 —— 从不要求它们本身是 Object 或
+Array。只有交给 writer 的最外层 Value 才受根类型约束。
 
