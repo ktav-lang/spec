@@ -68,7 +68,7 @@ high-surrogate escape-последовательность `\uXXXX`.
 `\u` 之后没有紧跟恰好四位十六进制数字(§ 3.7.1),同样是
 `BadEscapeSequence` 错误;孤立代理项也是 —— 即高代理项之后没有
 紧跟合法的低代理项 `\uXXXX` escape,或低代理项之前没有紧跟高
-代理项。
+代理项 `\uXXXX` escape。
 
 关于与`UnterminatedInlineCompound`的优先级,inline 复合值按从左到右
 扫描,并使用其 quote-aware、escape-aware 的分隔符规则。若在同一行找到

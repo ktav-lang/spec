@@ -61,7 +61,7 @@ surrogates, and are valid on their own.
 字节属于普通内容,不属于该 escape(命名 `U+0041` 的 escape 后紧跟
 字面数字 `1`,解码为 `A1`—— 两个字符,而非五位 escape)。
 
-基本多文种平面(Basic Multilingual Plane,即 `U+FFFF` 以上)之外
+基本多文种平面(Basic Multilingual Plane,即高于 `U+FFFF`)之外
 的码点以**代理对**形式书写:一个高代理项(`U+D800`–`U+DBFF`)紧跟
 一个低代理项(`U+DC00`–`U+DFFF`),各自为独立的 `\uXXXX` escape,
 按 UTF-16 代理对算法组合为单个码点。高代理项之后没有紧跟合法的低

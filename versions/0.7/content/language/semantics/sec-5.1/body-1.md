@@ -70,8 +70,8 @@ this exact order:
    对应类型的分发(规则 5–8)。
 5. 经 trim 行恰为 `}` → 关闭最内层开启 Object,否则报错(§ 6.1)。
 6. 经 trim 行恰为 `]` → 关闭最内层开启 Array,否则报错(§ 6.1)。
-7. 若最内层开启复合是 Array 或无开启而根为 Array:将该行视为
+7. 若最内层开启复合是 Array 或无开启而根为 Array(§ 5.0.1):将该行视为
    **array-item line**(§ 5.4)。
-8. 若最内层开启复合是 Object 或无开启而根为 Object:将该行视为
+8. 若最内层开启复合是 Object 或无开启而根为 Object(§ 5.0.1):将该行视为
    **pair line**(§ 5.3)。
 

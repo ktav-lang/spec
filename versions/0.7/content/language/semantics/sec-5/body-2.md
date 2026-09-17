@@ -132,10 +132,11 @@
   与 -Infinity,以便 writer-conformance 能提供 § 5.9.0 中针对每个
   sentinel 的 fixture。这些 sentinel 位于可解析 Float 域与规范 Float
   域之外。解析产生的 Float MUST 是有限值,并属于实现**声明的
-  Ktav Float 域**。该声明 MUST 包含作为 Ktav Float 所接纳的有限值、解析与输出所用的十进制
-  转换与舍入语义,以及确定性的转换策略。每个被接纳进 Ktav Value
-  模型的非零有限 Float MUST 至少有一个有限十进制候选 `(s, D, k)`,其
-  精确十进制值按该声明的语义重新解析后恰好得到该 Float(§ 5.9.8)。
+  Ktav Float 域**。该声明 MUST 包含作为 Ktav Float 所接纳的有限值、
+  解析与输出所用的十进制转换与舍入语义,以及确定性的转换策略。每个
+  被接纳进声明的 Ktav Float 域的非零有限 Float MUST 至少有一个有限
+  十进制候选 `(s, D, k)`,其精确十进制值按该声明的语义重新解析后恰好
+  得到该 Float(§ 5.9.8)。
   正零与负零按 § 5.9.8 的零规则单独接纳。更宽的主机表示 MAY 含有不
   存在这种候选的非零有限值(例如精确有理数 `1/3`),但这种值在声明的 Ktav
   Float 域之外,MUST NOT 作为 Ktav Float 接纳。实现

@@ -36,7 +36,7 @@ trailing comma; the comma is syntax, not an inline comment.
 
 **inline 复合值**是写在单行上的 Object 或 Array。Object 由 `{` /
 `}` 包围,Array 由 `[` / `]` 包围。内部元素以 `,` 分隔。尾部逗号
-允许:
+允许出现在闭合分隔符之前:
 
 ```
 {a: 1, b: 2}
