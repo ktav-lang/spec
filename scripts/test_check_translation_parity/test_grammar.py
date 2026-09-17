@@ -4,7 +4,7 @@ import os
 import re
 
 import check_translation_parity as ctp
-from test_check_translation_parity.base import BARE_GRAMMAR_LINES_EN, EN_DOC, REPO_ROOT, RU_DOC_OK, SEMI_GRAMMAR_LINES_EN, bare_doc, read_repository_sec4_bodies, semi_doc
+from test_check_translation_parity.base import BARE_GRAMMAR_LINES_EN, EN_DOC, REPO_ROOT, RU_DOC_OK, SEMI_GRAMMAR_LINES_EN, bare_doc, content_unit_dir, read_repository_sec4_bodies, semi_doc
 
 
 class GrammarTests:
@@ -393,8 +393,7 @@ class GrammarTests:
 
     def test_repository_content_pin_source_ws_is_line_bounded_in_all_languages(self):
         repo_root = REPO_ROOT
-        body_path = os.path.join(
-            repo_root, "versions", "0.7", "content", "sec-4", "body-1.js")
+        body_path = os.path.join(content_unit_dir("sec-4"), "body-1.js")
         with open(body_path, encoding="utf-8") as f:
             source = f.read()
 

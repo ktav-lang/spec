@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import json
 import os
 import re
 import shutil
@@ -273,11 +274,25 @@ def decode_body_template(text, path, lang):
     return "".join(decoded)
 
 
+def content_unit_dir(name):
+    """Absolute path of a content unit, wherever the manifest puts it.
+
+    A unit may sit inside a group directory, so its location comes from
+    manifest.js; only its NAME is fixed.
+    """
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    content = os.path.join(repo_root, "versions", "0.7", "content")
+    with open(os.path.join(content, "manifest.js"), encoding="utf-8") as fh:
+        manifest = json.loads(fh.read().replace("export default ", "", 1))
+    for unit in manifest:
+        if unit.rsplit("/", 1)[-1] == name:
+            return os.path.join(content, *unit.split("/"))
+    raise AssertionError("manifest.js has no unit named %r" % name)
+
+
 def read_repository_sec4_bodies():
     """Read and decode every checked-in Sec 4 body part per language."""
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    body_dir = os.path.join(
-        repo_root, "versions", "0.7", "content", "sec-4")
+    body_dir = content_unit_dir("sec-4")
     body_names = sorted(
         (name for name in os.listdir(body_dir)
          if re.fullmatch(r"body-\d+\.js", name)),

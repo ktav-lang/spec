@@ -82,8 +82,18 @@ const HANDWRITTEN_ROOT_FILES = [
 // Appendix A's entry for the current version. Not a root file — it lives
 // in a content unit, and meta is never token-substituted, which is
 // exactly why it needs checking rather than generating.
-const APPENDIX_META_REL =
-  `versions/0.7/content/sec-${REAL_RELEASE.version}/meta.js`;
+//
+// The unit sits inside a group directory, so its LOCATION comes from the
+// manifest. Only its NAME is fixed.
+const REAL_MANIFEST = JSON.parse(
+  fs.readFileSync(
+    path.join(process.cwd(), 'versions', '0.7', 'content', 'manifest.js'), 'utf8')
+    .replace(/^export default /, ''));
+
+const APPENDIX_UNIT = REAL_MANIFEST.find(
+  (unit) => unit.slice(unit.lastIndexOf('/') + 1) === `sec-${REAL_RELEASE.version}`);
+
+const APPENDIX_META_REL = `versions/0.7/content/${APPENDIX_UNIT}/meta.js`;
 
 function copyHandwrittenRootFiles(root) {
   for (const rel of HANDWRITTEN_ROOT_FILES) {

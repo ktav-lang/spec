@@ -51,6 +51,12 @@ export function hasLoneSurrogate(str) {
   return false;
 }
 
+// A unit may sit inside a group directory, so its NAME is the last path
+// segment. Both naming rules below are about the name, never the location.
+function unitName(unit) {
+  return unit.slice(unit.lastIndexOf('/') + 1);
+}
+
 export function validateMeta(unit, meta) {
   if (typeof meta !== 'object' || meta === null || Array.isArray(meta)) {
     failUnit(unit, 'meta.js default export is not an object');
@@ -96,9 +102,7 @@ export function validateMeta(unit, meta) {
     if (typeof meta.number !== 'string' || !/^\d+(\.\d+)*$/.test(meta.number)) {
       failUnit(unit, `bad number ${JSON.stringify(meta.number)}`);
     }
-    // The unit may sit in a group directory; its NAME is the last
-    // segment, and that is what has to match the number.
-    if (unit.slice(unit.lastIndexOf('/') + 1) !== 'sec-' + meta.number) {
+    if (unitName(unit) !== 'sec-' + meta.number) {
       failUnit(unit, `unit name does not match sec-${meta.number}`);
     }
     if (meta.sep !== '. ' && meta.sep !== ' ') {
@@ -107,7 +111,7 @@ export function validateMeta(unit, meta) {
   } else { // named
     if (meta.number !== null) failUnit(unit, 'named unit must have number === null');
     if (lvl < 2) failUnit(unit, `named unit level must be 2..6, got ${lvl}`);
-    if (!unit.startsWith('named-')) failUnit(unit, 'named unit dir must start with "named-"');
+    if (!unitName(unit).startsWith('named-')) failUnit(unit, 'named unit dir must start with "named-"');
   }
   const t = meta.title;
   if (typeof t !== 'object' || t === null) failUnit(unit, 'missing title object');
