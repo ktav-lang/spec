@@ -239,39 +239,31 @@ def bare_doc(fence_lines):
     )
 
 
-BODY_SOURCE_RE = re.compile(
-    r'\Aexport default \{\n'
-    r'  en: `(?P<en>(?:\\.|[^`])*)`,\n'
-    r'  ru: `(?P<ru>(?:\\.|[^`])*)`,\n'
-    r'  zh: `(?P<zh>(?:\\.|[^`])*)`,\n'
-    r'\};\n\Z',
-    re.DOTALL,
-)
+LANG_SEPARATOR_RE = re.compile(r"^>>>>> lang=(?P<lang>.*)$", re.M)
 
 
-def decode_body_template(text, path, lang):
-    """Decode the three escapes permitted in content body templates."""
-    decoded = []
-    idx = 0
-    while idx < len(text):
-        if text[idx] != "\\":
-            decoded.append(text[idx])
-            idx += 1
-            continue
-        if text.startswith("\\\\", idx):
-            decoded.append("\\")
-            idx += 2
-        elif text.startswith("\\`", idx):
-            decoded.append("`")
-            idx += 2
-        elif text.startswith("\\${", idx):
-            decoded.append("${")
-            idx += 3
-        else:
-            raise AssertionError(
-                "%s %s contains an unsupported template escape at offset %d"
-                % (path, lang, idx))
-    return "".join(decoded)
+def parse_language_blocks(text, path):
+    """Split a body source into its `>>>>> lang=` blocks.
+
+    A block runs from the line after its separator to the line before the
+    next one, or to end of file for the last, so each block keeps its own
+    trailing newline. The format names no languages and fixes no order;
+    the caller decides which set it expects.
+    """
+    marks = list(LANG_SEPARATOR_RE.finditer(text))
+    if not marks:
+        raise AssertionError("no '>>>>> lang=' separator in %s" % path)
+    if marks[0].start() != 0:
+        raise AssertionError("%s does not begin with a separator" % path)
+    blocks = {}
+    for i, mark in enumerate(marks):
+        lang = mark.group("lang")
+        if lang in blocks:
+            raise AssertionError("duplicate '>>>>> lang=%s' in %s" % (lang, path))
+        start = mark.end() + 1
+        end = marks[i + 1].start() if i + 1 < len(marks) else len(text)
+        blocks[lang] = text[start:end]
+    return blocks
 
 
 def content_unit_dir(name):
@@ -291,22 +283,21 @@ def content_unit_dir(name):
 
 
 def read_repository_sec4_bodies():
-    """Read and decode every checked-in Sec 4 body part per language."""
+    """Read every checked-in Sec 4 body part per language."""
     body_dir = content_unit_dir("sec-4")
     body_names = sorted(
         (name for name in os.listdir(body_dir)
-         if re.fullmatch(r"body-\d+\.js", name)),
+         if re.fullmatch(r"body-\d+\.md", name)),
         key=lambda name: (len(name[5:-3]), name[5:-3]))
     result = {lang: [] for lang in ("en", "ru", "zh")}
     for name in body_names:
         body_path = os.path.join(body_dir, name)
         with open(body_path, encoding="utf-8") as body_file:
-            match = BODY_SOURCE_RE.fullmatch(body_file.read())
-        if match is None:
-            raise AssertionError("unexpected content body shape: %s" % body_path)
+            blocks = parse_language_blocks(body_file.read(), body_path)
         for lang in result:
-            result[lang].append(
-                decode_body_template(match.group(lang), body_path, lang))
+            if lang not in blocks:
+                raise AssertionError("%s has no %s block" % (body_path, lang))
+            result[lang].append(blocks[lang])
     return {lang: "".join(parts) for lang, parts in result.items()}
 
 

@@ -3,7 +3,19 @@ import path from 'node:path';
 export const LANGS = ['en', 'ru', 'zh'];
 export const OUT_FILES = { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' };
 export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.zh.md' };
-export const README_SOURCE_FILE = 'README.source.js';
+export const README_SOURCE_FILE = 'README.source.md';
+
+// Body sources are Markdown, one file per part, carrying all three
+// languages behind `>>>>> lang=<code>` separator lines. Keeping the name and
+// the pattern here means the extension is stated once.
+export const BODY_FILE_RE = /^body-(\d+)\.md$/u;
+export const bodyFileName = (k) => `body-${k}.md`;
+// The separator deliberately is NOT Markdown syntax that the document
+// itself uses. `##` was the obvious choice and the wrong one: a heading
+// marker is the single most common construct in a specification, so the
+// delimiter would have competed with the content it delimits.
+export const LANG_SEPARATOR_RE = /^>>>>> lang=.*$/gm;
+export const langSeparator = (lang) => `>>>>> lang=${lang}`;
 export const RELEASE_FILE = 'release.js';
 export const VERSION_TOKEN = '@@VERSION@@';
 export const DATE_TOKEN = '@@DATE@@';

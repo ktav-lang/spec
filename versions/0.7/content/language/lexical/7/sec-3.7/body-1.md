@@ -1,0 +1,93 @@
+>>>>> lang=en
+
+Inside an **inline scalar value** (the body of a pair value or array
+item that appears inside an inline compound, § 5.8) and inside
+**keys** (the key portion of a pair, § 5.3), a backslash byte `\`
+begins an **escape sequence**. The following **fourteen** escape
+sequences are recognised; each is replaced by the indicated byte or
+code point before further classification (§ 5.2 for values) or
+key-segment splitting (§ 4 for keys). A position consumed by any
+recognised escape — named or `\uXXXX` — is never re-examined as a
+structural delimiter (dotted-path dot, pair-separator colon, inline
+comma/brace/bracket, quoted-segment delimiter): this holds uniformly,
+regardless of which of the fourteen forms produced the decoded byte.
+
+| Sequence | Replacement |
+|----------|-------------|
+| `\\`     | `\` (one backslash byte) |
+| `\,`     | `,` |
+| `\}`     | `}` |
+| `\]`     | `]` |
+| `\{`     | `{` |
+| `\[`     | `[` |
+| `\n`     | LF (`0x0A`) |
+| `\r`     | CR (`0x0D`) |
+| `\.`     | `.` (literal dot — does NOT split a dotted key segment) |
+| `\:`     | `:` (literal colon — does NOT act as the key/value separator) |
+| `\"`     | `"` (literal double quote) |
+| `\'`     | `'` (literal single quote) |
+| `` \` `` | `` ` `` (literal backtick) |
+| `\uXXXX` | the Unicode code point `U+XXXX` — see below |
+
+>>>>> lang=ru
+
+Внутри **inline-скалярного значения** (тела пары или элемента
+массива, появляющегося внутри однострочного составного значения,
+§ 5.8) и внутри **ключей** (часть ключа пары, § 5.3), байт обратной
+косой `\` начинает **escape-последовательность**. Распознаются
+следующие **четырнадцать** escape-последовательностей; каждая
+заменяется указанным байтом или кодовой точкой перед дальнейшей
+классификацией (§ 5.2 для значений) или разделением на сегменты
+(§ 4 для ключей). Позиция, поглощённая любой распознанной
+escape-последовательностью — именованной или `\uXXXX` — никогда
+повторно не рассматривается как структурный разделитель (точка
+пути, двоеточие-разделитель пары, запятая/скобка/фигурная скобка
+внутри однострочного составного, разделитель квотированного
+сегмента): это верно единообразно, независимо от того, какая из
+четырнадцати форм породила декодированный байт.
+
+| Последовательность | Замена |
+|----------|-------------|
+| `\\`     | `\` (один обратный слэш) |
+| `\,`     | `,` |
+| `\}`     | `}` |
+| `\]`     | `]` |
+| `\{`     | `{` |
+| `\[`     | `[` |
+| `\n`     | LF (`0x0A`) |
+| `\r`     | CR (`0x0D`) |
+| `\.`     | `.` (литеральная точка — НЕ разделяет сегменты ключа) |
+| `\:`     | `:` (литеральное двоеточие — НЕ действует как разделитель пары) |
+| `\"`     | `"` (литеральная двойная кавычка) |
+| `\'`     | `'` (литеральная одинарная кавычка) |
+| `` \` `` | `` ` `` (литеральный обратный апостроф) |
+| `\uXXXX` | кодовая точка Unicode `U+XXXX` — см. ниже |
+
+>>>>> lang=zh
+
+**inline 标量值**(在单行复合值 § 5.8 中出现的对值或数组项的值)
+以及**键**(对中的键部分,§ 5.3)内,反斜杠字节 `\` 开始一个
+**escape 序列**。识别以下**十四个** escape 序列;每个在进一步分类
+(§ 5.2,用于值)或键段分割(§ 4,用于键)之前替换为指定字节或码点。
+被任意一个已识别 escape —— 无论是命名形式还是 `\uXXXX` —— 所占据
+的位置,永远不会被重新视为结构性分隔符(点分路径的点、对分隔符
+冒号、inline 中的逗号/花括号/方括号、quoted-segment 的分隔符):
+无论解码出的字节来自这十四种形式中的哪一种,此规则一致适用。
+
+| 序列 | 替换 |
+|----------|-------------|
+| `\\`     | `\` |
+| `\,`     | `,` |
+| `\}`     | `}` |
+| `\]`     | `]` |
+| `\{`     | `{` |
+| `\[`     | `[` |
+| `\n`     | LF (`0x0A`) |
+| `\r`     | CR (`0x0D`) |
+| `\.`     | `.` (字面点 —— 不分割键段) |
+| `\:`     | `:` (字面冒号 —— 不作为键/值分隔符) |
+| `\"`     | `"` (字面双引号) |
+| `\'`     | `'` (字面单引号) |
+| `` \` `` | `` ` `` (字面反引号) |
+| `\uXXXX` | Unicode 码点 `U+XXXX` —— 见下文 |
+

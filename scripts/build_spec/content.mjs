@@ -7,8 +7,10 @@ import {
   DATE_TOKEN,
   LANGS,
   OUT_FILES,
+  BODY_FILE_RE,
   README_SOURCE_FILE,
   RELEASE_FILE,
+  bodyFileName,
   VERSION_TOKEN,
   defaultSectionInventoryLockPath,
 } from './shared.mjs';
@@ -466,7 +468,7 @@ export async function validateContentDir(contentDir, options = {}) {
     const isLast = idx === manifest.length - 1;
 
     // 4. Exact per-unit file set. Every entry must be a REGULAR file: a
-    // symlink named meta.js/body-N.js would otherwise pass the name
+    // symlink named meta.js/body-N.md would otherwise pass the name
     // allowlist and its target would later be read (and, for meta.js,
     // JSON-parsed), possibly outside the unit or outside content/.
     const unitEntries = fs.readdirSync(unitDir, { withFileTypes: true });
@@ -484,12 +486,12 @@ export async function validateContentDir(contentDir, options = {}) {
     }
     const expected = new Set(['meta.js']);
     for (const name of present) {
-      if (/^body-\d+\.js$/.test(name)) expected.add(name);
+      if (BODY_FILE_RE.test(name)) expected.add(name);
     }
     for (const name of present) {
       if (expected.has(name)) continue;
       if (/\.md$/.test(name) && ['en', 'ru', 'zh'].includes(name.slice(0, -3))) {
-        failUnit(unit, `legacy per-language file ${name} is not allowed under content/; edit body-*.js instead`);
+        failUnit(unit, `legacy per-language file ${name} is not allowed under content/; edit body-*.md instead`);
       }
       failUnit(unit, `unexpected file ${name} in unit directory`);
     }
@@ -511,7 +513,7 @@ export async function validateContentDir(contentDir, options = {}) {
     // exact body file count
     const bodyFiles = unitEntries
       .map((e) => e.name)
-      .filter((n) => /^body-\d+\.js$/u.test(n));
+      .filter((n) => BODY_FILE_RE.test(n));
     const bodyFileSet = new Set(bodyFiles);
     const malformedBodyFiles = bodyFiles.filter((name) => {
       const digits = name.slice(5, -3);
@@ -521,12 +523,12 @@ export async function validateContentDir(contentDir, options = {}) {
     if (malformedBodyFiles.length) {
       failUnit(unit,
         `unexpected body file(s) ${malformedBodyFiles.join(', ')} ` +
-        `(body files must be body-1.js..body-${meta.bodyParts}.js)`);
+        `(body files must be ${bodyFileName(1)}..${bodyFileName(meta.bodyParts)})`);
     }
     if (bodyFiles.length !== meta.bodyParts) {
       for (let k = 1; k <= meta.bodyParts; k++) {
-        if (!bodyFileSet.has(`body-${k}.js`)) {
-          failUnit(unit, `missing body-${k}.js (meta.bodyParts is ${meta.bodyParts})`);
+        if (!bodyFileSet.has(bodyFileName(k))) {
+          failUnit(unit, `missing ${bodyFileName(k)} (meta.bodyParts is ${meta.bodyParts})`);
         }
       }
       for (const n of bodyFiles) {
@@ -540,14 +542,14 @@ export async function validateContentDir(contentDir, options = {}) {
         return num < 1 || num > meta.bodyParts;
       });
       if (odd.length) {
-        failUnit(unit, `unexpected body file(s) ${odd.join(', ')} (body files must be body-1.js..body-${meta.bodyParts}.js)`);
+        failUnit(unit, `unexpected body file(s) ${odd.join(', ')} (body files must be ${bodyFileName(1)}..${bodyFileName(meta.bodyParts)})`);
       }
       failUnit(unit, `expected exactly ${meta.bodyParts} body file(s), found ${bodyFiles.length}`);
     }
 
     const parts = [];
     for (let k = 1; k <= meta.bodyParts; k++) {
-      const bodyPath = path.join(unitDir, `body-${k}.js`);
+      const bodyPath = path.join(unitDir, bodyFileName(k));
 
       // Read and shape-validate the raw source: a body file that is not
       // exactly the documented literal-object shape is rejected here, and
@@ -557,9 +559,9 @@ export async function validateContentDir(contentDir, options = {}) {
       try {
         buf = fs.readFileSync(bodyPath);
       } catch (e) {
-        failUnit(unit, `cannot read body-${k}.js: ${e.message}`);
+        failUnit(unit, `cannot read ${bodyFileName(k)}: ${e.message}`);
       }
-      const sourceLabel = `unit "${unit}": body-${k}.js`;
+      const sourceLabel = `unit "${unit}": ${bodyFileName(k)}`;
       rejectRawCarriageReturns(buf, sourceLabel);
       const src = decodeUtf8Strict(buf, sourceLabel);
       const decoded = validateBodySourceShape(unit, k, src);

@@ -1,5 +1,5 @@
 // The six generated outputs as destinations: restoring the content
-// READMEs from README.source.js, and refusing to write through a
+// READMEs from README.source.md, and refusing to write through a
 // destination symlink, read through a generated-file symlink, or create
 // temporaries beside a directory standing where a README should be.
 
@@ -14,7 +14,7 @@ import {
 import {
   TEST_RELEASE,
   baseFixtures,
-  bodyJs,
+  bodySource,
   lockUnits,
   makeContent,
   symlinksSupported,
@@ -35,7 +35,7 @@ export async function writeBuildRestoresMissingGeneratedContentReadmesFromReadme
     const expected = { en: '# EN README\n', ru: '# RU README\n', zh: '# ZH README\n' };
     makeContent(versionDir, fixtures, manifest);
     write(path.join(contentDir, README_SOURCE_FILE),
-      bodyJs(expected.en, expected.ru, expected.zh));
+      bodySource(expected.en, expected.ru, expected.zh));
     write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',

@@ -1,5 +1,5 @@
 // Release token substitution: version and date are rendered into every
-// language body, README.source.js passes them through verbatim, and a
+// language body, README.source.md passes them through verbatim, and a
 // token surviving in a meta title fails the build -- because meta is
 // never substituted and Appendix A headings are historical records.
 
@@ -12,7 +12,7 @@ import {
 import {
   TEST_RELEASE,
   baseFixtures,
-  bodyJs,
+  bodySource,
   lockUnits,
   makeContent,
   unitMeta,
@@ -74,10 +74,10 @@ test('release token substitution applies in non-frontmatter unit bodies too', as
   assert.equal(bufs.en.includes('@@VERSION@@'), false);
 });
 
-test('README.source.js passes release tokens through verbatim (no substitution)', async () => {
+test('README.source.md passes release tokens through verbatim (no substitution)', async () => {
   const { readmeBufs } = await buildInTemp(baseFixtures(), (content) => {
     write(path.join(content, README_SOURCE_FILE),
-      bodyJs('# content README @@VERSION@@\n', '# r\n', '# r\n'));
+      bodySource('# content README @@VERSION@@\n', '# r\n', '# r\n'));
   });
   assert.equal(readmeBufs.en.includes('@@VERSION@@'), true);
   assert.equal(readmeBufs.en.includes(TEST_RELEASE.version), false);

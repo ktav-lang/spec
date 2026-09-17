@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { LANGS } from '../shared.mjs';
+import { LANGS, LANG_SEPARATOR_RE, bodyFileName, langSeparator } from '../shared.mjs';
 import { failUnit } from './decode.mjs';
 import {
   buildThematicBreakSuffix,
@@ -571,82 +571,95 @@ function validateUnitHeadings(unit, meta, parts) {
   }
 }
 
-// Proves `src` (the raw UTF-8 text of a body-N.js file, read via
-// fs.readFileSync) is EXACTLY:
-//   export default {\n  en: `...`,\n  ru: `...`,\n  zh: `...`,\n};\n
-// with each `...` a template-literal body where every backslash, backtick,
-// and "${" has been escaped per content/README.md's rule (\\, \`, \${, in
-// that priority order at write time). Returns the DECODED { en, ru, zh }
-// strings; they are used directly as the body part's content. This function
-// never executes the file's code.
-function validateBodySourceShape(unit, k, src, label = `body-${k}.js`) {
-  const HEADER = 'export default {\n  en: `';
-  if (!src.startsWith(HEADER)) {
-    failUnit(unit, `${label}: must start with exactly ${JSON.stringify(HEADER)}`);
+// THE FORMAT. A body source is Markdown carrying one block per language,
+// each introduced by its own separator line:
+//
+//   >>>>> lang=en
+//   ...
+//   >>>>> lang=ru
+//   ...
+//
+// A block runs from the line after its separator to the line before the
+// next separator, or to end of file for the last one. The block therefore
+// keeps its own trailing newline, and a body ending in a blank line keeps
+// that blank line — which is what makes the generated output byte-stable.
+//
+// The format does NOT name the languages. Any set will do; what it
+// demands is that a language appear at most once per file, and the layer
+// above demands that every file carry the SAME set. Order is free: the
+// result is a map, so where a block sits says nothing.
+//
+// Because the source is Markdown, nothing needs escaping — the
+// specification's code fences are written as themselves. The cost is that
+// a line beginning ">>>>> lang=" can no longer appear inside a block, which
+// is why a duplicate or a stray one is rejected here rather than silently
+// taken as a boundary.
+//
+// Nothing in the file is executed. It is text, and now it does not even
+// resemble code.
+function parseLanguageBlocks(src, reject, label) {
+  const marks = [];
+  const scan = new RegExp(LANG_SEPARATOR_RE.source, 'gm');
+  for (let m = scan.exec(src); m !== null; m = scan.exec(src)) {
+    marks.push({ text: m[0], start: m.index, end: m.index + m[0].length });
   }
-  let i = HEADER.length;
 
-  // Scans forward from `i` (just after an opening backtick) for the next
-  // UNESCAPED backtick, decoding escapes as it goes and rejecting any
-  // unescaped "${" (real template interpolation) along the way. The
-  // documented write-side grammar (content/README.md) has exactly three
-  // escape forms: \\ and \` are two-character units decoding to one
-  // character each; \${ is a three-character unit decoding to the two
-  // literal characters "${". Any other backslash sequence -- including a
-  // bare "\$" not followed by "{" -- is rejected as an unrecognised escape.
-  function scanTemplateBody(fieldName) {
-    let decoded = '';
-    while (i < src.length) {
-      const c = src[i];
-      if (c === '\\') {
-        const next = src[i + 1];
-        if (next === '\\') { decoded += '\\'; i += 2; continue; }
-        if (next === '`') { decoded += '`'; i += 2; continue; }
-        // "\${" is one three-character escape unit decoding to the two
-        // literal characters "${"; a bare "\$" whose next character is not
-        // "{" is NOT part of the documented grammar and is rejected below.
-        if (next === '$' && src[i + 2] === '{') { decoded += '${'; i += 3; continue; }
-        failUnit(unit, `${label}: unrecognised escape "\\${next}" in ${fieldName} at offset ${i} (only \\\\, \\\`, and \\\${ are valid)`);
-      }
-      if (c === '`') {
-        return { end: i, decoded };
-      }
-      if (c === '$' && src[i + 1] === '{') {
-        failUnit(unit, `${label}: unescaped "\${" (template interpolation) in ${fieldName} at offset ${i} -- interpolation is never allowed, escape it as "\\\${"`);
-      }
-      decoded += c;
-      i += 1;
+  if (marks.length === 0) {
+    reject(`${label}: no "${langSeparator('')}" separator line found`);
+  }
+  if (marks[0].start !== 0) {
+    reject(`${label}: must begin with a "${langSeparator('')}" separator; found ` +
+      `${JSON.stringify(src.slice(0, Math.min(40, marks[0].start)))} before the first one`);
+  }
+
+  const blocks = new Map();
+  for (let i = 0; i < marks.length; i++) {
+    const mark = marks[i];
+    const lang = mark.text.slice(langSeparator('').length);
+    if (lang.length === 0) {
+      reject(`${label}: separator ${JSON.stringify(mark.text)} names no language`);
     }
-    failUnit(unit, `${label}: unterminated template literal in ${fieldName} (no closing backtick found)`);
+    if (blocks.has(lang)) {
+      reject(`${label}: duplicate separator ${JSON.stringify(mark.text)}`);
+    }
+    if (src[mark.end] !== '\n') {
+      reject(`${label}: separator ${JSON.stringify(mark.text)} must be alone on its line`);
+    }
+    const from = mark.end + 1;
+    const to = i + 1 < marks.length ? marks[i + 1].start : src.length;
+    blocks.set(lang, src.slice(from, to));
   }
 
-  const en = scanTemplateBody('en');
-  i = en.end + 1;
-
-  const SEP1 = ',\n  ru: `';
-  if (src.slice(i, i + SEP1.length) !== SEP1) {
-    failUnit(unit, `${label}: expected exactly ${JSON.stringify(SEP1)} after the en field, at offset ${i}`);
+  const lastLang = marks[marks.length - 1].text.slice(langSeparator('').length);
+  const trailing = blocks.get(lastLang);
+  if (trailing.length > 0 && !trailing.endsWith('\n')) {
+    reject(`${label}: the last block must end with a newline`);
   }
-  i += SEP1.length;
+  return blocks;
+}
 
-  const ru = scanTemplateBody('ru');
-  i = ru.end + 1;
+// THIS REPOSITORY'S REQUIREMENT ON TOP OF THE FORMAT: the set is exactly
+// LANGS, in every file. Comparing each file against one declared set is
+// what makes "the same languages everywhere" true — not a first-file-wins
+// rule that would quietly adopt a typo.
+function validateBodySourceShape(unit, k, src, label = bodyFileName(k)) {
+  const reject = (message) => failUnit(unit, message);
+  const blocks = parseLanguageBlocks(src, reject, label);
 
-  const SEP2 = ',\n  zh: `';
-  if (src.slice(i, i + SEP2.length) !== SEP2) {
-    failUnit(unit, `${label}: expected exactly ${JSON.stringify(SEP2)} after the ru field, at offset ${i}`);
+  const unexpected = [...blocks.keys()].filter((lang) => !LANGS.includes(lang));
+  if (unexpected.length > 0) {
+    reject(`${label}: unexpected language block(s) ${unexpected.join(', ')} ` +
+      `(this specification is written in ${LANGS.join(', ')})`);
   }
-  i += SEP2.length;
-
-  const zh = scanTemplateBody('zh');
-  i = zh.end + 1;
-
-  const TAIL = ',\n};\n';
-  if (src.slice(i) !== TAIL) {
-    failUnit(unit, `${label}: expected exactly ${JSON.stringify(TAIL)} after the zh field followed immediately by end-of-file, found ${JSON.stringify(src.slice(i, i + 20))}`);
+  const missing = LANGS.filter((lang) => !blocks.has(lang));
+  if (missing.length > 0) {
+    reject(`${label}: missing language block(s) ${missing.join(', ')} ` +
+      `(every source must carry the same set: ${LANGS.join(', ')})`);
   }
 
-  return { en: en.decoded, ru: ru.decoded, zh: zh.decoded };
+  const out = {};
+  for (const lang of LANGS) out[lang] = blocks.get(lang);
+  return out;
 }
 
 

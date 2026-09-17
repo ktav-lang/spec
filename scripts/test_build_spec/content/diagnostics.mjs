@@ -15,7 +15,7 @@ import {
 } from '../../build_spec.mjs';
 import {
   baseFixtures,
-  bodyJs,
+  bodySource,
   bodyWithInteriorBlanks,
   bodyWithOneInteriorBlank,
   interiorBlankCutOffsets,
@@ -27,25 +27,20 @@ import {
   zipLanguageBodies,
 } from '../helpers.mjs';
 import assert from 'node:assert/strict';
+import { langSeparator } from '../../build_spec/shared.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-test('README source object rejects a non-canonical shape', async () => {
-  const expected = 'unit "content": README.source.js: expected exactly ' +
-    JSON.stringify(',\n};\n') +
-    ' after the zh field followed immediately by end-of-file, found ' +
-    JSON.stringify(',\n  de: `d\n`,\n};\n'.slice(0, 20));
+test('the README source is held to the same language set as a unit body', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
       write(path.join(c, README_SOURCE_FILE),
-        'export default {\n' +
-        '  en: `a\n`,\n' +
-        '  ru: `b\n`,\n' +
-        '  zh: `c\n`,\n' +
-        '  de: `d\n`,\n' +
-        '};\n')),
-    (e) => e.message === expected
+        langSeparator('en') + '\na\n' +
+        langSeparator('ru') + '\nb\n' +
+        langSeparator('zh') + '\nc\n' +
+        langSeparator('de') + '\nd\n')),
+    (e) => /unit "content": README\.source\.md: unexpected language block\(s\) de/.test(e.message)
   );
 });
 
@@ -92,8 +87,8 @@ test('manifest entry with no corresponding directory', async () => {
 test('extra body-2.js while meta.bodyParts is 1', async () => {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-2.js'), bodyJs('x\n', 'y\n', 'z\n'))),
-    (e) => /unit "sec-1": unexpected extra file body-2\.js beyond meta\.bodyParts 1/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-2.md'), bodySource('x\n', 'y\n', 'z\n'))),
+    (e) => /unit "sec-1": unexpected extra file body-2\.md beyond meta\.bodyParts 1/.test(e.message)
   );
 });
 
@@ -102,7 +97,7 @@ test('meta.bodyParts=2 but body-2.js missing', async () => {
   fx[2].meta = unitMeta('numbered', { __num: '1', bodyParts: 2 });
   await assert.rejects(
     validate(fx),
-    (e) => /unit "sec-1": missing body-2\.js \(meta\.bodyParts is 2\)/.test(e.message)
+    (e) => /unit "sec-1": missing body-2\.md \(meta\.bodyParts is 2\)/.test(e.message)
   );
 });
 

@@ -12,7 +12,7 @@ import {
   recoverBuildOutputTransaction,
   writeBuildOutputs,
 } from '../../../build_spec.mjs';
-import { baseFixtures, bodyJs, makeContent, write } from '../../helpers.mjs';
+import { baseFixtures, bodySource, makeContent, write } from '../../helpers.mjs';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -63,8 +63,8 @@ export async function crashRecoveryRestoresDistinctOldBytesBeforeALaterFullWrite
     makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
     const oldBuild = await buildBuffers(contentDir);
     writeBuildOutputs(versionDir, contentDir, oldBuild);
-    write(path.join(contentDir, 'named-abstract', 'body-1.js'),
-      bodyJs('distinct new body.\n\n', 'новое тело.\n\n', '新的正文。\n\n'));
+    write(path.join(contentDir, 'named-abstract', 'body-1.md'),
+      bodySource('distinct new body.\n\n', 'новое тело.\n\n', '新的正文。\n\n'));
     const newBuild = await buildBuffers(contentDir);
     const source = `
       import { buildBuffers, writeBuildOutputs } from ${JSON.stringify(scriptUrl)};
@@ -108,9 +108,9 @@ export async function distinctByteCrashMatrixCoversBackupAndInstallOffsetsInclud
       makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
       const oldBuild = await buildBuffers(contentDir);
       writeBuildOutputs(versionDir, contentDir, oldBuild);
-      write(path.join(contentDir, 'named-abstract', 'body-1.js'),
-        bodyJs(`matrix en body ${label}.\n\n`, `matrix ru body ${label}.\n\n`, `matrix zh body ${label}.\n\n`));
-      write(path.join(contentDir, README_SOURCE_FILE), bodyJs(
+      write(path.join(contentDir, 'named-abstract', 'body-1.md'),
+        bodySource(`matrix en body ${label}.\n\n`, `matrix ru body ${label}.\n\n`, `matrix zh body ${label}.\n\n`));
+      write(path.join(contentDir, README_SOURCE_FILE), bodySource(
         `# Matrix EN README ${label}\n`, `# Matrix RU README ${label}\n`, `# Matrix ZH README ${label}\n`));
       const newBuild = await buildBuffers(contentDir);
       const destinations = LANGS.flatMap((lang) => [

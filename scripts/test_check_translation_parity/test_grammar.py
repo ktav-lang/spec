@@ -393,7 +393,7 @@ class GrammarTests:
 
     def test_repository_content_pin_source_ws_is_line_bounded_in_all_languages(self):
         repo_root = REPO_ROOT
-        body_path = os.path.join(content_unit_dir("sec-4"), "body-1.js")
+        body_path = os.path.join(content_unit_dir("sec-4"), "body-1.md")
         with open(body_path, encoding="utf-8") as f:
             source = f.read()
 

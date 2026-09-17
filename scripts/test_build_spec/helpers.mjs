@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { buildBuffers, README_SOURCE_FILE, validateContentDir } from '../build_spec.mjs';
+import { bodyFileName, langSeparator } from '../build_spec/shared.mjs';
 
 function write(p, content) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -29,19 +30,16 @@ function withKeyOrder(value, keys) {
   return Object.fromEntries(keys.map((key) => [key, value[key]]));
 }
 
-function escTemplate(s) {
-  return s
-    .replace(/\\/g, '\\\\')
-    .replace(/`/g, '\\`')
-    .replace(/\$\{/g, '\\${');
-}
-
-function bodyJs(en, ru, zh) {
-  return 'export default {\n' +
-    '  en: `' + escTemplate(en) + '`,\n' +
-    '  ru: `' + escTemplate(ru) + '`,\n' +
-    '  zh: `' + escTemplate(zh) + '`,\n' +
-    '};\n';
+// Body sources are Markdown: one `>>>>> lang=` block per language, no escaping at
+// all. A block owns its trailing newline, so text that already ends in
+// one is written through untouched.
+function bodySource(en, ru, zh) {
+  let out = '';
+  for (const [lang, text] of [['en', en], ['ru', ru], ['zh', zh]]) {
+    out += langSeparator(lang) + '\n' + text;
+    if (text.length > 0 && !text.endsWith('\n')) out += '\n';
+  }
+  return out;
 }
 
 // kind: 'frontmatter' | 'named' | 'numbered'
@@ -132,13 +130,13 @@ function makeContent(dir, unitDefs, manifestNames) {
     write(path.join(dir, 'content', readme), '# content README\n');
   }
   write(path.join(dir, 'content', README_SOURCE_FILE),
-    bodyJs('# content README\n', '# content README\n', '# content README\n'));
+    bodySource('# content README\n', '# content README\n', '# content README\n'));
   for (const u of unitDefs) {
     const ud = path.join(dir, 'content', u.name);
     write(path.join(ud, 'meta.js'), metaJs(u.meta));
     const bodies = u.bodies || [['text.\n\n', 'текст.\n\n', '文本。\n\n']];
     bodies.forEach((b, i) => {
-      write(path.join(ud, `body-${i + 1}.js`), bodyJs(b[0], b[1], b[2]));
+      write(path.join(ud, bodyFileName(i + 1)), bodySource(b[0], b[1], b[2]));
     });
     for (const extra of u.extraFiles || []) {
       write(path.join(ud, extra.name), extra.content);
@@ -305,4 +303,4 @@ function installGenerator(scriptDir) {
     path.join(scriptDir, 'build_spec'), { recursive: true });
 }
 
-export { write, metaJs, permutations, withKeyOrder, escTemplate, bodyJs, unitMeta, TEST_RELEASE, REAL_RELEASE, HANDWRITTEN_ROOT_FILES, APPENDIX_META_REL, copyHandwrittenRootFiles, copyDriftCheckInputs, realReleaseJs, makeContent, lockUnits, LAST, MID, baseFixtures, validate, symlinksSupportedCache, symlinksSupported, directoryLinksSupportedCache, directoryLinksSupported, makeDirectoryLink, bodyWithInteriorBlanks, bodyWithOneInteriorBlank, interiorBlankCutOffsets, splitBody, sameLanguageBodies, zipLanguageBodies, buildInTemp, installGenerator, tokenFixtures };
+export { write, metaJs, permutations, withKeyOrder, bodySource, unitMeta, TEST_RELEASE, REAL_RELEASE, HANDWRITTEN_ROOT_FILES, APPENDIX_META_REL, copyHandwrittenRootFiles, copyDriftCheckInputs, realReleaseJs, makeContent, lockUnits, LAST, MID, baseFixtures, validate, symlinksSupportedCache, symlinksSupported, directoryLinksSupportedCache, directoryLinksSupported, makeDirectoryLink, bodyWithInteriorBlanks, bodyWithOneInteriorBlank, interiorBlankCutOffsets, splitBody, sameLanguageBodies, zipLanguageBodies, buildInTemp, installGenerator, tokenFixtures };

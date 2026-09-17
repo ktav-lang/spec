@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { langSeparator } from '../../build_spec/shared.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -10,7 +11,7 @@ import {
 import {
   LAST,
   baseFixtures,
-  bodyJs,
+  bodySource,
   bodyWithOneInteriorBlank,
   metaJs,
   sameLanguageBodies,
@@ -23,77 +24,64 @@ import {
 
 // ---- body-N.js raw-source shape scanner (round 19, finding 1) ----
 
-export async function body1JsWithAnImportPrefixIsRejectedBeforeAnyCodeExecutes() {
-  // The import target deliberately does not exist: if the builder ever
-  // executed this file, the failure would be a module-not-found error, not
-  // the shape error -- proving the shape check fires BEFORE dynamic import.
-  const evilBody =
-    "import x from './module-that-does-not-exist.js';\n" +
-    'export default {\n' +
-    '  en: `a\n`,\n' +
-    '  ru: `b\n`,\n' +
-    '  zh: `c\n`,\n' +
-    '};\n';
+export async function body1MdWithATextBeforeTheFirstSeparatorIsRejected() {
+  // The old format's guard was "this file must not be executable code".
+  // Markdown cannot be executed, so the guard that replaces it is about
+  // the format's one real ambiguity: where does the first block begin?
+  const stray =
+    'stray prose that belongs to no language\n' +
+    langSeparator('en') + '\na\n' +
+    langSeparator('ru') + '\nb\n' +
+    langSeparator('zh') + '\nc\n';
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
-    (e) =>
-      /unit "sec-1": body-1\.js: must start with exactly "export default \{\\n  en: `"/.test(e.message) &&
-      !/cannot load body-1\.js|Cannot find module|module-that-does-not-exist/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), stray)),
+    (e) => /unit "sec-1": body-1\.md: must begin with a ">>>>> lang=" separator/.test(e.message)
   );
 }
 
-export async function body1JsWithARawUnescapedInterpolationIsRejected() {
-  const evilBody =
-    'export default {\n' +
-    '  en: `value is ${location} here\n`,\n' +
-    '  ru: `b\n`,\n' +
-    '  zh: `c\n`,\n' +
-    '};\n';
+export async function body1MdWithADuplicateLanguageBlockIsRejected() {
+  const duplicated =
+    langSeparator('en') + '\na\n' +
+    langSeparator('ru') + '\nb\n' +
+    langSeparator('en') + '\nagain\n' +
+    langSeparator('zh') + '\nc\n';
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
-    (e) =>
-      /unit "sec-1": body-1\.js: unescaped "\$\{" \(template interpolation\) in en/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), duplicated)),
+    (e) => /unit "sec-1": body-1\.md: duplicate separator ">>>>> lang=en"/.test(e.message)
   );
 }
 
-export async function body1JsWithPlainDoubleQuotedStringFieldsIsRejectedOnlyTheExactTemplateLiteralShapeIsAccepted() {
-  const evilBody =
-    'export default {\n' +
-    '  en: "plain string",\n' +
-    '  ru: `b\n`,\n' +
-    '  zh: `c\n`,\n' +
-    '};\n';
+export async function body1MdWithASeparatorThatIsNotAloneOnItsLineIsRejected() {
+  // ">>>>> lang=en" followed by more text on the same line is content, not
+  // a separator, and taking it for one would silently swallow the rest of
+  // that line into nothing.
+  const inline =
+    langSeparator('en') + ' and more\na\n' +
+    langSeparator('ru') + '\nb\n' +
+    langSeparator('zh') + '\nc\n';
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
-    (e) =>
-      /unit "sec-1": body-1\.js: must start with exactly "export default \{\\n  en: `"/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), inline)),
+    (e) => /unit "sec-1": body-1\.md: unexpected language block\(s\) en and more/.test(e.message)
   );
 }
 
-export async function body1JsWithCorrectlyEscapedBackslashBacktickAndDecodesRoundTripToTheOriginalText() {
+export async function body1MdCarriesBackticksAndBackslashesVerbatim() {
+  // The whole point of the format: a specification full of code fences
+  // needs no escaping at all. What goes in comes out, byte for byte.
   const RAW = {
-    en: 'backslash \\ backtick ` interpolation ${ done\n',
-    ru: 'слэш \\ кавычка ` доллар ${ конец\n',
-    zh: '反斜杠 \\ 反引号 ` 美元 ${ 结束\n',
-  };
-  // Hand-written escaped form (the documented write-side rule: \\ first,
-  // then \`, then \${), independent of the helpers in this file.
-  const ESC = {
-    en: 'backslash \\\\ backtick \\` interpolation \\${ done\n',
-    ru: 'слэш \\\\ кавычка \\` доллар \\${ конец\n',
-    zh: '反斜杠 \\\\ 反引号 \\` 美元 \\${ 结束\n',
+    en: 'fence:\n```ktav\na: 1\n```\nbackslash \\ dollar ${ done\n',
+    ru: 'забор:\n```ktav\na: 1\n```\nслэш \\ доллар ${ конец\n',
+    zh: '围栏:\n```ktav\na: 1\n```\n反斜杠 \\ 美元 ${ 结束\n',
   };
   const bodyText =
-    'export default {\n' +
-    '  en: `' + ESC.en + '`,\n' +
-    '  ru: `' + ESC.ru + '`,\n' +
-    '  zh: `' + ESC.zh + '`,\n' +
-    '};\n';
+    langSeparator('en') + '\n' + RAW.en +
+    langSeparator('ru') + '\n' + RAW.ru +
+    langSeparator('zh') + '\n' + RAW.zh;
   const { units } = await validate(baseFixtures(), null, (c) =>
-    write(path.join(c, 'sec-1', 'body-1.js'), bodyText));
+    write(path.join(c, 'sec-1', 'body-1.md'), bodyText));
   const part = units.get('sec-1').parts[0];
   assert.equal(part.en, RAW.en);
   assert.equal(part.ru, RAW.ru);
@@ -331,7 +319,7 @@ export async function metaJsWithInvalidUTF8BytesIsRejectedInsteadOfSilentlyDecod
 }
 
 export async function body1JsWithInvalidUTF8BytesIsRejectedInsteadOfSilentlyDecoded() {
-  const good = Buffer.from(bodyJs('x\n', 'ы\n', 'z\n'), 'utf8');
+  const good = Buffer.from(bodySource('x\n', 'ы\n', 'z\n'), 'utf8');
   const anchor = Buffer.from('ы', 'utf8');
   const at = good.indexOf(anchor);
   assert.notEqual(at, -1);
@@ -339,16 +327,16 @@ export async function body1JsWithInvalidUTF8BytesIsRejectedInsteadOfSilentlyDeco
   broken[at + 1] = 0x41; // 0xD1 0x8B ("ы") -> 0xD1 0x41: invalid continuation byte
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), broken)),
-    (e) => /unit "sec-1": body-1\.js is not valid UTF-8/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), broken)),
+    (e) => /unit "sec-1": body-1\.md is not valid UTF-8/.test(e.message)
   );
 }
 
 export async function body1JsWithASimpleRawCRIsRejectedBeforeDecoding() {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), bodyJs('end.\r\n', 'konets.\r\n', 'zhong.\r\n'))),
-    (e) => /unit "sec-1": body-1\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), bodySource('end.\r\n', 'konets.\r\n', 'zhong.\r\n'))),
+    (e) => /unit "sec-1": body-1\.md contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
   );
 }
 
@@ -360,15 +348,15 @@ export async function body1JsWithRawCRInA120PlusLineSplitIsRejectedBeforeSplitti
   fx[2].bodies = sameLanguageBodies(splitBody(body, cut));
   await assert.rejects(
     validate(fx),
-    (e) => /unit "sec-1": body-1\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
+    (e) => /unit "sec-1": body-1\.md contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
   );
 }
 
 export async function readmeSourceJsWithARawCRIsRejectedBeforeDecoding() {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, README_SOURCE_FILE), bodyJs('# content README\r\n', '# content README\r\n', '# content README\r\n'))),
-    (e) => /README\.source\.js contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
+      write(path.join(c, README_SOURCE_FILE), bodySource('# content README\r\n', '# content README\r\n', '# content README\r\n'))),
+    (e) => /README\.source\.md contains a raw carriage return \(CR, 0x0D\)/.test(e.message)
   );
 }
 
@@ -431,56 +419,32 @@ export async function metaJsWithAUTF8BOMIsRejectedBeforeDecoding() {
 export async function body1JsWithAUTF8BOMIsRejectedBeforeDecoding() {
   await assert.rejects(
     validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), withUtf8Bom(bodyJs('x\n', 'y\n', 'z\n')))),
-    (e) => /unit "sec-1": body-1\.js starts with a UTF-8 byte-order mark/.test(e.message)
+      write(path.join(c, 'sec-1', 'body-1.md'), withUtf8Bom(bodySource('x\n', 'y\n', 'z\n')))),
+    (e) => /unit "sec-1": body-1\.md starts with a UTF-8 byte-order mark/.test(e.message)
   );
 }
 
 // ---- escape grammar: "$" without "{" is not a valid escape (round 20, finding 3) ----
 
-export async function bodyFieldWithBareEscapeBefore5IsRejectedAsAnUnrecognisedEscape() {
-  const evilBody =
-    'export default {\n' +
-    '  en: `price is \\$5 here\n`,\n' +
-    '  ru: `b\n`,\n' +
-    '  zh: `c\n`,\n' +
-    '};\n';
-  await assert.rejects(
-    validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
-    (e) =>
-      /unit "sec-1": body-1\.js: unrecognised escape "\\\$" in en/.test(e.message) &&
-      /only \\\\, \\`, and \\\$\{ are valid\)/.test(e.message)
-  );
-}
-
-export async function bodyFieldWithBareEscapeBeforeXIsRejectedAsAnUnrecognisedEscape() {
-  const evilBody =
-    'export default {\n' +
-    '  en: `a\n`,\n' +
-    '  ru: `name \\$x here\n`,\n' +
-    '  zh: `c\n`,\n' +
-    '};\n';
-  await assert.rejects(
-    validate(baseFixtures(), null, (c) =>
-      write(path.join(c, 'sec-1', 'body-1.js'), evilBody)),
-    (e) =>
-      /unit "sec-1": body-1\.js: unrecognised escape "\\\$" in ru/.test(e.message)
-  );
-}
-
-export async function bodyFieldWithCorrectlyEscapedIsAcceptedAndDecodesToTheTwoLiteralCharacters() {
+export async function bodyMdKeepsDollarBraceAndLoneBackslashAsOrdinaryText() {
+  // The old format had to spell out an escape grammar because "${" began
+  // an interpolation and "\\" began an escape. Markdown has neither, so
+  // the rule that replaces three rejection cases is a single positive
+  // one: these are just characters, and they come out as they went in.
+  const RAW = {
+    en: 'price is $5, cost \\${x} here, path C:\\temp\n',
+    ru: 'цена $5, стоимость \\${y} тут, путь C:\\temp\n',
+    zh: '价格 $5，费用 \\${z}，路径 C:\\temp\n',
+  };
   const bodyText =
-    'export default {\n' +
-    '  en: `cost \\${x\n`,\n' +
-    '  ru: `цена \\${y\n`,\n' +
-    '  zh: `价格 \\${z\n`,\n' +
-    '};\n';
+    langSeparator('en') + '\n' + RAW.en +
+    langSeparator('ru') + '\n' + RAW.ru +
+    langSeparator('zh') + '\n' + RAW.zh;
   const { units } = await validate(baseFixtures(), null, (c) =>
-    write(path.join(c, 'sec-1', 'body-1.js'), bodyText));
+    write(path.join(c, 'sec-1', 'body-1.md'), bodyText));
   const part = units.get('sec-1').parts[0];
-  assert.equal(part.en, 'cost ${x\n');
-  assert.equal(part.ru, 'цена ${y\n');
-  assert.equal(part.zh, '价格 ${z\n');
+  assert.equal(part.en, RAW.en);
+  assert.equal(part.ru, RAW.ru);
+  assert.equal(part.zh, RAW.zh);
 }
 
