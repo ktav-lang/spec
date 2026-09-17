@@ -19,7 +19,7 @@ import {
   withKeyOrder,
   write,
 } from '../helpers.mjs';
-import * as locks from '../locks.mjs';
+import * as locks from '../transactions/locks.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';

@@ -5,8 +5,8 @@
 // place instead of being buried inside the harness modules.
 
 import { write } from '../helpers.mjs';
-import * as locks from '../locks.mjs';
-import * as transactions from '../transactions.mjs';
+import * as locks from './locks.mjs';
+import * as transactions from './harness.mjs';
 import test from 'node:test';
 
 test('write build restores missing generated content READMEs from README.source.js', (t) => transactions.writeBuildRestoresMissingGeneratedContentReadmesFromReadmeSourceJs(t));

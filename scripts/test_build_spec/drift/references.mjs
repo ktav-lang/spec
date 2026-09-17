@@ -6,7 +6,7 @@ import path from 'node:path';
 import {
   checkHandwrittenVersionReferences,
   writeSectionInventoryLock,
-} from '../build_spec.mjs';
+} from '../../build_spec.mjs';
 
 import {
   APPENDIX_META_REL,
@@ -15,7 +15,7 @@ import {
   baseFixtures,
   copyDriftCheckInputs,
   makeContent,
-} from './helpers.mjs';
+} from '../helpers.mjs';
 
 export async function checkHandwrittenVersionReferencesAcceptsTheRealRepoHandMaintainedFiles() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-ok-'));

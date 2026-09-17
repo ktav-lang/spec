@@ -8,7 +8,7 @@ import {
   checkHandwrittenVersionReferences,
   writeSectionInventoryLock,
 } from '../../build_spec.mjs';
-import * as references from '../references.mjs';
+import * as references from './references.mjs';
 import test from 'node:test';
 
 test('checkHandwrittenVersionReferences accepts the real repo hand-maintained files', (t) => references.checkHandwrittenVersionReferencesAcceptsTheRealRepoHandMaintainedFiles(t));
