@@ -1,0 +1,1 @@
+{"expected_error": "EmptyKey", "note": "Empty quoted segment via the backtick delimiter (opening backtick immediately followed by the closing backtick, no content) -- EmptyKey (Sec 5.3.3), same category as the double- and single-quote variants (quoted_double.ktav, quoted_single.ktav), confirming the empty-segment rule is delimiter-independent for all three quote characters."}

@@ -1,0 +1,1 @@
+{"value": {"s": " ))\n x"}, "unrepresentable_reason": "LeadingWhitespaceCollision", "note": "The parser-produced multi-line String has a segment trimmed to )) and a shared leading space at the same position on every non-blank segment."}

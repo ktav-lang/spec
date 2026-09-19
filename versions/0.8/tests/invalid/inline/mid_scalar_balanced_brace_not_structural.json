@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "§ 5.8.5 dispatches to compound-or-scalar exactly once, at the value's first non-whitespace byte. The value starts with `x`, so the balanced `{y,z}` that follows is literal content, not a nested compound; its comma ends the scalar and `z}` is not a valid pair."}

@@ -1,0 +1,1 @@
+{"expected_error":"MalformedInlineCompound","note":"A same-line matching `}` closes the inline object; non-whitespace content after it is malformed."}

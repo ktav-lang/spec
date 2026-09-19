@@ -104,10 +104,10 @@ export async function writeBuildRejectsASymlinkedAncestorOfAWriteRoot(t) {  if (
   try {
     const realRepo = path.join(temp, 'real-repo');
     const repoLink = path.join(temp, 'repo-link');
-    const realVersionDir = path.join(realRepo, 'versions', '0.7');
+    const realVersionDir = path.join(realRepo, 'versions', '0.8');
     makeContent(realVersionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     makeDirectoryLink(realRepo, repoLink);
-    const versionDir = path.join(repoLink, 'versions', '0.7');
+    const versionDir = path.join(repoLink, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     const build = await buildBuffers(contentDir);
 

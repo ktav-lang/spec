@@ -1,0 +1,1 @@
+{"lax_value": {"zips": [98101, 1234]}, "expected_error": "LossyScalar", "body": "01234", "canonical": "1234", "note": "The check applies to a bare (multi-line) Array item, on its own line, not only to inline scalars."}

@@ -112,11 +112,11 @@ test('production-shaped content uses the default section inventory lock under re
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-production-path-'));
   try {
     const repoRoot = path.join(temp, 'repo');
-    const versionDir = path.join(repoRoot, 'versions', '0.7');
+    const versionDir = path.join(repoRoot, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     const manifest = ['frontmatter', 'named-abstract', 'sec-1'];
     makeContent(versionDir, baseFixtures(), manifest);
-    const lockPath = path.join(repoRoot, 'scripts', 'locks', 'section-inventory.0.7.lock.json');
+    const lockPath = path.join(repoRoot, 'scripts', 'locks', 'section-inventory.0.8.lock.json');
     write(lockPath, JSON.stringify({
       format: 'ktav-section-inventory',
       units: lockUnits(baseFixtures(), manifest),

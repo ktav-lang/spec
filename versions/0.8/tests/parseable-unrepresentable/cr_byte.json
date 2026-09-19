@@ -1,0 +1,1 @@
+{"value": {"s": "a\rb"}, "unrepresentable_reason": "CRByte", "note": "The parser-produced String contains a CR decoded from the inline-compound escape; a conforming writer must reject it."}

@@ -192,7 +192,7 @@ export async function readmeDocumentedSec99MetaJsExampleIsAcceptedVerbatimInENRU
   for (const [lang, readmeName] of READMES) {
     await t.test(`${readmeName}: documented sec-9.9/meta.js example is accepted verbatim`, async () => {
       const readme = fs.readFileSync(
-        new URL('../../../versions/0.7/content/' + readmeName, import.meta.url), 'utf8');
+        new URL('../../../versions/0.8/content/' + readmeName, import.meta.url), 'utf8');
       const m = readme.match(/`sec-9\.9\/meta\.js`:\s*\n+```js\n([\s\S]*?)```/);
       assert.ok(m, `sec-9.9/meta.js example not found in ${readmeName}`);
       const documented = m[1];

@@ -19,7 +19,7 @@ export const langSeparator = (lang) => `>>>>> lang=${lang}`;
 export const RELEASE_FILE = 'release.js';
 export const VERSION_TOKEN = '@@VERSION@@';
 export const DATE_TOKEN = '@@DATE@@';
-export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.7.lock.json';
+export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.8.lock.json';
 
 const NUMBERED_HEADING_PREFIX_RE = /^\d+(?:\.\d+)*/u;
 const UNICODE_WORD_CODE_POINT_RE = /^[\p{L}\p{N}_]/u;

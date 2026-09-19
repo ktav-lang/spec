@@ -1,0 +1,7 @@
+script: (
+{
+## inside a multi-line string, ## is just literal text
+# single hash too
+[x]
+}
+)

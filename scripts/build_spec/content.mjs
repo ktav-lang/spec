@@ -8,6 +8,8 @@ import {
   LANGS,
   OUT_FILES,
   BODY_FILE_RE,
+  MAX_BODY_PARTS,
+  README_FILES,
   README_SOURCE_FILE,
   RELEASE_FILE,
   bodyFileName,
@@ -107,6 +109,58 @@ function structuralMeta(unit, meta) {
 export function substituteReleaseTokens(text, release) {
   return text.replaceAll(VERSION_TOKEN, release.version)
     .replaceAll(DATE_TOKEN, release.released);
+}
+
+// Facts about this corpus and this builder that the author instructions
+// would otherwise restate by hand, in three languages.
+//
+// Every one of them had already rotted: the instructions claimed 103
+// units when there were 105, and 97 numbered when there were 99. Those
+// are not opinions a writer can hold — they are counts the manifest
+// already has, copied into prose and then left behind. The same goes for
+// the split constants, which live in shared.mjs and were transcribed
+// into all three language blocks.
+//
+// Substituting them removes the second copy. It does NOT stop a future
+// author typing `105` instead of the token — no check can tell a stale
+// literal from a deliberate one — but it removes the reason to, and the
+// guard below makes a MISSPELLED token fail the build rather than ship.
+export function derivedFacts(manifest) {
+  const unitName = (unit) => unit.slice(unit.lastIndexOf('/') + 1);
+  const numbered = manifest.filter((u) => unitName(u).startsWith('sec-')).length;
+  const named = manifest.filter((u) => unitName(u).startsWith('named-')).length;
+  return new Map([
+    ['@@UNIT_COUNT@@', String(manifest.length)],
+    ['@@NUMBERED_UNIT_COUNT@@', String(numbered)],
+    ['@@NAMED_UNIT_COUNT@@', String(named)],
+    ['@@BODY_LINE_LIMIT@@', String(BODY_LINE_LIMIT)],
+    ['@@BODY_TARGET_LINES@@', String(BODY_TARGET_LINES)],
+    ['@@MAX_BODY_PARTS@@', String(MAX_BODY_PARTS)],
+    ['@@LANG_LIST@@', LANGS.join(', ')],
+    ['@@LANG_COUNT@@', String(LANGS.length)],
+    ['@@README_SOURCE_FILE@@', README_SOURCE_FILE],
+  ]);
+}
+
+const DERIVED_TOKEN_RE = /@@[A-Z_]+@@/gu;
+
+// Tokens that are MEANT to reach the reader spelled as tokens. The
+// author instructions document the release-token mechanism, so they have
+// to be able to write @@VERSION@@ in prose; substituting there replaced
+// seven explanations of the mechanism with the version number.
+const PASS_THROUGH_TOKENS = new Set([VERSION_TOKEN, DATE_TOKEN]);
+
+export function substituteDerivedFacts(text, manifest, label) {
+  let out = text;
+  for (const [token, value] of derivedFacts(manifest)) out = out.replaceAll(token, value);
+  const straggler = [...out.matchAll(DERIVED_TOKEN_RE)]
+    .map((m) => m[0])
+    .find((token) => !PASS_THROUGH_TOKENS.has(token));
+  if (straggler !== undefined) {
+    fail(`${label} still contains placeholder ${straggler} after substitution; ` +
+      `either it is misspelled or it names a fact the builder does not derive`);
+  }
+  return out;
 }
 
 const RELEASE_KEY_ORDER = ['version', 'released'];
@@ -711,8 +765,21 @@ export async function buildBuffers(contentDir, options = {}) {
     totalLen[lang] = outputs[lang].reduce((n, b) => n + b.length, 0);
     bufs[lang] = Buffer.concat(outputs[lang], totalLen[lang]);
   }
+  // The author instructions carry facts this builder owns — how many
+  // units exist, what the split constants are. Substituting them here is
+  // what stops the document drifting from the corpus it describes.
+  // Derived facts are substituted; RELEASE tokens deliberately are not.
+  // This document explains the token mechanism, so it has to be able to
+  // write @@VERSION@@ in prose and have it survive to the reader —
+  // substituting there replaced seven explanations with "0.7.1". The
+  // derived-fact tokens are safe because nothing here names one; if that
+  // ever changes, this same trap opens for them and will need the same
+  // kind of escape the `>>>>> lang=` separator already has.
   const readmeBufs = {};
-  for (const lang of LANGS) readmeBufs[lang] = Buffer.from(readmes[lang], 'utf8');
+  for (const lang of LANGS) {
+    const text = substituteDerivedFacts(readmes[lang], manifest, README_FILES[lang]);
+    readmeBufs[lang] = Buffer.from(text, 'utf8');
+  }
   for (const lang of LANGS) {
     for (const token of [VERSION_TOKEN, DATE_TOKEN]) {
       if (bufs[lang].includes(token)) {

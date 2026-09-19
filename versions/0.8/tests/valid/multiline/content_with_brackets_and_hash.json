@@ -1,0 +1,1 @@
+{"script": "{\n## inside a multi-line string, ## is just literal text\n# single hash too\n[x]\n}"}

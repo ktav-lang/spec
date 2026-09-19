@@ -1,0 +1,1 @@
+{"expected_error": "InvalidKey", "note": "Comma is forbidden in key segments per 4 <key-char>. The byte ',' is a structural delimiter and may not appear in a key."}

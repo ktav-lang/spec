@@ -1,0 +1,10 @@
+{
+  "outer": [
+    "x\n)",
+    {
+      "note": "keep\nindent",
+      "empty_obj": {},
+      "empty_arr": []
+    }
+  ]
+}

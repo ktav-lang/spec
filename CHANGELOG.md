@@ -21,6 +21,43 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.8.0] — 2026-09-19
+
+Normative text and conformance fixtures for 0.8.0, under
+`versions/0.8/`. This is the current stable specification —
+`versions.ktav` points `stable` and `latest` at 0.8.0; 0.7.1 remains
+carried in the working tree as the previous stable release.
+
+No change to what a document's lax entry point (`parse`/`loads`) does:
+every 0.7.x document parses to the same Value, and every canonical
+rendering is unchanged byte for byte.
+
+### Breaking
+
+- **§ 8.1 — a parser-conforming implementation must now also expose a
+  strict parsing entry point** (`parse_strict` / `loads_strict`) and
+  reject every fixture under `versions/0.8/tests/strict-lossy/` with
+  `LossyScalar`, naming the exact `body`/`canonical` its oracle gives,
+  while the lax entry point continues to accept the same input
+  unchanged. No prior section required a strict entry point to exist
+  at all, which is why this is a MINOR bump rather than a patch, unlike
+  § 8.5 in 0.7.1 (which only made an existing § 8.1 obligation
+  checkable). In practice no known implementation is affected: the
+  Rust reference implementation's `parse_strict` already rejected
+  every one of these forms before this corpus existed, and every
+  binding built on it inherits that behaviour automatically. See
+  Appendix E for the migration note.
+
+### Added
+
+- **Appendix E — Migration from 0.7.x.**
+- **`versions/0.8/tests/strict-lossy/`** — 14 fixtures covering
+  leading-zero, plus-signed, base-prefixed (hex/octal/binary), and
+  underscored integers; negative zero; trailing-zero and exponent
+  floats; the § 5.9.8 scientific-region boundary; and the same check
+  inside an inline object, an inline array, a bare multi-line array
+  item, and a top-level inline document.
+
 ## [0.7.1] — 2026-09-16
 
 Editorial. No change to what a conforming parser or writer does: every

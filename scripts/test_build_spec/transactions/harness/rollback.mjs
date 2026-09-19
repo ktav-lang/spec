@@ -23,7 +23,7 @@ import { pathToFileURL } from 'node:url';
 export async function failedAtomicRenamePreservesTheDestinationAndCleansItsTemporaryFile() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-rename-failure-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const original = Buffer.from('original specification bytes\n');
@@ -56,7 +56,7 @@ export async function failedAtomicRenamePreservesTheDestinationAndCleansItsTempo
 export async function aLaterOutputRenameRollsBackAllSixOutputsAndCleansTempsAndBackups() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-transaction-rollback-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const build = await buildBuffers(contentDir);
@@ -107,7 +107,7 @@ export async function aLaterOutputRenameRollsBackAllSixOutputsAndCleansTempsAndB
 export async function rollbackPreservesAnUnrestorableBackupAndContinuesRestoringOtherOutputs() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-rollback-obstruction-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const build = await buildBuffers(contentDir);
@@ -162,7 +162,7 @@ export async function rollbackPreservesAnUnrestorableBackupAndContinuesRestoring
 export async function backupCleanupFailureNeverRollsBackCommittedSixOutputBuild() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-cleanup-failure-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const build = await buildBuffers(contentDir);
@@ -249,7 +249,7 @@ export async function aChildProcessDeathAfterBackupOrInstallRenameIsRecoveredOnT
   for (const [label, crashPoint] of [['backup', 'backup:2'], ['install', 'install:3']]) {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), `ktav-write-crash-${label}-`));
     try {
-      const versionDir = path.join(temp, 'versions', '0.7');
+      const versionDir = path.join(temp, 'versions', '0.8');
       const contentDir = path.join(versionDir, 'content');
       const fixtures = baseFixtures();
       makeContent(versionDir, fixtures, fixtures.map((u) => u.name));

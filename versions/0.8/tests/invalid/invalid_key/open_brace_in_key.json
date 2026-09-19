@@ -1,0 +1,1 @@
+{"expected_error": "InvalidKey", "note": "Raw (unescaped) `{` is forbidden in key segments per § 4 <key-char>. Only the escaped form `\\{` (§ 3.7) is a literal `{` in a key."}

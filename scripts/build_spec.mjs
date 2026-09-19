@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// build_spec.mjs — assembles versions/0.7/spec{,.ru,.zh}.md from per-section
-// content units in versions/0.7/content/ (manifest.js + unit dirs). Unit bodies
+// build_spec.mjs — assembles versions/0.8/spec{,.ru,.zh}.md from per-section
+// content units in versions/0.8/content/ (manifest.js + unit dirs). Unit bodies
 // come from body-1.js..body-N.js parts (N = meta.bodyParts), each holding
 // { en, ru, zh } strings. No content file is ever executed: body-*.js is
 // decoded by a raw-source scanner without running its code, and manifest.js /
@@ -38,6 +38,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { fail } from './build_spec/units/decode.mjs';
 import { LANGS, OUT_FILES, defaultSectionInventoryLockPath } from './build_spec/shared.mjs';
 import { buildBuffers, readRelease } from './build_spec/content.mjs';
+import { buildRootDocs, checkRootDocs, writeRootDocs } from './build_spec/root_docs.mjs';
 import { pendingTransactionPaths } from './build_spec/transaction/journal.mjs';
 import { recoverBuildOutputTransaction } from './build_spec/transaction/acquire.mjs';
 import {
@@ -66,7 +67,7 @@ function usage() {
     '  (default)   write the three spec files and three content READMEs\n' +
     '  --check     verify outputs are byte-identical; write nothing; silent on success\n' +
     '  --write-section-lock\n' +
-    '              regenerate scripts/locks/section-inventory.0.7.lock.json from\n' +
+    '              regenerate scripts/locks/section-inventory.0.8.lock.json from\n' +
     '              content/, printing every added, removed and changed unit first.\n' +
     '              The lock exists so that adding or removing a section is a\n' +
     '              deliberate act: read the printed delta before committing it.\n'
@@ -76,7 +77,7 @@ function usage() {
 async function cli() {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const root = path.resolve(scriptDir, '..');
-  const specDir = path.join(root, 'versions', '0.7');
+  const specDir = path.join(root, 'versions', '0.8');
   const contentDir = path.join(specDir, 'content');
 
   const args = process.argv.slice(2);
@@ -126,8 +127,20 @@ async function cli() {
   }
   const { bufs, totalLen, manifest, pieces, readmeBufs } = build;
 
+  // The four root documents are generated from their own triple sources.
+  // Built here, after buildBuffers, so a content failure still reports first.
+  let rootDocs;
+  try {
+    rootDocs = buildRootDocs(root);
+  } catch (e) {
+    process.stderr.write(`build_spec: ${e.message}
+`);
+    process.exit(1);
+  }
+
   if (!checkMode) {
     writeBuildOutputs(specDir, contentDir, build);
+    writeRootDocs(root, rootDocs);
     process.stdout.write(
       `build_spec: assembled ${manifest.length} units -> ` +
       LANGS.map((l) => path.relative(root, path.join(specDir, OUT_FILES[l]))).join(', ') + '\n'
@@ -137,6 +150,13 @@ async function cli() {
 
   // --check mode: silent on success, first divergence diagnostic on stderr.
   checkBuildOutputs(specDir, contentDir, build);
+  const rootProblems = checkRootDocs(root, rootDocs);
+  if (rootProblems.length > 0) {
+    for (const problem of rootProblems) {
+      process.stderr.write(`build_spec --check: ${problem}\n`);
+    }
+    process.exit(1);
+  }
   process.exit(0);
 }
 

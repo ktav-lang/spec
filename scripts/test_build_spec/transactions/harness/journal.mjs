@@ -72,13 +72,13 @@ export async function checkReportsPendingTransactionArtifactsWithoutRemovingOrRe
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-check-transaction-'));
   try {
     const scriptDir = path.join(temp, 'scripts');
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     installGenerator(scriptDir);
     const fixtures = baseFixtures();
     makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
     write(path.join(contentDir, 'release.js'), realReleaseJs());
-    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
+    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.8.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),
@@ -107,14 +107,14 @@ export async function normalCliWriteRecoversPreJournalOutputsBeforeClosedWorldVa
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-cli-prejournal-recovery-'));
   try {
     const scriptDir = path.join(temp, 'scripts');
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     fs.mkdirSync(path.join(scriptDir, 'locks'), { recursive: true });
     installGenerator(scriptDir);
     const fixtures = baseFixtures();
     makeContent(versionDir, fixtures, fixtures.map((u) => u.name));
     write(path.join(contentDir, 'release.js'), realReleaseJs());
-    write(path.join(scriptDir, 'locks', 'section-inventory.0.7.lock.json'),
+    write(path.join(scriptDir, 'locks', 'section-inventory.0.8.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, fixtures.map((u) => u.name)),

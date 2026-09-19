@@ -66,14 +66,22 @@ function unitMeta(kind, opts = {}) {
 const TEST_RELEASE = { version: '4.5.6', released: '2020-06-01' };
 
 // The real repo's hand-maintained root files (versions.ktav + the three root
-// READMEs) must be consistent with this, per versions/0.7/content/release.js.
+// READMEs) must be consistent with this, per versions/0.8/content/release.js.
 const REAL_RELEASE = JSON.parse(
-  fs.readFileSync(path.join(process.cwd(), 'versions', '0.7', 'content', 'release.js'), 'utf8')
+  fs.readFileSync(path.join(process.cwd(), 'versions', '0.8', 'content', 'release.js'), 'utf8')
     .replace(/^export default /, ''));
 
+// What a real repository root holds, for fixtures that run the CLI over
+// a temp copy. `versions.ktav` is the only genuinely hand-written entry
+// left; README and CHANGELOG are now generated from their `.source.md`,
+// and the sources must be copied WITH them. An artifact arriving without
+// its source is precisely the state the builder refuses — correctly, and
+// this list going stale is what made it refuse a fixture.
 const HANDWRITTEN_ROOT_FILES = [
   'versions.ktav',
+  'README.source.md',
   'README.md', 'README.ru.md', 'README.zh.md',
+  'CHANGELOG.source.md',
   'CHANGELOG.md', 'CHANGELOG.ru.md', 'CHANGELOG.zh.md',
 ];
 
@@ -85,13 +93,13 @@ const HANDWRITTEN_ROOT_FILES = [
 // manifest. Only its NAME is fixed.
 const REAL_MANIFEST = JSON.parse(
   fs.readFileSync(
-    path.join(process.cwd(), 'versions', '0.7', 'content', 'manifest.js'), 'utf8')
+    path.join(process.cwd(), 'versions', '0.8', 'content', 'manifest.js'), 'utf8')
     .replace(/^export default /, ''));
 
 const APPENDIX_UNIT = REAL_MANIFEST.find(
   (unit) => unit.slice(unit.lastIndexOf('/') + 1) === `sec-${REAL_RELEASE.version}`);
 
-const APPENDIX_META_REL = `versions/0.7/content/${APPENDIX_UNIT}/meta.js`;
+const APPENDIX_META_REL = `versions/0.8/content/${APPENDIX_UNIT}/meta.js`;
 
 function copyHandwrittenRootFiles(root) {
   for (const rel of HANDWRITTEN_ROOT_FILES) {
@@ -114,7 +122,7 @@ function copyDriftCheckInputs(root) {
   // Appendix A at all — that is how synthetic content directories opt
   // out. Copy the real one so these tests are checking the real
   // behaviour rather than the opt-out path.
-  const manifestRel = 'versions/0.7/content/manifest.js';
+  const manifestRel = 'versions/0.8/content/manifest.js';
   fs.copyFileSync(path.join(process.cwd(), manifestRel), path.join(root, manifestRel));
 }
 

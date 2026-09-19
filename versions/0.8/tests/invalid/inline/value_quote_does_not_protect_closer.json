@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "§ 5.3.3 quoting applies only to key segments; in an inline scalar VALUE, `\"` is an ordinary byte. The first unescaped `}` closes the Object, leaving trailing content `b\"}`."}

@@ -54,7 +54,7 @@ export async function checkHandwrittenVersionReferencesRejectsStablePointingAtVe
     copyDriftCheckInputs(root);
     const ktav = path.join(root, 'versions.ktav');
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
-      .replace('path: versions/0.7', 'path: versions/0.6'));
+      .replace('path: versions/0.8', 'path: versions/0.6'));
     await assert.rejects(
       () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
       (e) => /versions\.ktav: stable\.path is "versions\/0\.6"/u.test(e.message));

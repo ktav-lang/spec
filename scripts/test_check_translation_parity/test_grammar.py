@@ -236,7 +236,7 @@ class GrammarTests:
         repo_root = REPO_ROOT
         per_language = {}
         for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
-            path = os.path.join(repo_root, "versions", "0.7", name)
+            path = os.path.join(repo_root, "versions", "0.8", name)
             lines = ctp.read_lines(path)
             sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
             start, end = sections["3.6"]
@@ -304,7 +304,7 @@ class GrammarTests:
         repo_root = REPO_ROOT
         signatures = []
         for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
-            path = os.path.join(repo_root, "versions", "0.7", name)
+            path = os.path.join(repo_root, "versions", "0.8", name)
             with open(path, encoding="utf-8") as f:
                 lines = [line.rstrip("\n") for line in f.readlines()]
             sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
@@ -623,7 +623,7 @@ class GrammarTests:
             "grammar production RHS mismatch for <escapable-byte>", out)
 
     def test_repository_content_pin_grammar_has_no_malformed_productions(self):
-        # Protective test over the ACTUAL versions/0.7/spec.md: fixes the
+        # Protective test over the ACTUAL versions/0.8/spec.md: fixes the
         # expected set of productions this checker holds to exact BNF
         # parity, and asserts zero malformed productions right now. If
         # this count or set ever drifts, it means either a new production
@@ -631,7 +631,7 @@ class GrammarTests:
         # guards against -- a real production silently stopped
         # tokenizing and fell through the allowlist gap undetected.
         repo_root = REPO_ROOT
-        spec_path = os.path.join(repo_root, "versions", "0.7", "spec.md")
+        spec_path = os.path.join(repo_root, "versions", "0.8", "spec.md")
         with open(spec_path, encoding="utf-8") as f:
             lines = [l.rstrip("\n") for l in f.readlines()]
         sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)

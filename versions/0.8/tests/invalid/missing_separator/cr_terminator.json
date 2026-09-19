@@ -1,0 +1,1 @@
+{"expected_error": "MissingSeparator", "note": "A `CR` byte (0x0D) is a line terminator per § 3.2. `data: before<CR>after<LF>` therefore parses as two lines: `data: before` (Object pair, value = String \"before\") and `after` (bare scalar in Object root). The second line has no `:` separator and raises MissingSeparator (§ 6.6)."}

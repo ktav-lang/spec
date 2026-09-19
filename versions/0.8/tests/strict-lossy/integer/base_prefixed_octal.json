@@ -1,0 +1,1 @@
+{"lax_value": {"umask": 493}, "expected_error": "LossyScalar", "body": "0o755", "canonical": "493", "note": "An octal-prefixed integer literal canonicalizes to plain decimal."}

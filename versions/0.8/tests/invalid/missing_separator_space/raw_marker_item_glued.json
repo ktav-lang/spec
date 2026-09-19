@@ -1,0 +1,1 @@
+{"expected_error": "MissingSeparatorSpace", "note": "A trimmed array-item line beginning with :: commits to the raw-marker form; ::x has no separator-end whitespace or EOL."}

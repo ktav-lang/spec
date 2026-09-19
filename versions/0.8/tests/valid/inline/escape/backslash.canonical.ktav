@@ -1,0 +1,7 @@
+a: {
+    win_path: C:\Users\alice
+    unix_path: /home/alice
+}
+b: [
+    escaped\\here
+]

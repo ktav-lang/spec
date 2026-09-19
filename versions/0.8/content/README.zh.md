@@ -1,0 +1,390 @@
+# versions/0.7/content/ —— 规范内容单元
+
+**Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
+
+## 这个目录是什么
+
+本目录是 `versions/0.7/spec.md`、`versions/0.7/spec.ru.md` 与
+`versions/0.7/spec.zh.md` 的**逐节来源(源头)**。
+
+- `versions/0.7/` 下的三个 `.md` 文件是**生成的构件**。它们仍保留在
+  仓库中,以便在 GitHub 上直接阅读规范,但**切勿手动编辑**:手工
+  改动会被下一次构建覆盖,并使 `node scripts/build_spec.mjs --check`
+  失败。
+- 本目录中的**内容单元**(每节一个文件夹)才是人来编辑的对象。
+- `scripts/check_translation_parity.py` 仍继续对生成的 `.md` 文件
+  运行,作为事后结构关卡;`node scripts/build_spec.mjs --check` 才是
+  逐字节关卡。
+
+## 当前清单
+
+共 107 个单元:1 个 `frontmatter/`、100 个带编号的 `sec-<number>/`
+(`sec-1`、`sec-3.1`、`sec-5.3.3`、`sec-10.7`),以及 6 个命名的
+`named-<slug>/`(`named-abstract`、`named-appendix-a` ..
+`named-appendix-d`)。另有:
+
+- `scripts/locks/section-inventory.0.7.lock.json` —— 独立的、有版本的有序
+  inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝与 manifest 的成员
+  或顺序发生漂移。
+- `README.source.md` —— 本目录三个 README 共用的 `{ en, ru, zh }` source
+  object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+  `README.zh.md`。
+- `release.js` —— 唯一的发布声明:`version` + `released`(见下文)。
+  它与 `meta.js` 一样采用规范的 `export default` + JSON 形态,是唯一
+  写有当前版本号与发布日期的地方。
+- `manifest.js` —— 单元的有序列表(见下文)。
+- `package.json` —— `{"type":"module"}`。历史遗留:曾用于
+  `build_spec.mjs` 把 `meta.js`/`body-*.md` 当作 ES 模块动态导入的阶段。
+  在完成 closed-world 加固后(`content/` 下再无任何代码被执行——
+  `manifest.js` 与 `meta.js` 作为 UTF-8 文本读取并通过 `JSON.parse` 解析,
+  `body-*.md` 经静态扫描后解码),此文件已不再是功能上必需的,但仍保留
+  在原位,顶层仍允许它存在。
+
+## 文件夹命名约定
+
+- **带编号的节**:`sec-<number>`,其中 `<number>` 是标题中出现的
+  确切节号:`sec-1`、`sec-5.3.3`。
+- **不带编号的节**(没有编号的 >= 2 级标题):`named-<slug>`。slug
+  **仅由英文标题文本**派生(因此与语言无关):
+  1. 如有 `.`,在第一个 `.` 处截断("Appendix A. Changes" ->
+     "Appendix A");
+  2. 转小写;
+  3. 把每一段 `[a-z0-9]` 之外的连续字符替换为单个 `-`;
+  4. 去除首尾的 `-`。
+
+  例:"Abstract" -> `abstract`;"Appendix D. Migration from 0.6.x" ->
+  `appendix-d`。
+- **`frontmatter/`** 是特殊单元,保存第一个节标题之前的全部内容:
+  h1 标题行、`**Languages:**` / `**Version:**` / `**Date:**` 字段块,
+  以及——仅在 `ru`/`zh` 正文串中——关于译文的信息性免责声明
+  blockquote。h1 标题**位于**frontmatter 正文内容之内,原样保留;
+  `frontmatter` 自身没有标题。
+
+## 单元内容
+
+每个单元目录恰好包含:`meta.js`、`body-1.md`、……、`body-N.md`
+(N >= 1)。正文文件**就是** Markdown,这正是该格式的要点:规范本身
+是一份 Markdown 文档,而把它存放在 JS 字符串字面量里,意味着每个代码
+围栏都要写成转义的反引号。`meta.js` 不是 Markdown,它是静态数据文件,
+`.js` 扩展名标记的正是这一区别。单元目录不包含任何其他内容。
+
+### `meta.js`
+
+每个 `meta.js` 使用 `export default { ... }`(JSON 风格)。三种形态,
+逐字如下:
+
+```js
+// frontmatter/meta.js
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
+
+// sec-3.1/meta.js
+export default {
+  "kind": "numbered",
+  "number": "3.1",
+  "sep": " ",
+  "level": 3,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+
+// named-appendix-a/meta.js
+export default {
+  "kind": "named",
+  "number": null,
+  "level": 2,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+整个文件必须逐字节等于 `export default ` 加上以严格 JSON 序列化的值
+（`JSON.stringify(value, null, 2)`）再加单个末尾换行：每行一个键、
+2 空格缩进、LF 换行、无末尾分号。`export default ` 之后的 payload 是作为
+JSON（`JSON.parse`）解析的，**不是**作为 JavaScript 对象字面量求值——
+末尾逗号、注释、不带引号的键以及分号在那里永远不合法（与 `body-<k>.md`
+不同，后者是 JS 源码，只是受到严格限制）。重复的键同样会被拒绝：构建器
+将文件与上面的规范序列化逐字节比较，重复键会使原始文件与它不一致。
+
+字段含义:
+
+- `kind` —— `frontmatter`、`numbered` 或 `named`。
+- `number` —— 以字符串表示的节号(`"3.1"`),非编号单元与
+  frontmatter 为 `null`。
+- `level` —— 标题中 `#` 的数量(`##` = 2)。frontmatter 为 `null`。
+- `title` —— 每种语言的标题文本,**不含**前导编号与分隔符;生成器
+  会重新拼接上去。
+- `sep` —— 编号与标题之间实际使用的分隔符。**它为何存在:**规范
+  的标题约定有意混用 `## 1. Introduction`(顶层编号节,点 + 空格)
+  与 `### 3.1 Character Set`(更深的子节,仅空格)。生成器必须逐字节
+  复现每个标题,因此实际分隔符按单元记录。只有 `". "` 与 `" "` 合法。
+  抽取脚本强制同一单元的三种语言使用相同的 `sep`。
+- `bodyParts` —— 该单元 `body-*.md` 文件的整数个数(`body-1.md` ..
+  `body-N.md` 中的 N)。总是 >= 1。所有单元(包括 `frontmatter`)都
+  有,且总是排在**最后**。构建器每个单元最多接受 4096 个部分，并在
+  读取正文文件前拒绝更大的值。
+
+### `body-<k>.md`
+
+每个 `body-<k>.md` 都是 Markdown,每种语言一个块,每个块由自己的
+分隔行引入:
+
+```text
+ >>>>> lang=en
+ ...raw text chunk k for English...
+ >>>>> lang=ru
+ ...
+ >>>>> lang=zh
+ ...
+```
+
+上面的示例特意缩进了一个空格:分隔行只有位于行首才会被识别,缩进后
+就是普通内容。如果正文确实需要逐字引用一个分隔行,这也正是其退路。
+
+一个块从其分隔行的下一行开始,到下一个分隔行的前一行结束;最后一个
+块则到文件末尾。因此块保留自己的结尾换行,以空行结尾的块也保留那个
+空行。
+
+**没有转义。**内容按其本来面目存储:代码围栏就写成代码围栏,反斜杠
+就是反斜杠,`${` 就是两个普通字符。这正是该格式采用 Markdown 而非
+字符串字面量的原因——规范中满是围栏示例,而它们过去每一个都要用转义
+反引号来书写。
+
+内容唯一不能包含的,是以 `>>>>> lang=` 开头的行。选择这种写法,是
+因为它不是本文档自身使用的语法:Markdown 的标题标记会与它所分隔的
+正文相互竞争。多余或重复的分隔行是构建错误,而绝不是一个无声的块
+边界。
+
+格式本身不指定语言,也不固定顺序——解码结果是一个映射。它只要求同一
+语言在一个文件中至多出现一次。所有源文件携带相同的集合、且该集合恰好
+是 `en`、`ru`、`zh`,则是本规范在格式之上自行附加的规则。
+
+某语言单元的完整正文,是该语言第 1..N 块按顺序的**拼接**,块与块
+之间**没有分隔符**。
+
+**发布令牌。**任何单元正文都可以包含纯 ASCII 令牌 `@@VERSION@@` 与
+`@@DATE@@`;它们在这里就是普通文本,因此无需转义。构建时 Builder 会在
+所有语言中把它们替换为 `release.js` 的 `version` / `released` 值。残留到
+spec 输出中的令牌会使构建失败;README.source.md 永不被替换,可按字面
+提及这些令牌。
+
+**拆分规则(精确数字)。**令 `L` 为该单元三种语言正文行数的最大值。
+
+- 若 `L <= 40`,则 `N = 1`(单个 `body-1.md`)。
+- 若 `L > 40`,则 `N = ceil(L / 30)`。
+
+N-1 个切割点**对整个单元只选一次**,并应用于所有语言。它们被选为段落
+边界的**索引**,而不是字符偏移:边界 `i` 是第 i 个空行,而这在每种
+翻译中都是同一个断点,因此 `body-k.md` 在三种语言中持有同一个片段。
+索引取自行数最多的那个语言,因为上面的大小规则是以它的行数表述的;
+若行数相等,则按声明的语言顺序决定,选择因而是确定的。在该语言内部,
+取距比例目标 `i*L/N` 最近的 N-1 个边界;距离相等时取较早的那个。若
+单元的内部空行少于 N-1 个,则把 N 降为(可用边界数 + 1),而不是失败。
+
+各语言之间的语义对齐**正是**目标,共享切割点就是为此。旧规则让每种
+语言独立拆分,结果一个文件里放着三段互不相干的内容:表达同样的意思
+时,中文大约只有英文的一半长度,因此它的比例目标落在别处,分块也就
+偏离了另外两种语言。由于生成器会重新拼接,内容并未丢失,但正文文件
+无法被打开对照——而源文件改用 Markdown 正是为了这一点。
+
+有一个需要预期的后果:修改译文会改变其行数、移动共享边界,并使**其他**
+语言的分块不再符合强制规则。在该单元被重新切割之前,构建器会拒绝构建。
+这是规则在生效,而不是出了故障。
+
+## 正文文件(对逐字节精确性至关重要)
+
+每个语言的单元正文,是 `body-1.md` .. `body-N.md` 字符串值按顺序的
+拼接,**块之间不插入任何分隔符**。生成器在单元之间也不插入任何
+内容,因此空行分隔位于单元**最后一块的末尾**:
+
+- 除最后一个单元外,每个单元都恰好以一行空行结尾,即最后一块的
+  字符串以 `"\n\n"` 结束。
+- **manifest 顺序中的最后一个单元**以单个末尾换行结束、不带末尾
+  空行(`"\n"`),作为其最后一块的最后几个字节。
+- frontmatter 正文以第一个节标题之前的那一行空行结尾。
+
+当单元被拆为多块时,这些末尾字节就放在最后一块的末尾——更早的
+块除了拆分产生的空白外,不带有自己的特殊末尾空白。
+
+弄错这一点,是让 `--check` 失败的头号方式。
+
+## `manifest.js`
+
+按真实文档顺序排列的 107 个文件夹名的显式**有序**数组。它以
+`["frontmatter", "named-abstract", "sec-1", ...]` 开头,以
+`[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
+`"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的
+真实位置。独立的 lock `scripts/locks/section-inventory.0.7.lock.json`
+按 manifest 顺序为每个单元保存一条确定性的结构记录。每条记录严格包含
+`{ unit, kind, number, level, sep }`;缺少的结构值使用 `null`。
+`kind`、`number`、`level` 和 `sep` MUST 与对应的 `meta.js`
+字段一致。标题文字和正文仍可编辑,不受 lock 保护。有意新增或删除章节时,
+两个文件 MUST 同时更新;仅修改 manifest 或层级 meta 字段会被拒绝。
+
+### `release.js`
+
+`release.js` 恰好包含 `{ version, released }`,且键序正是如此:当前
+规范版本号及其发布日期。与 `meta.js` 一样,该文件必须与 `export default `
++ `JSON.stringify(value, null, 2)` + 一个换行逐字节一致;任何其他序列化
+都会被拒绝。它是唯一写有版本号与日期的地方,并供给:
+
+- frontmatter 单元的 `**Version:**` / `**Date:**` 行——通过上文描述的
+  `@@VERSION@@` / `@@DATE@@` 令牌替换;
+- section-inventory lock 检查:Builder 用它校验 lock 的 `version`;
+- `node scripts/build_spec.mjs`（write 与 `--check`）还会校验
+  `versions.ktav` 与三个根目录 README 对当前版本和日期的引用与
+  `release.js` 声明完全一致;任何漂移都会使构建失败,并逐个指出
+  不一致的文件。
+
+## README 源对象
+
+`README.source.md` 是本目录三个 README 共用的 `{ en, ru, zh }` source
+object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+`README.zh.md`;手动修改任何一个 README 都会使 `--check` 失败。
+
+## Markdown 安全契约
+
+单元正文 MUST NOT 在已确认的 fenced code block 之外包含原始 HTML 块
+开启语法。此封闭规则涵盖 CommonMark 的全部七种 HTML 块形式：
+`script/pre/style/textarea` 标签、注释、处理指令、声明、CDATA 区段、块级标签
+列表，以及其他完整的开始或结束标签。类型 7 仅在线路完整由有效的开始或结束
+标签及可选空白组成时适用；自动链接、格式错误的类标签文本和含内联标签的正文
+不受该规则禁止。已确认的 fenced code block 内仍允许类似 HTML 的文本。
+
+## 生成器如何构建文件
+
+`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它以
+严格的 UTF-8 读取 `manifest.js`/`meta.js`,并对 `export default ` 之后的
+payload 执行 `JSON.parse`,然后**按顺序**静态扫描并解码 `body-1.md` ..
+`body-N.md`(`content/` 下的代码从不被执行),然后:
+
+- 对 `frontmatter`:输出 `body-1` .. `body-N` 的 `en` / `ru` / `zh`
+  字符串的拼接,原样;
+- 对其他任何单元:输出
+  `'#'.repeat(level) + ' ' + (numbered ? number + sep : '') + title[lang] + '\n'`,
+  然后输出正文字符串的拼接;
+- 整体拼接。
+
+命令:
+
+```sh
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
+node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
+```
+
+`--check` 会验证 inventory lock,在内存中重新生成全部六个文件,并与
+已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
+退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
+信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。写入模式
+会先准备全部六个临时文件和可恢复的备份。事务 journal 是一个原子替换
+并 fsync 的快照,只包含经过验证的 nonce、digest、阶段索引和六个已知输出
+标识;所有临时文件与备份路径都由构建器派生。durable commit marker 之前,
+恢复会还原精确的旧字节;之后会保留精确的新字节并只完成清理。活跃的协作
+lock 会拒绝第二个写入者。Linux 和 Windows 的所有者使用与回收者相同的可观测
+进程启动路径来生成 incarnation;如果该来源不可用,构建器会记录未验证的
+incarnation,并且永远不会回收仍然存活的 PID。仅凭 lease 过期绝不会回收仍在
+运行且 incarnation 匹配的所有者;只有已证明进程退出或已证明 incarnation 不同
+才可回收。回收会先原子发布新的所有者专属 claim,再捕获过期 target,并且只删除
+精确旧所有者的 artifact。release 会先捕获 alias;如果发现 replacement,会先恢复
+它,再删除所有者 artifact。旧的固定 candidate、claim 和 lease 只有在保守验证
+所有者已不存在后才会清理;`--check` 只报告它们。如果存在未完成的 journal、lock 或事务文件,
+`--check` 会报告它们并且不执行恢复或清理。某些平台(尤其 Windows)不支持
+目录 fsync,因此构建器明确提供 file-only crash durability,不会虚假声称
+它能防止断电导致的数据丢失。
+
+`node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
+(负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条
+closed-world 不变量都会被拒绝。
+
+推荐工作流:编辑单元文件 -> 运行 `node scripts/build_spec.mjs` ->
+核对三个 `.md` 文件的 `git diff` 是否与你的意图完全一致 -> 运行
+`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> 把单元改动与重新生成的
+`.md` 文件**一起**提交。
+
+## 如何新增一节
+
+示例(虚构):新增顶层风格的节 `## 9.9 Widget Frobnication` 与子节
+`### 9.9.1 Widget Modes`,分隔符只用空格。
+
+步骤:
+
+1. 创建各单元的文件夹、`meta.js`(含 `"bodyParts": 1`)与
+   `body-1.md`(注意上面的末尾空行规则)。
+2. 把两个文件夹名按正确的文档位置插入 `manifest.js` 与 inventory
+   lock 的 `units` 数组(位于紧邻 9.9 之前的单元之后)。
+3. 运行 `node scripts/build_spec.mjs`,检查 `git diff`,运行对等性
+   检查,然后把单元与重新生成的 `.md` 文件一起提交。
+
+`sec-9.9/meta.js`:
+
+```js
+export default {
+  "kind": "numbered",
+  "number": "9.9",
+  "sep": " ",
+  "level": 2,
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+注意:`sep` 取决于作者写出的标题文本。对于带点的标题
+`## 9.9. Widget Frobnication`,它是 `". "`;对于
+`## 9.9 Widget Frobnication`,则是 `" "`。记录你实际写下的形式,并
+保持一致。对于子节 `### 9.9.1 Widget Modes`,`sec-9.9.1/meta.js` 形态
+相同,只是 `"number": "9.9.1"`、`"level": 3`。
+
+`sec-9.9/body-1.md`(虚构占位内容),并标出末尾换行规则适用的位置:
+
+```js
+// sec-9.9/body-1.md  (last unit in manifest order? then en must end "\n", else "\n\n")
+export default {
+  en: `Frobnicate the widget.
+
+(body of 9.9)
+`,
+  ru: `...`,
+  zh: `...`,
+};
+```
+
+下一个单元标题之前的末尾空行,是该单元最后一块(此处 `body-1.md`,
+因为 `"bodyParts": 1`)的最后几个字节:上面 `en` 字符串以 `"\n\n"`
+结尾(恰好一行空行),除非 9.9 是 manifest 顺序中的最后一个单元——
+那它以单个 `"\n"` 结尾。多块单元中更早的块不携带这类末尾字节。
+
+## 历史 / 引导
+
+这套布局由一次性的机械迁移创建,记录在
+`scripts/archive/extract_content_units.py` 中:它按行范围逐字节切分
+当时的三个 `.md` 文件成单元(未重新键入任何文本),并验证了重建
+结果逐字节一致。后来该脚本被扩展为直接生成当前的 `body-*.md` 模式
+——每个单元有带 `bodyParts` 的 `meta.js` 加 `body-1..N`。该脚本
+仅作为出处留档,不是常规工具:它拒绝覆盖已存在的 `content/`,且
+没有覆盖标志。从零重建意味着先手动删除 `content/`,作为单独的、
+有意的动作。**日常**工作流是反方向:编辑单元,然后由
+`build_spec.mjs` 重新生成 `.md` 文件。
+
+## 范围之外
+
+CI 已在 `.github/workflows` 中于每次 push/PR 时运行
+`node scripts/build_spec.mjs --check` 与
+`node --test scripts/test_build_spec.mjs`。

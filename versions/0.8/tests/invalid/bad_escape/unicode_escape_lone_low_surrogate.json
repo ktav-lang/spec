@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "A low surrogate (U+DC00) with no preceding high surrogate is a lone surrogate."}

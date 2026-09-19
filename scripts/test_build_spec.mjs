@@ -20,6 +20,7 @@
 // it, not re-declared per file.
 
 import './test_build_spec/content/release-tokens.mjs';
+import './test_build_spec/content/root-docs.mjs';
 import './test_build_spec/markdown/headings.mjs';
 import './test_build_spec/markdown/html-and-links.mjs';
 import './test_build_spec/content/structure.mjs';

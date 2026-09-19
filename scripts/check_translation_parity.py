@@ -213,7 +213,7 @@ Purpose:
 
 Usage:
     python scripts/check_translation_parity.py <en.md> <translation.md> [<translation2.md> ...]
-    python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md [--verbose]
+    python scripts/check_translation_parity.py versions/0.8/spec.md versions/0.8/spec.ru.md versions/0.8/spec.zh.md [--verbose]
 
 Exit codes:
     0  every translation matches EN in all metrics for every section of

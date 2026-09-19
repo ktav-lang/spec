@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "An invalid escape before a matching inline closer takes precedence over UnterminatedInlineCompound."}

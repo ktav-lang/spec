@@ -1,0 +1,1 @@
+{"value": {"": "v"}, "unrepresentable_reason": "EmptyKeyName", "note": "An Object pair's name is the empty string. Sec 4 requires every key segment to contain at least one <key-token>, so no document can ever parse to this Value -- it can only be constructed programmatically. See Sec 5.9.0."}

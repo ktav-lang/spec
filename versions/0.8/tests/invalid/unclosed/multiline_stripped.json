@@ -1,0 +1,1 @@
+{"expected_error": "UnclosedCompound", "note": "Multi-line string opened with `(` but no matching `)`."}

@@ -1,0 +1,8 @@
+## Only lowercase forms become keywords. Any other casing is a String.
+real_true: true
+fake_true: True
+upper_true: TRUE
+mixed_true: TrUe
+real_null: null
+fake_null: NULL
+fake_null2: Null

@@ -1,0 +1,1 @@
+{"lax_value": {"versions": [1.9, 1.1]}, "expected_error": "LossyScalar", "body": "1.10", "canonical": "1.1", "note": "The check applies to a scalar nested inside an inline Array; the sibling item 1.9 is already canonical and is not reported."}

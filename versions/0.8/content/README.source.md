@@ -1,0 +1,1294 @@
+>>>>> lang=en
+# versions/0.7/content/ — spec content units
+
+**Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
+
+## What this directory is
+
+This directory is the **per-section source of truth** for
+`versions/0.7/spec.md`, `versions/0.7/spec.ru.md`, and
+`versions/0.7/spec.zh.md`.
+
+- The three `.md` files at `versions/0.7/` are **generated artifacts**. They
+  remain committed in the repo so the spec is directly readable on GitHub,
+  but they must **never be hand-edited**: a hand edit is overwritten by the
+  next build and makes `node scripts/build_spec.mjs --check` fail.
+- The **content units** in this directory (one folder per section) are what
+  humans edit.
+- `scripts/check_translation_parity.py` continues to run against the
+  generated `.md` files as an after-the-fact structural gate;
+  `node scripts/build_spec.mjs --check` is the byte-exact gate.
+
+## Current inventory
+
+@@UNIT_COUNT@@ units: 1 `frontmatter/`, @@NUMBERED_UNIT_COUNT@@ numbered `sec-<number>/` (`sec-1`,
+`sec-3.1`, `sec-5.3.3`, `sec-10.7`), and @@NAMED_UNIT_COUNT@@ named `named-<slug>/`
+(`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Plus:
+
+- `scripts/locks/section-inventory.0.7.lock.json` is an independent,
+  versioned ordered inventory. The builder requires it in normal CLI runs
+  and rejects manifest order or membership drift against it.
+- `README.source.md` is the single `{ en, ru, zh }` source object for the
+  three README files in this directory. The builder statically validates it
+  and generates `README.md`, `README.ru.md`, and `README.zh.md` from it.
+- `release.js` is the single release declaration: `version` + `released`
+  (see below). It has the same canonical `export default` + JSON shape as
+  `meta.js` and is the one place the current version and release date are
+  written.
+- `manifest.js` — the ordered list of units (see below).
+- `package.json` — `{"type":"module"}`. Historical: it was required back when
+  `build_spec.mjs` dynamically imported `meta.js`/`body-*.md` as ES modules.
+  Since the closed-world hardening that stopped executing any content source
+  (nothing under `content/` is ever dynamic-`import()`ed anymore — `manifest.js`
+  and `meta.js` are read as UTF-8 text and `JSON.parse`d, `body-*.md` is
+  statically shape-scanned and decoded), this file is no longer functionally
+  required, but is kept in place and still allowed at the top level.
+
+## Folder naming convention
+
+- **Numbered sections**: `sec-<number>`, where `<number>` is the exact
+  section number as it appears in the heading: `sec-1`, `sec-5.3.3`.
+- **Unnumbered sections** (level >= 2 headings without a number):
+  `named-<slug>`. The slug is derived from the **English heading text only**
+  (so it is language-independent):
+  1. cut at the first `.` if present ("Appendix A. Changes" -> "Appendix A");
+  2. lowercase;
+  3. replace every run of characters outside `[a-z0-9]` with a single `-`;
+  4. trim leading/trailing `-`.
+
+  Examples: "Abstract" -> `abstract`; "Appendix D. Migration from 0.6.x" ->
+  `appendix-d`.
+- **`frontmatter/`** is the special unit holding everything before the first
+  section heading: the h1 title line, the `**Languages:**` / `**Version:**` /
+  `**Date:**` field block, and — in the `ru`/`zh` body strings only — the
+  informative-translation disclaimer blockquote. The h1 title lives **inside**
+  the frontmatter body content, verbatim; `frontmatter` has no heading of its
+  own.
+
+## Unit contents
+
+Each unit directory contains exactly: `meta.js`, `body-1.md`, ..., `body-N.md`
+(N >= 1). A body file IS Markdown — that is the point of the format: the
+specification is a Markdown document, and holding it in JavaScript string
+literals meant every code fence was written as escaped backticks. `meta.js`
+is not Markdown; it is a static data file, and the `.js` extension marks
+exactly that difference. A unit directory contains nothing else.
+
+### `meta.js`
+
+Every `meta.js` uses `export default { ... }` (JSON-style). The three shapes,
+verbatim:
+
+```js
+// frontmatter/meta.js
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
+
+// sec-3.1/meta.js
+export default {
+  "kind": "numbered",
+  "number": "3.1",
+  "sep": " ",
+  "level": 3,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+
+// named-appendix-a/meta.js
+export default {
+  "kind": "named",
+  "number": null,
+  "level": 2,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+The whole file must be byte-identical to `export default ` followed by the
+value serialized as strict JSON (`JSON.stringify(value, null, 2)`) plus one
+trailing newline: one key per line, 2-space indent, LF line endings, no
+trailing semicolon. The payload after `export default ` is parsed as JSON
+(`JSON.parse`), **not** evaluated as a JavaScript object literal — trailing
+commas, comments, unquoted keys, and semicolons are never valid there
+(unlike `body-<k>.md`, which is Markdown and holds no code at all).
+Duplicate keys are rejected too: the builder compares the file byte-for-byte
+against the canonical serialization above, and a repeated key makes the raw
+file differ from it.
+
+Field meanings:
+
+- `kind` — `frontmatter`, `numbered`, or `named`.
+- `number` — the section number as a string (`"3.1"`), `null` for
+  non-numbered units and frontmatter.
+- `level` — the heading `#` count (`##` = 2). `null` for frontmatter.
+- `title` — the heading text in each language, **without** the leading
+  number and separator; the generator re-attaches them.
+- `sep` — the separator actually used between number and title. **Why it
+  exists:** the spec's heading convention deliberately mixes
+  `## 1. Introduction` (top-level numbered sections, dot + space) with
+  `### 3.1 Character Set` (deeper subsections, space only). The generator
+  must reproduce each heading byte-exactly, so the actual separator is
+  recorded per unit. Only `". "` and `" "` are legal. The extraction script
+  enforces that all three languages use the same `sep` for a unit.
+- `bodyParts` — the integer count of `body-*.md` files for the unit
+  (N in `body-1.md` .. `body-N.md`). Always >= 1. Present on ALL units,
+  including `frontmatter`, and always appended **last**. The builder
+  accepts at most @@MAX_BODY_PARTS@@ parts per unit and rejects larger values before reading
+  body files.
+
+### `body-<k>.md`
+
+Each `body-<k>.md` is Markdown carrying one block per language, each
+introduced by its own separator line:
+
+```text
+ >>>>> lang=en
+ ...raw text chunk k for English...
+ >>>>> lang=ru
+ ...
+ >>>>> lang=zh
+ ...
+```
+
+The example above is indented by one space on purpose: a separator is
+recognised only at the very start of a line, so an indented one is
+ordinary content. That is also the escape hatch if a body ever has to
+quote a separator literally.
+
+A block runs from the line after its separator to the line before the next
+separator, or to end of file for the last one. The block therefore keeps
+its own trailing newline, and a chunk ending in a blank line keeps that
+blank line.
+
+**There is no escaping.** The content is stored as itself: a code fence is
+written as a code fence, a backslash is a backslash, `${` is two ordinary
+characters. This is why the format is Markdown rather than a string
+literal — the specification is full of fenced examples, and every one of
+them used to be spelled with escaped backticks.
+
+The one thing the content may not contain is a line beginning
+`>>>>> lang=`. That spelling was chosen because it is not syntax this
+document uses: a Markdown heading marker would have competed with the
+prose it delimits. A stray or duplicated separator is a build error, never
+a silent block boundary.
+
+The format itself names no languages and fixes no order — the decoded
+result is a map. What it requires is that a language appear at most once
+per file. That every source carries the same set, and that the set is
+exactly `en`, `ru`, `zh`, is this specification's own rule layered on top.
+
+The unit's full body text for a language is the **concatenation** of chunks
+1..N, in order, with **no separator** between chunks.
+
+**Release tokens.** Any unit body may contain the plain-ASCII tokens
+`@@VERSION@@` and `@@DATE@@`; they are ordinary text here, so no
+escaping is needed. At build time the builder substitutes them with the
+`version` / `released` values from `release.js` in every language. A
+surviving token in a spec output fails the build; README.source.md is never
+substituted and may mention the tokens literally.
+
+**Splitting rule (exact numbers).** Let `L` = max line count over the unit's
+three language bodies.
+
+- If `L <= @@BODY_LINE_LIMIT@@`, `N = 1` (a single `body-1.md`).
+- If `L > @@BODY_LINE_LIMIT@@`, `N = ceil(L / @@BODY_TARGET_LINES@@)`.
+
+The N-1 cut points are chosen **once, for the whole unit**, and applied to
+every language. They are chosen as paragraph-boundary INDICES, not character
+offsets: boundary `i` is the i-th blank line, and that is the same break in
+every translation, so `body-k.md` holds the same fragment in all three
+languages. The indices come from the language with the most lines, since the
+size rule above is expressed in its lines; ties break on the declared
+language order, so the choice is deterministic. Within that language the
+N-1 boundaries closest to the proportional targets `i*L/N` are taken, and an
+equidistant tie chooses the earlier one. If the unit has fewer interior
+blank lines than N-1, N is reduced to (available boundaries + 1) rather than
+failing.
+
+Semantic alignment across languages IS the goal, and it is the reason the
+cuts are shared. Splitting each language independently — the earlier rule —
+put three unrelated slices in one file: Chinese runs about half the length
+of English for the same meaning, so its proportional targets landed
+elsewhere and its parts drifted away from the other two. Nothing was lost,
+because the generator concatenates, but a body file could not be opened and
+compared, which is the whole reason the sources are Markdown.
+
+One consequence to expect: editing a translation can change its line count,
+move a shared boundary, and leave the OTHER languages' parts disagreeing
+with the mandate. The builder refuses the build until the unit is re-cut.
+That is the rule working, not a fault.
+
+## Body files (critical for byte-exactness)
+
+The unit body in each language is the concatenation of `body-1.md` ..
+`body-N.md` string values, in order, with **no separator inserted between
+chunks**. The generator inserts nothing between units either, so
+blank-line separation lives at the END of the **last chunk of the unit**:
+
+- Every unit **except the last unit's** ends with exactly ONE blank line,
+  i.e. the last chunk's string ends with `"\n\n"`.
+- The **last unit in manifest order** ends with a single final newline and
+  no trailing blank line (`"\n"`), as the last bytes of its last chunk.
+- The frontmatter body ends with the one blank line before the first
+  section heading.
+
+When a unit is split into multiple chunks, those trailing bytes simply live
+at the end of the LAST chunk — earlier chunks carry no special trailing
+whitespace of their own beyond what the split produced.
+
+Getting this wrong is the #1 way to make `--check` fail.
+
+## `manifest.js`
+
+An explicit **ordered** array of the @@UNIT_COUNT@@ folder names in true document
+order. It starts `["frontmatter", "named-abstract", "sec-1", ...]` and ends
+`[..., "named-appendix-d"]`. It is **never sorted alphabetically**:
+`"sec-10.7"` must come after `"sec-2"`, and named sections sit at their real
+document positions. The independent lock at
+`scripts/locks/section-inventory.0.7.lock.json` stores one deterministic
+record per manifest entry, in manifest order. Each record has exactly
+`{ unit, kind, number, level, sep }`; absent structural values are `null`.
+The `kind`, `number`, `level`, and `sep` values MUST match the
+corresponding `meta.js` fields. Titles and body prose remain editable and are
+not locked. Both files MUST be updated together when a section is intentionally
+added or removed; manifest-only or hierarchy-metadata changes are rejected.
+
+### `release.js`
+
+`release.js` holds exactly `{ version, released }`, in that key order:
+the current spec version and its release date. Like `meta.js`, the file
+must be byte-identical to `export default ` +
+`JSON.stringify(value, null, 2)` + one newline; any other serialization is
+rejected. It is the single place the version and date are written, and it
+feeds:
+
+- the `**Version:**` / `**Date:**` lines in the frontmatter unit, via
+  the `@@VERSION@@` / `@@DATE@@` token substitution described above;
+- the section-inventory lock check: the builder validates the lock's
+  `version` against it;
+- `node scripts/build_spec.mjs` (write and `--check`) also validates that
+  `versions.ktav` and the three root READMEs reference the current version
+  and date exactly as `release.js` declares; any drift fails the build
+  naming each disagreeing file.
+
+## README source object
+
+`README.source.md` has the same narrow static template-object shape as a body
+part: exactly `en`, `ru`, and `zh`, with no executable code. Its three strings
+are the sole source for the three README files. The generated files are still
+committed for browsing, but hand-editing any one of them makes `--check` fail.
+
+## Markdown safety contract
+
+Unit body text MUST NOT contain a raw HTML block opener outside a confirmed
+fenced code block. This closed-world rule covers all seven CommonMark HTML
+block forms: `script/pre/style/textarea` tags, comments, processing instructions,
+declarations, CDATA sections, the block-tag list, and other complete open or
+close tags. Type 7 applies only when the line is a complete valid open or
+closing tag plus optional whitespace, so autolinks,
+malformed tag-like text, and inline-tag prose are not forbidden by that rule.
+HTML-like text inside a confirmed fenced code block remains allowed.
+
+## How the generator builds a file
+
+`scripts/build_spec.mjs` walks the manifest in order. For each unit it reads
+`manifest.js`/`meta.js` as strict UTF-8 text and `JSON.parse`s the payload after
+`export default `, then statically shape-scans and decodes `body-1.md` ..
+`body-N.md` **in order** (no code under `content/` is ever executed), then:
+
+- for `frontmatter`: emit the concatenation of the `en` / `ru` / `zh`
+  strings of `body-1` .. `body-N`, verbatim;
+- for every other unit: emit
+  `'#'.repeat(level) + ' ' + (numbered ? number + sep : '') + title[lang] + '\n'`,
+  then the concatenated body strings;
+- concatenate.
+
+The same run writes the three content READMEs from `README.source.md`; in
+`--check` mode it compares those files byte-for-byte as well as the three
+generated specification files.
+
+Commands:
+
+```sh
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
+node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
+```
+
+`--check` validates the inventory lock, regenerates all six files in memory,
+and byte-compares them against the committed files. On success: exit 0 and
+**completely silent**.
+On divergence: exit 1 with a diagnostic naming the unit, language, and line
+of the first differing byte. It writes nothing. Write mode stages all six
+temporary outputs and recoverable backups before replacement. The transaction
+journal is one atomically replaced, fsynced snapshot: it contains only a
+validated nonce, digests, phase indexes, and the six known output identities;
+all temporary and backup paths are derived by the builder. Before its durable
+commit marker, recovery restores the exact old bytes; after it, recovery keeps
+the exact new bytes and only finishes cleanup. A live cooperative lock rejects
+a second writer. Linux and Windows owners derive their incarnation through
+the same observable process-start path used by reclaimers; when that source
+is unavailable, the owner records an unverified incarnation and a live PID
+is never reclaimed. Lease expiry alone never reclaims a live matching
+incarnation: only a proven-dead process or a provably different incarnation
+may be reclaimed. Reclaim publishes a fresh owner-specific claim before
+capturing the stale target and removes only artifacts for the exact old
+owner. Release captures its alias in an owner-specific claim and restores a
+replacement before removing any owner artifacts. Legacy fixed candidate,
+claim, and lease files are cleaned only after conservative owner validation;
+`--check` only reports them. If a pending journal, lock, or artifact exists,
+`--check`
+reports it and performs no recovery or cleanup. Directory fsync is unavailable
+on some platforms (notably Windows), so those builds explicitly provide
+file-only crash durability rather than claiming power-loss durability.
+
+`node --test scripts/test_build_spec.mjs` runs the builder's adversarial
+(negative-path) test suite: it feeds deliberately malformed content trees
+to the validator and asserts each closed-world invariant documented in
+this README is rejected.
+
+Recommended workflow: edit unit files -> run `node scripts/build_spec.mjs`
+-> verify `git diff` on the three `.md` files shows exactly what you
+intended -> run `python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> commit the unit
+changes and the regenerated `.md` files **together**.
+
+## How to add a new section
+
+Example (fictional): adding top-level-style section `## 9.9 Widget Frobnication`
+with subsection `### 9.9.1 Widget Modes`, using space-only separators.
+
+Steps:
+
+1. Create the folders, `meta.js` (with `"bodyParts": 1`), and `body-1.md`
+   per unit (mind the trailing-blank-line rule above).
+2. Insert both folder names into `manifest.js` and the lock's `units` array at
+   the correct document positions (after the unit preceding section 9.9).
+3. Run `node scripts/build_spec.mjs`, check the `git diff`, run the parity
+   checker, then commit units + regenerated `.md` files together.
+
+`sec-9.9/meta.js`:
+
+```js
+export default {
+  "kind": "numbered",
+  "number": "9.9",
+  "sep": " ",
+  "level": 2,
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+Note: `sep` depends on the heading text the author writes. For a
+dot-style heading `## 9.9. Widget Frobnication` it would be `". "`;
+for `## 9.9 Widget Frobnication` it is `" "`. Record what you actually
+wrote, and be consistent. For the subsection `### 9.9.1 Widget Modes`,
+`sec-9.9.1/meta.js` is the same shape with `"number": "9.9.1"`, `"level": 3`.
+
+`sec-9.9/body-1.md` (fictional placeholder content), marking where the
+trailing newline rules apply:
+
+```js
+// sec-9.9/body-1.md  (last unit in manifest order? then en must end "\n", else "\n\n")
+export default {
+  en: `Frobnicate the widget.
+
+(body of 9.9)
+`,
+  ru: `...`,
+  zh: `...`,
+};
+```
+
+The trailing blank line before the next unit's heading is the LAST bytes of
+the LAST chunk of the unit (here `body-1.md`, since `"bodyParts": 1`): the
+`en` string above ends `"\n\n"` (exactly one blank line) unless 9.9 is the
+last unit in manifest order, in which case it ends with a single `"\n"`.
+Earlier chunks (in a multi-chunk unit) carry no such trailing bytes.
+
+## History / bootstrap
+
+This layout was created by a one-time mechanical migration, recorded in
+`scripts/archive/extract_content_units.py`: it sliced the then-current
+three `.md` files into units by line-range byte-slicing (no text was
+retyped) and verified byte-identical reconstruction. It was later extended
+to emit the current `body-*.md` schema directly — `meta.js` with
+`bodyParts` plus `body-1..N` per unit. The script is kept for provenance
+only, not as a routine tool: it refuses to overwrite an existing
+`content/` and has no override flag. Rebuilding from scratch means
+manually deleting `content/` first as a separate, deliberate action. The
+**ongoing** workflow is the opposite direction: edit units, then
+`build_spec.mjs` regenerates the `.md` files.
+
+## Out of scope
+
+CI already runs `node scripts/build_spec.mjs --check` and
+`node --test scripts/test_build_spec.mjs` in `.github/workflows` on every
+push/PR.
+>>>>> lang=ru
+# versions/0.7/content/ — исходники спецификации по секциям
+
+**Languages:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
+
+## Что это за директория
+
+Эта директория — **источник истины по секциям** для
+`versions/0.7/spec.md`, `versions/0.7/spec.ru.md` и
+`versions/0.7/spec.zh.md`.
+
+- Три файла `.md` в `versions/0.7/` — **сгенерированные артефакты**. Они
+  остаются в репозитории, чтобы спецификацию можно было читать на GitHub
+  напрямую, но их **нельзя редактировать вручную**: ручная правка будет
+  перезаписана следующей сборкой и уронит
+  `node scripts/build_spec.mjs --check`.
+- **Юниты контента** в этой директории (одна папка на секцию) — то, что
+  редактируют люди.
+- `scripts/check_translation_parity.py` продолжает прогоняться по
+  сгенерированным файлам `.md` как последующий структурный гейт;
+  `node scripts/build_spec.mjs --check` — гейт точности байт-в-байт.
+
+## Текущий состав
+
+@@UNIT_COUNT@@ юнитов: 1 `frontmatter/`, @@NUMBERED_UNIT_COUNT@@ нумерованных `sec-<number>/` (`sec-1`,
+`sec-3.1`, `sec-5.3.3`, `sec-10.7`) и @@NAMED_UNIT_COUNT@@ именованных `named-<slug>/`
+(`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Плюс:
+
+- `scripts/locks/section-inventory.0.7.lock.json` — независимый
+  версионированный упорядоченный inventory. Builder требует его при обычном
+  CLI-запуске и отвергает расхождение состава или порядка с manifest.
+- `README.source.md` — единый source object `{ en, ru, zh }` для трёх README
+  этой директории. Builder статически проверяет его и генерирует
+  `README.md`, `README.ru.md` и `README.zh.md`.
+- `release.js` — единственное объявление релиза: `version` + `released`
+  (см. ниже). У него та же каноническая форма `export default` + JSON, что
+  и у `meta.js`, и это единственное место, где записаны текущие версия и
+  дата релиза.
+- `manifest.js` — упорядоченный список юнитов (см. ниже).
+- `package.json` — `{"type":"module"}`. Исторически: был нужен, пока
+  `build_spec.mjs` динамически импортировал `meta.js`/`body-*.md` как
+  ES-модули. После закрытия closed-world (ничего под `content/` больше не
+  исполняется — `manifest.js` и `meta.js` читаются как UTF-8-текст и
+  разбираются через `JSON.parse`, `body-*.md` статически сканируется и
+  декодируется), файл функционально больше не обязателен, но оставлен на
+  месте и по-прежнему разрешён на верхнем уровне.
+
+## Соглашение об именовании папок
+
+- **Нумерованные секции**: `sec-<number>`, где `<number>` — точный номер
+  секции, как он стоит в заголовке: `sec-1`, `sec-5.3.3`.
+- **Ненумерованные секции** (заголовки уровня >= 2 без номера):
+  `named-<slug>`. Слаг выводится **только из английского текста
+  заголовка** (то есть не зависит от языка):
+  1. отсечь на первой `.`, если есть ("Appendix A. Changes" ->
+     "Appendix A");
+  2. нижний регистр;
+  3. заменить каждую серию символов вне `[a-z0-9]` одним `-`;
+  4. обрезать `-` по краям.
+
+  Примеры: "Abstract" -> `abstract`; "Appendix D. Migration from 0.6.x" ->
+  `appendix-d`.
+- **`frontmatter/`** — специальный юнит, хранящий всё до первого
+  заголовка секции: строку заголовка h1, блок полей `**Languages:**` /
+  `**Version:**` / `**Date:**` и — только в строках `ru`/`zh` тела —
+  информационную цитату-дисклеймер о переводе. Заголовок h1 лежит
+  **внутри** содержимого тела frontmatter, дословно; у самого
+  `frontmatter` своего заголовка нет.
+
+## Состав юнита
+
+Каждая директория юнита содержит ровно: `meta.js`, `body-1.md`, ...,
+`body-N.md` (N >= 1). Файл тела — ЭТО Markdown, и в этом весь смысл
+формата: спецификация является Markdown-документом, а хранение её в
+JS-строках означало, что каждый блок кода писался экранированными
+обратными кавычками. `meta.js` — не Markdown, это статический файл
+данных, и расширение `.js` отмечает ровно это различие. Ничего другого
+директория юнита не содержит.
+
+### `meta.js`
+
+Каждый `meta.js` использует `export default { ... }` (в стиле JSON). Три
+формы, дословно:
+
+```js
+// frontmatter/meta.js
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
+
+// sec-3.1/meta.js
+export default {
+  "kind": "numbered",
+  "number": "3.1",
+  "sep": " ",
+  "level": 3,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+
+// named-appendix-a/meta.js
+export default {
+  "kind": "named",
+  "number": null,
+  "level": 2,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+Файл целиком должен быть байт-в-байт идентичен `export default `, за которым
+следует значение, сериализованное как строгий JSON
+(`JSON.stringify(value, null, 2)`), плюс один завершающий перевод строки:
+один ключ на строку, отступ в 2 пробела, переводы строк LF, без завершающей
+точки с запятой. Payload после `export default ` разбирается как JSON
+(`JSON.parse`), а **не** вычисляется как литерал объекта JavaScript —
+завершающие запятые, комментарии, ключи без кавычек и точки с запятой там
+никогда не допустимы (в отличие от `body-<k>.md`, который является Markdown и не содержит кода — прежняя формулировка про JS-исходник устарела; см.
+исходником на JS, лишь узко ограниченным). Дубликаты ключей тоже
+отвергаются: сборщик сравнивает файл байт-в-байт с канонической
+сериализацией выше, и повторный ключ делает файл отличным от неё.
+
+Значения полей:
+
+- `kind` — `frontmatter`, `numbered` или `named`.
+- `number` — номер секции строкой (`"3.1"`), `null` для ненумерованных
+  юнитов и frontmatter.
+- `level` — количество `#` в заголовке (`##` = 2). `null` для
+  frontmatter.
+- `title` — текст заголовка на каждом языке, **без** ведущего номера и
+  разделителя; генератор пристыковывает их сам.
+- `sep` — разделитель, реально использованный между номером и
+  заголовком. **Зачем он существует:** соглашение о заголовках спеки
+  намеренно смешивает `## 1. Introduction` (нумерованные секции
+  верхнего уровня, точка + пробел) с `### 3.1 Character Set` (более
+  глубокие подсекции, только пробел). Генератор должен воспроизвести
+  каждый заголовок байт-в-байт, поэтому фактический разделитель
+  записывается на каждый юнит. Легальны только `". "` и `" "`.
+  Скрипт извлечения требует, чтобы все три языка использовали один и
+  тот же `sep` для юнита.
+- `bodyParts` — целое число файлов `body-*.md` юнита (N в
+  `body-1.md` .. `body-N.md`). Всегда >= 1. Есть у ВСЕХ юнитов, включая
+  `frontmatter`, и всегда приписывается **последним**. Сборщик принимает
+  не более @@MAX_BODY_PARTS@@ частей на юнит и отвергает большие значения до чтения файлов
+  тела.
+
+### `body-<k>.md`
+
+Каждый `body-<k>.md` — это Markdown, несущий по одному блоку на язык;
+каждый блок вводится собственной строкой-разделителем:
+
+```text
+ >>>>> lang=en
+ ...raw text chunk k for English...
+ >>>>> lang=ru
+ ...
+ >>>>> lang=zh
+ ...
+```
+
+Пример выше намеренно сдвинут на один пробел: разделитель распознаётся
+только в самом начале строки, поэтому сдвинутый — обычное содержимое.
+Это же и запасной выход, если телу когда-нибудь понадобится процитировать
+разделитель буквально.
+
+Блок идёт со строки после своего разделителя до строки перед следующим
+разделителем, а последний — до конца файла. Поэтому блок сохраняет
+собственный завершающий перевод строки, а кусок, кончающийся пустой
+строкой, сохраняет и её.
+
+**Экранирования нет.** Содержимое хранится как есть: забор кода записан
+забором кода, обратная косая — это обратная косая, `${` — два обычных
+символа. Ради этого формат и сделан Markdown, а не строковым литералом:
+спецификация полна примеров в заборах, и каждый из них раньше писался
+экранированными backticks.
+
+Единственное, чего не может содержать содержимое, — строку, начинающуюся
+с `>>>>> lang=`. Это написание выбрано потому, что оно не является
+разметкой, которую использует сам документ: маркер заголовка Markdown
+конкурировал бы с прозой, которую разделяет. Лишний или повторный
+разделитель — ошибка сборки, а не молчаливая граница блока.
+
+Сам формат не называет языков и не фиксирует порядок — декодированный
+результат является отображением. Он требует лишь, чтобы язык встречался
+в файле не более одного раза. А то, что все исходники несут одинаковый
+набор и что этот набор — ровно `en`, `ru`, `zh`, является собственным
+правилом этой спецификации поверх формата.
+
+Полный текст тела юнита на языке — это **конкатенация** кусков 1..N по
+порядку, **без разделителя** между кусками.
+
+**Релизные токены.** Любое тело юнита может содержать ASCII-токены
+`@@VERSION@@` и `@@DATE@@`; здесь это обычный текст, поэтому
+экранирование не нужно. При сборке Builder подставляет вместо них значения
+`version` / `released` из `release.js` на всех языках. Токен,
+прорвавшийся в spec-вывод, роняет сборку; README.source.md не
+подставляется никогда и может упоминать токены буквально.
+
+**Правило разбиения (точные числа).** Пусть `L` — максимум числа строк
+по трём языковым телам юнита.
+
+- Если `L <= @@BODY_LINE_LIMIT@@`, то `N = 1` (один `body-1.md`).
+- Если `L > @@BODY_LINE_LIMIT@@`, то `N = ceil(L / @@BODY_TARGET_LINES@@)`.
+
+N-1 точек разреза выбираются **один раз, для всего юнита**, и
+применяются ко всем языкам. Выбираются они как ИНДЕКСЫ границ абзацев,
+а не как символьные смещения: граница `i` — это i-я пустая строка, и это
+один и тот же разрыв в каждом переводе, поэтому `body-k.md` держит один
+и тот же фрагмент во всех трёх языках. Индексы берутся из языка с
+наибольшим числом строк, поскольку правило размера выше выражено в его
+строках; при равенстве побеждает объявленный порядок языков, так что
+выбор детерминирован. Внутри этого языка берутся N-1 границ, ближайших
+к пропорциональным целям `i*L/N`, а при равном расстоянии — более
+ранняя. Если у юнита меньше внутренних пустых строк, чем N-1, N
+уменьшается до (доступных границ + 1), а не падает с ошибкой.
+
+Семантическое выравнивание между языками ЯВЛЯЕТСЯ целью, и ради него
+разрезы и сделаны общими. Независимое разбиение каждого языка — прежнее
+правило — клало в один файл три несвязанных куска: китайский при том же
+смысле примерно вдвое короче английского, поэтому его пропорциональные
+цели попадали в другое место, и его части уходили от двух остальных.
+Ничего не терялось, потому что генератор склеивает обратно, но файл
+тела нельзя было открыть и сравнить — а ради этого источники и сделаны
+Markdown.
+
+Одно следствие, к которому надо быть готовым: правка перевода меняет
+число его строк, сдвигает общую границу и оставляет части ДРУГИХ языков
+не соответствующими мандату. Сборщик откажется собирать, пока юнит не
+перенарежут. Это правило работает, а не ломается.
+
+## Файлы тела (критично для точности байт-в-байт)
+
+Тело юнита на каждом языке — конкатенация строковых значений
+`body-1.md` .. `body-N.md` по порядку, **без вставленного разделителя
+между кусками**. Генератор не вставляет ничего и между юнитами, поэтому
+пустая строка-разделитель живёт в КОНЦЕ **последнего куска юнита**:
+
+- Каждый юнит **кроме последнего** заканчивается ровно ОДНОЙ пустой
+  строкой, то есть строка последнего куска заканчивается `"\n\n"`.
+- **Последний юнит в порядке манифеста** заканчивается одним финальным
+  переводом строки без завершающей пустой строки (`"\n"`) — последними
+  байтами своего последнего куска.
+- Тело frontmatter заканчивается одной пустой строкой перед первым
+  заголовком секции.
+
+Когда юнит разбит на несколько кусков, эти завершающие байты просто
+живут в конце ПОСЛЕДНЕГО куска — более ранние куски не несут своего
+особого завершающего пробела сверх того, что дало разбиение.
+
+Ошибиться здесь — способ №1 уронить `--check`.
+
+## `manifest.js`
+
+Явный **упорядоченный** массив из @@UNIT_COUNT@@ имён папок в настоящем порядке
+документа. Он начинается `["frontmatter", "named-abstract", "sec-1",
+...]` и заканчивается `[..., "named-appendix-d"]`. Он **никогда не
+сортируется по алфавиту**: `"sec-10.7"` должен идти после `"sec-2"`, а
+именованные секции стоят на своих реальных позициях в документе. Независимый
+lock `scripts/locks/section-inventory.0.7.lock.json` хранит по одной
+детерминированной записи на элемент manifest в его порядке. Каждая запись имеет
+ровно поля `{ unit, kind, number, level, sep }`; отсутствующие структурные
+значения равны `null`. Значения `kind`, `number`, `level` и `sep`
+MUST совпадать с соответствующими полями `meta.js`. Заголовки и текст тела
+остаются редактируемыми и lock-ом не защищаются. При намеренном добавлении или
+удалении секции оба файла MUST обновляться вместе; изменения только manifest
+или иерархических meta-полей отвергаются.
+
+### `release.js`
+
+`release.js` содержит ровно `{ version, released }`, именно в этом
+порядке ключей: текущую версию спецификации и дату её релиза. Как и
+`meta.js`, файл должен быть байт-в-байт идентичен `export default ` +
+`JSON.stringify(value, null, 2)` + один перевод строки; любая иная
+сериализация отвергается. Это единственное место, где записаны версия и
+дата; они питают:
+
+- строки `**Version:**` / `**Date:**` юнита frontmatter — через
+  подстановку токенов `@@VERSION@@` / `@@DATE@@`, описанную выше;
+- проверку section-inventory lock: Builder сверяет `version` lock-а с ним;
+- `node scripts/build_spec.mjs` (write и `--check`) также
+  проверяет, что `versions.ktav` и три корневых README ссылаются на
+  текущие версию и дату в точности как объявляет `release.js`; любое
+  расхождение валит сборку, называя каждый расходящийся файл.
+
+## Исходный объект README
+
+`README.source.md` — единый source object `{ en, ru, zh }` для трёх README в
+этой директории. Builder статически проверяет его и генерирует из него
+`README.md`, `README.ru.md` и `README.zh.md`; ручное изменение любого README
+делает `--check` ошибочным.
+
+## Контракт безопасности Markdown
+
+Текст тела юнита MUST NOT содержать открывающую строку HTML-блока вне
+подтверждённого fenced code block. Это закрытое правило охватывает все семь
+форм HTML-блоков CommonMark: теги `script/pre/style/textarea`, комментарии,
+processing instructions, декларации, секции CDATA, список блочных тегов и
+прочие полные открывающие или закрывающие теги. Тип 7 применяется только когда
+строка целиком состоит из корректного открывающего или закрывающего тега и
+необязательных пробельных символов; autolink, некорректный текст, похожий на
+тег, и проза со встроенными тегами этим правилом не запрещены. HTML-подобный
+текст внутри подтверждённого fenced code block по-прежнему разрешён.
+
+## Как генератор собирает файл
+
+`scripts/build_spec.mjs` идёт по манифесту по порядку. Для каждого
+юнита он читает `manifest.js`/`meta.js` как строгий UTF-8-текст и разбирает payload
+после `export default ` через `JSON.parse`, затем статически сканирует и
+декодирует `body-1.md` .. `body-N.md` **по порядку** (код под `content/`
+никогда не исполняется), затем:
+
+- для `frontmatter`: вывести конкатенацию строк `en` / `ru` / `zh` из
+  `body-1` .. `body-N`, дословно;
+- для любого другого юнита: вывести
+  `'#'.repeat(level) + ' ' + (numbered ? number + sep : '') + title[lang] + '\n'`,
+  затем конкатенацию строк тела;
+- конкатенировать.
+
+Команды:
+
+```sh
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
+node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
+```
+
+`--check` проверяет inventory lock, регенерирует все шесть файлов в памяти и
+побайтово сравнивает их с закоммиченными: три файла спецификации и три content
+README. При успехе: код выхода 0 и **полная тишина**. При
+расхождении: код выхода 1 с диагностикой, называющей юнит, язык и
+строку первого различающегося байта. Ничего не пишет. В режиме записи сборщик
+сначала подготавливает все шесть временных файлов и восстанавливаемые backup.
+Журнал транзакции представляет собой один атомарно заменяемый и fsync-нутый
+снимок: он содержит только проверенный nonce, digest-ы, индексы фаз и шесть
+известных идентификаторов выходных файлов; все пути временных файлов и backup
+выводятся самим сборщиком. До durable commit marker восстановление возвращает
+точные старые байты; после него сохраняет точные новые байты и только
+заканчивает очистку. Живой кооперативный lock отклоняет второго писателя.
+В Linux и Windows владелец получает инкарнацию тем же наблюдаемым способом
+старта процесса, который используют reclaimers; если источник недоступен,
+записывается непроверенная инкарнация, и живой PID никогда не отбирается.
+Истечение lease само по себе никогда не отбирает lock у живой совпадающей
+инкарнации: reclaim разрешён только после доказанной смерти процесса или
+доказанно другой инкарнации. Reclaim сначала атомарно публикует свежий claim
+владельца, затем захватывает устаревший target и удаляет только артефакты
+точной старой инкарнации. При release alias захватывается owner-specific claim;
+замена сначала восстанавливается, и только потом удаляются артефакты владельца.
+Старые фиксированные candidate, claim и lease очищаются только после строгой
+проверки владельца; `--check` только сообщает о них. Если есть journal, lock
+или служебный файл незавершённой транзакции, `--check`
+сообщает об этом и не выполняет recovery или очистку. На некоторых платформах
+(особенно Windows) fsync каталога недоступен, поэтому сборщик явно сообщает
+режим file-only crash durability и не выдаёт его за защиту от потери питания.
+
+`node --test scripts/test_build_spec.mjs` запускает adversarial-набор
+тестов сборщика (негативные сценарии): он скармливает валидатору
+специально искажённые деревья контента и проверяет, что каждое
+closed-world-свойство, задокументированное в этом README, отвергается.
+
+Рекомендуемый рабочий процесс: правите файлы юнитов -> запускаете
+`node scripts/build_spec.mjs` -> проверяете по `git diff`, что изменения
+трёх файлов `.md` — ровно то, что вы имели в виду -> запускаете
+`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> коммитите изменения юнитов и
+регенерированные файлы `.md` **вместе**.
+
+## Как добавить новую секцию
+
+Пример (вымышленный): добавляем секцию в стиле верхнего уровня
+`## 9.9 Widget Frobnication` с подсекцией `### 9.9.1 Widget Modes` с
+разделителями только из пробела.
+
+Шаги:
+
+1. Создайте папки, `meta.js` (с `"bodyParts": 1`) и `body-1.md` на
+   каждый юнит (помните правило завершающей пустой строки выше).
+2. Вставьте оба имени папок в `manifest.js` и массив `units` inventory lock
+   на правильные позиции документа (после юнита, предшествующего секции 9.9).
+3. Запустите `node scripts/build_spec.mjs`, посмотрите `git diff`,
+   прогоните проверку паритета, затем коммитьте юниты и регенерированные
+   файлы `.md` вместе.
+
+`sec-9.9/meta.js`:
+
+```js
+export default {
+  "kind": "numbered",
+  "number": "9.9",
+  "sep": " ",
+  "level": 2,
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+Примечание: `sep` зависит от текста заголовка, который пишет автор. Для
+заголовка с точкой `## 9.9. Widget Frobnication` это было бы `". "`;
+для `## 9.9 Widget Frobnication` — `" "`. Записывайте то, что вы
+действительно написали, и будьте последовательны. Для подсекции
+`### 9.9.1 Widget Modes` файл `sec-9.9.1/meta.js` той же формы, но с
+`"number": "9.9.1"`, `"level": 3`.
+
+`sec-9.9/body-1.md` (вымышленное содержимое-заполнитель) с пометками,
+где действуют правила завершающего перевода строки:
+
+```js
+// sec-9.9/body-1.md  (last unit in manifest order? then en must end "\n", else "\n\n")
+export default {
+  en: `Frobnicate the widget.
+
+(body of 9.9)
+`,
+  ru: `...`,
+  zh: `...`,
+};
+```
+
+Завершающая пустая строка перед заголовком следующего юнита — это
+ПОСЛЕДНИЕ байты ПОСЛЕДНЕГО куска юнита (здесь `body-1.md`, поскольку
+`"bodyParts": 1`): строка `en` выше заканчивается `"\n\n"` (ровно одна
+пустая строка), если только 9.9 не последний юнит в порядке манифеста —
+тогда она заканчивается одним `"\n"`. Более ранние куски (в юните из
+нескольких кусков) таких завершающих байтов не несут.
+
+## История / бутстрап
+
+Эта структура была создана одноразовой механической миграцией,
+записанной в `scripts/archive/extract_content_units.py`: она нарезала
+три тогдашних файла `.md` на юниты побайтовым нарезанием по диапазонам
+строк (никакой текст не перенабирался) и проверила байт-в-байт
+идентичную реконструкцию. Позднее скрипт был расширен, чтобы выдавать
+сразу текущую схему `body-*.md` — `meta.js` с `bodyParts` плюс
+`body-1..N` на юнит. Скрипт сохранён только для происхождения, не как
+штатный инструмент: он отказывается перезаписывать существующий
+`content/` и не имеет флага переопределения. Пересборка с нуля означает
+ручное удаление `content/` первым, отдельным осознанным действием.
+**Текущий** рабочий процесс — обратное направление: правите юниты, и
+`build_spec.mjs` регенерирует файлы `.md`.
+
+## Вне охвата
+
+CI уже запускает `node scripts/build_spec.mjs --check` и
+`node --test scripts/test_build_spec.mjs` в `.github/workflows` на каждый
+push/PR.
+>>>>> lang=zh
+# versions/0.7/content/ —— 规范内容单元
+
+**Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
+
+## 这个目录是什么
+
+本目录是 `versions/0.7/spec.md`、`versions/0.7/spec.ru.md` 与
+`versions/0.7/spec.zh.md` 的**逐节来源(源头)**。
+
+- `versions/0.7/` 下的三个 `.md` 文件是**生成的构件**。它们仍保留在
+  仓库中,以便在 GitHub 上直接阅读规范,但**切勿手动编辑**:手工
+  改动会被下一次构建覆盖,并使 `node scripts/build_spec.mjs --check`
+  失败。
+- 本目录中的**内容单元**(每节一个文件夹)才是人来编辑的对象。
+- `scripts/check_translation_parity.py` 仍继续对生成的 `.md` 文件
+  运行,作为事后结构关卡;`node scripts/build_spec.mjs --check` 才是
+  逐字节关卡。
+
+## 当前清单
+
+共 @@UNIT_COUNT@@ 个单元:1 个 `frontmatter/`、@@NUMBERED_UNIT_COUNT@@ 个带编号的 `sec-<number>/`
+(`sec-1`、`sec-3.1`、`sec-5.3.3`、`sec-10.7`),以及 @@NAMED_UNIT_COUNT@@ 个命名的
+`named-<slug>/`(`named-abstract`、`named-appendix-a` ..
+`named-appendix-d`)。另有:
+
+- `scripts/locks/section-inventory.0.7.lock.json` —— 独立的、有版本的有序
+  inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝与 manifest 的成员
+  或顺序发生漂移。
+- `README.source.md` —— 本目录三个 README 共用的 `{ en, ru, zh }` source
+  object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+  `README.zh.md`。
+- `release.js` —— 唯一的发布声明:`version` + `released`(见下文)。
+  它与 `meta.js` 一样采用规范的 `export default` + JSON 形态,是唯一
+  写有当前版本号与发布日期的地方。
+- `manifest.js` —— 单元的有序列表(见下文)。
+- `package.json` —— `{"type":"module"}`。历史遗留:曾用于
+  `build_spec.mjs` 把 `meta.js`/`body-*.md` 当作 ES 模块动态导入的阶段。
+  在完成 closed-world 加固后(`content/` 下再无任何代码被执行——
+  `manifest.js` 与 `meta.js` 作为 UTF-8 文本读取并通过 `JSON.parse` 解析,
+  `body-*.md` 经静态扫描后解码),此文件已不再是功能上必需的,但仍保留
+  在原位,顶层仍允许它存在。
+
+## 文件夹命名约定
+
+- **带编号的节**:`sec-<number>`,其中 `<number>` 是标题中出现的
+  确切节号:`sec-1`、`sec-5.3.3`。
+- **不带编号的节**(没有编号的 >= 2 级标题):`named-<slug>`。slug
+  **仅由英文标题文本**派生(因此与语言无关):
+  1. 如有 `.`,在第一个 `.` 处截断("Appendix A. Changes" ->
+     "Appendix A");
+  2. 转小写;
+  3. 把每一段 `[a-z0-9]` 之外的连续字符替换为单个 `-`;
+  4. 去除首尾的 `-`。
+
+  例:"Abstract" -> `abstract`;"Appendix D. Migration from 0.6.x" ->
+  `appendix-d`。
+- **`frontmatter/`** 是特殊单元,保存第一个节标题之前的全部内容:
+  h1 标题行、`**Languages:**` / `**Version:**` / `**Date:**` 字段块,
+  以及——仅在 `ru`/`zh` 正文串中——关于译文的信息性免责声明
+  blockquote。h1 标题**位于**frontmatter 正文内容之内,原样保留;
+  `frontmatter` 自身没有标题。
+
+## 单元内容
+
+每个单元目录恰好包含:`meta.js`、`body-1.md`、……、`body-N.md`
+(N >= 1)。正文文件**就是** Markdown,这正是该格式的要点:规范本身
+是一份 Markdown 文档,而把它存放在 JS 字符串字面量里,意味着每个代码
+围栏都要写成转义的反引号。`meta.js` 不是 Markdown,它是静态数据文件,
+`.js` 扩展名标记的正是这一区别。单元目录不包含任何其他内容。
+
+### `meta.js`
+
+每个 `meta.js` 使用 `export default { ... }`(JSON 风格)。三种形态,
+逐字如下:
+
+```js
+// frontmatter/meta.js
+export default {
+  "kind": "frontmatter",
+  "number": null,
+  "level": null,
+  "title": null,
+  "bodyParts": 1
+}
+
+// sec-3.1/meta.js
+export default {
+  "kind": "numbered",
+  "number": "3.1",
+  "sep": " ",
+  "level": 3,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+
+// named-appendix-a/meta.js
+export default {
+  "kind": "named",
+  "number": null,
+  "level": 2,
+  "title": {
+    "en": "...",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+整个文件必须逐字节等于 `export default ` 加上以严格 JSON 序列化的值
+（`JSON.stringify(value, null, 2)`）再加单个末尾换行：每行一个键、
+2 空格缩进、LF 换行、无末尾分号。`export default ` 之后的 payload 是作为
+JSON（`JSON.parse`）解析的，**不是**作为 JavaScript 对象字面量求值——
+末尾逗号、注释、不带引号的键以及分号在那里永远不合法（与 `body-<k>.md`
+不同，后者是 JS 源码，只是受到严格限制）。重复的键同样会被拒绝：构建器
+将文件与上面的规范序列化逐字节比较，重复键会使原始文件与它不一致。
+
+字段含义:
+
+- `kind` —— `frontmatter`、`numbered` 或 `named`。
+- `number` —— 以字符串表示的节号(`"3.1"`),非编号单元与
+  frontmatter 为 `null`。
+- `level` —— 标题中 `#` 的数量(`##` = 2)。frontmatter 为 `null`。
+- `title` —— 每种语言的标题文本,**不含**前导编号与分隔符;生成器
+  会重新拼接上去。
+- `sep` —— 编号与标题之间实际使用的分隔符。**它为何存在:**规范
+  的标题约定有意混用 `## 1. Introduction`(顶层编号节,点 + 空格)
+  与 `### 3.1 Character Set`(更深的子节,仅空格)。生成器必须逐字节
+  复现每个标题,因此实际分隔符按单元记录。只有 `". "` 与 `" "` 合法。
+  抽取脚本强制同一单元的三种语言使用相同的 `sep`。
+- `bodyParts` —— 该单元 `body-*.md` 文件的整数个数(`body-1.md` ..
+  `body-N.md` 中的 N)。总是 >= 1。所有单元(包括 `frontmatter`)都
+  有,且总是排在**最后**。构建器每个单元最多接受 @@MAX_BODY_PARTS@@ 个部分，并在
+  读取正文文件前拒绝更大的值。
+
+### `body-<k>.md`
+
+每个 `body-<k>.md` 都是 Markdown,每种语言一个块,每个块由自己的
+分隔行引入:
+
+```text
+ >>>>> lang=en
+ ...raw text chunk k for English...
+ >>>>> lang=ru
+ ...
+ >>>>> lang=zh
+ ...
+```
+
+上面的示例特意缩进了一个空格:分隔行只有位于行首才会被识别,缩进后
+就是普通内容。如果正文确实需要逐字引用一个分隔行,这也正是其退路。
+
+一个块从其分隔行的下一行开始,到下一个分隔行的前一行结束;最后一个
+块则到文件末尾。因此块保留自己的结尾换行,以空行结尾的块也保留那个
+空行。
+
+**没有转义。**内容按其本来面目存储:代码围栏就写成代码围栏,反斜杠
+就是反斜杠,`${` 就是两个普通字符。这正是该格式采用 Markdown 而非
+字符串字面量的原因——规范中满是围栏示例,而它们过去每一个都要用转义
+反引号来书写。
+
+内容唯一不能包含的,是以 `>>>>> lang=` 开头的行。选择这种写法,是
+因为它不是本文档自身使用的语法:Markdown 的标题标记会与它所分隔的
+正文相互竞争。多余或重复的分隔行是构建错误,而绝不是一个无声的块
+边界。
+
+格式本身不指定语言,也不固定顺序——解码结果是一个映射。它只要求同一
+语言在一个文件中至多出现一次。所有源文件携带相同的集合、且该集合恰好
+是 `en`、`ru`、`zh`,则是本规范在格式之上自行附加的规则。
+
+某语言单元的完整正文,是该语言第 1..N 块按顺序的**拼接**,块与块
+之间**没有分隔符**。
+
+**发布令牌。**任何单元正文都可以包含纯 ASCII 令牌 `@@VERSION@@` 与
+`@@DATE@@`;它们在这里就是普通文本,因此无需转义。构建时 Builder 会在
+所有语言中把它们替换为 `release.js` 的 `version` / `released` 值。残留到
+spec 输出中的令牌会使构建失败;README.source.md 永不被替换,可按字面
+提及这些令牌。
+
+**拆分规则(精确数字)。**令 `L` 为该单元三种语言正文行数的最大值。
+
+- 若 `L <= @@BODY_LINE_LIMIT@@`,则 `N = 1`(单个 `body-1.md`)。
+- 若 `L > @@BODY_LINE_LIMIT@@`,则 `N = ceil(L / @@BODY_TARGET_LINES@@)`。
+
+N-1 个切割点**对整个单元只选一次**,并应用于所有语言。它们被选为段落
+边界的**索引**,而不是字符偏移:边界 `i` 是第 i 个空行,而这在每种
+翻译中都是同一个断点,因此 `body-k.md` 在三种语言中持有同一个片段。
+索引取自行数最多的那个语言,因为上面的大小规则是以它的行数表述的;
+若行数相等,则按声明的语言顺序决定,选择因而是确定的。在该语言内部,
+取距比例目标 `i*L/N` 最近的 N-1 个边界;距离相等时取较早的那个。若
+单元的内部空行少于 N-1 个,则把 N 降为(可用边界数 + 1),而不是失败。
+
+各语言之间的语义对齐**正是**目标,共享切割点就是为此。旧规则让每种
+语言独立拆分,结果一个文件里放着三段互不相干的内容:表达同样的意思
+时,中文大约只有英文的一半长度,因此它的比例目标落在别处,分块也就
+偏离了另外两种语言。由于生成器会重新拼接,内容并未丢失,但正文文件
+无法被打开对照——而源文件改用 Markdown 正是为了这一点。
+
+有一个需要预期的后果:修改译文会改变其行数、移动共享边界,并使**其他**
+语言的分块不再符合强制规则。在该单元被重新切割之前,构建器会拒绝构建。
+这是规则在生效,而不是出了故障。
+
+## 正文文件(对逐字节精确性至关重要)
+
+每个语言的单元正文,是 `body-1.md` .. `body-N.md` 字符串值按顺序的
+拼接,**块之间不插入任何分隔符**。生成器在单元之间也不插入任何
+内容,因此空行分隔位于单元**最后一块的末尾**:
+
+- 除最后一个单元外,每个单元都恰好以一行空行结尾,即最后一块的
+  字符串以 `"\n\n"` 结束。
+- **manifest 顺序中的最后一个单元**以单个末尾换行结束、不带末尾
+  空行(`"\n"`),作为其最后一块的最后几个字节。
+- frontmatter 正文以第一个节标题之前的那一行空行结尾。
+
+当单元被拆为多块时,这些末尾字节就放在最后一块的末尾——更早的
+块除了拆分产生的空白外,不带有自己的特殊末尾空白。
+
+弄错这一点,是让 `--check` 失败的头号方式。
+
+## `manifest.js`
+
+按真实文档顺序排列的 @@UNIT_COUNT@@ 个文件夹名的显式**有序**数组。它以
+`["frontmatter", "named-abstract", "sec-1", ...]` 开头,以
+`[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
+`"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的
+真实位置。独立的 lock `scripts/locks/section-inventory.0.7.lock.json`
+按 manifest 顺序为每个单元保存一条确定性的结构记录。每条记录严格包含
+`{ unit, kind, number, level, sep }`;缺少的结构值使用 `null`。
+`kind`、`number`、`level` 和 `sep` MUST 与对应的 `meta.js`
+字段一致。标题文字和正文仍可编辑,不受 lock 保护。有意新增或删除章节时,
+两个文件 MUST 同时更新;仅修改 manifest 或层级 meta 字段会被拒绝。
+
+### `release.js`
+
+`release.js` 恰好包含 `{ version, released }`,且键序正是如此:当前
+规范版本号及其发布日期。与 `meta.js` 一样,该文件必须与 `export default `
++ `JSON.stringify(value, null, 2)` + 一个换行逐字节一致;任何其他序列化
+都会被拒绝。它是唯一写有版本号与日期的地方,并供给:
+
+- frontmatter 单元的 `**Version:**` / `**Date:**` 行——通过上文描述的
+  `@@VERSION@@` / `@@DATE@@` 令牌替换;
+- section-inventory lock 检查:Builder 用它校验 lock 的 `version`;
+- `node scripts/build_spec.mjs`（write 与 `--check`）还会校验
+  `versions.ktav` 与三个根目录 README 对当前版本和日期的引用与
+  `release.js` 声明完全一致;任何漂移都会使构建失败,并逐个指出
+  不一致的文件。
+
+## README 源对象
+
+`README.source.md` 是本目录三个 README 共用的 `{ en, ru, zh }` source
+object。Builder 会静态检查它并据此生成 `README.md`、`README.ru.md` 和
+`README.zh.md`;手动修改任何一个 README 都会使 `--check` 失败。
+
+## Markdown 安全契约
+
+单元正文 MUST NOT 在已确认的 fenced code block 之外包含原始 HTML 块
+开启语法。此封闭规则涵盖 CommonMark 的全部七种 HTML 块形式：
+`script/pre/style/textarea` 标签、注释、处理指令、声明、CDATA 区段、块级标签
+列表，以及其他完整的开始或结束标签。类型 7 仅在线路完整由有效的开始或结束
+标签及可选空白组成时适用；自动链接、格式错误的类标签文本和含内联标签的正文
+不受该规则禁止。已确认的 fenced code block 内仍允许类似 HTML 的文本。
+
+## 生成器如何构建文件
+
+`scripts/build_spec.mjs` 按顺序遍历 manifest。对每个单元,它以
+严格的 UTF-8 读取 `manifest.js`/`meta.js`,并对 `export default ` 之后的
+payload 执行 `JSON.parse`,然后**按顺序**静态扫描并解码 `body-1.md` ..
+`body-N.md`(`content/` 下的代码从不被执行),然后:
+
+- 对 `frontmatter`:输出 `body-1` .. `body-N` 的 `en` / `ru` / `zh`
+  字符串的拼接,原样;
+- 对其他任何单元:输出
+  `'#'.repeat(level) + ' ' + (numbered ? number + sep : '') + title[lang] + '\n'`,
+  然后输出正文字符串的拼接;
+- 整体拼接。
+
+命令:
+
+```sh
+node scripts/build_spec.mjs          # writes the 3 spec .md files and 3 content READMEs
+node scripts/build_spec.mjs --check  # verifies byte-identity, writes nothing
+node --test scripts/test_build_spec.mjs  # adversarial builder test suite (negative paths)
+```
+
+`--check` 会验证 inventory lock,在内存中重新生成全部六个文件,并与
+已提交的文件逐字节比较:三个规范文件与三个 content README。成功时:
+退出码 0 且**完全静默**。出现分歧时:退出码 1,并给出诊断
+信息,指出第一个不同字节所在的单元、语言和行。它不写任何文件。写入模式
+会先准备全部六个临时文件和可恢复的备份。事务 journal 是一个原子替换
+并 fsync 的快照,只包含经过验证的 nonce、digest、阶段索引和六个已知输出
+标识;所有临时文件与备份路径都由构建器派生。durable commit marker 之前,
+恢复会还原精确的旧字节;之后会保留精确的新字节并只完成清理。活跃的协作
+lock 会拒绝第二个写入者。Linux 和 Windows 的所有者使用与回收者相同的可观测
+进程启动路径来生成 incarnation;如果该来源不可用,构建器会记录未验证的
+incarnation,并且永远不会回收仍然存活的 PID。仅凭 lease 过期绝不会回收仍在
+运行且 incarnation 匹配的所有者;只有已证明进程退出或已证明 incarnation 不同
+才可回收。回收会先原子发布新的所有者专属 claim,再捕获过期 target,并且只删除
+精确旧所有者的 artifact。release 会先捕获 alias;如果发现 replacement,会先恢复
+它,再删除所有者 artifact。旧的固定 candidate、claim 和 lease 只有在保守验证
+所有者已不存在后才会清理;`--check` 只报告它们。如果存在未完成的 journal、lock 或事务文件,
+`--check` 会报告它们并且不执行恢复或清理。某些平台(尤其 Windows)不支持
+目录 fsync,因此构建器明确提供 file-only crash durability,不会虚假声称
+它能防止断电导致的数据丢失。
+
+`node --test scripts/test_build_spec.mjs` 运行构建器的对抗性测试套件
+(负面路径):它向验证器提供故意损坏的内容树,断言本 README 中记载的每一条
+closed-world 不变量都会被拒绝。
+
+推荐工作流:编辑单元文件 -> 运行 `node scripts/build_spec.mjs` ->
+核对三个 `.md` 文件的 `git diff` 是否与你的意图完全一致 -> 运行
+`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> 把单元改动与重新生成的
+`.md` 文件**一起**提交。
+
+## 如何新增一节
+
+示例(虚构):新增顶层风格的节 `## 9.9 Widget Frobnication` 与子节
+`### 9.9.1 Widget Modes`,分隔符只用空格。
+
+步骤:
+
+1. 创建各单元的文件夹、`meta.js`(含 `"bodyParts": 1`)与
+   `body-1.md`(注意上面的末尾空行规则)。
+2. 把两个文件夹名按正确的文档位置插入 `manifest.js` 与 inventory
+   lock 的 `units` 数组(位于紧邻 9.9 之前的单元之后)。
+3. 运行 `node scripts/build_spec.mjs`,检查 `git diff`,运行对等性
+   检查,然后把单元与重新生成的 `.md` 文件一起提交。
+
+`sec-9.9/meta.js`:
+
+```js
+export default {
+  "kind": "numbered",
+  "number": "9.9",
+  "sep": " ",
+  "level": 2,
+  "title": {
+    "en": "Widget Frobnication",
+    "ru": "...",
+    "zh": "..."
+  },
+  "bodyParts": 1
+}
+```
+
+注意:`sep` 取决于作者写出的标题文本。对于带点的标题
+`## 9.9. Widget Frobnication`,它是 `". "`;对于
+`## 9.9 Widget Frobnication`,则是 `" "`。记录你实际写下的形式,并
+保持一致。对于子节 `### 9.9.1 Widget Modes`,`sec-9.9.1/meta.js` 形态
+相同,只是 `"number": "9.9.1"`、`"level": 3`。
+
+`sec-9.9/body-1.md`(虚构占位内容),并标出末尾换行规则适用的位置:
+
+```js
+// sec-9.9/body-1.md  (last unit in manifest order? then en must end "\n", else "\n\n")
+export default {
+  en: `Frobnicate the widget.
+
+(body of 9.9)
+`,
+  ru: `...`,
+  zh: `...`,
+};
+```
+
+下一个单元标题之前的末尾空行,是该单元最后一块(此处 `body-1.md`,
+因为 `"bodyParts": 1`)的最后几个字节:上面 `en` 字符串以 `"\n\n"`
+结尾(恰好一行空行),除非 9.9 是 manifest 顺序中的最后一个单元——
+那它以单个 `"\n"` 结尾。多块单元中更早的块不携带这类末尾字节。
+
+## 历史 / 引导
+
+这套布局由一次性的机械迁移创建,记录在
+`scripts/archive/extract_content_units.py` 中:它按行范围逐字节切分
+当时的三个 `.md` 文件成单元(未重新键入任何文本),并验证了重建
+结果逐字节一致。后来该脚本被扩展为直接生成当前的 `body-*.md` 模式
+——每个单元有带 `bodyParts` 的 `meta.js` 加 `body-1..N`。该脚本
+仅作为出处留档,不是常规工具:它拒绝覆盖已存在的 `content/`,且
+没有覆盖标志。从零重建意味着先手动删除 `content/`,作为单独的、
+有意的动作。**日常**工作流是反方向:编辑单元,然后由
+`build_spec.mjs` 重新生成 `.md` 文件。
+
+## 范围之外
+
+CI 已在 `.github/workflows` 中于每次 push/PR 时运行
+`node scripts/build_spec.mjs --check` 与
+`node --test scripts/test_build_spec.mjs`。

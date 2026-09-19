@@ -107,11 +107,11 @@ class ExtractorsAndPinsTests:
         # present in EN's lists.
         repo_root = REPO_ROOT
         en_lines = ctp.read_lines(
-            os.path.join(repo_root, "versions", "0.7", "spec.md"))
+            os.path.join(repo_root, "versions", "0.8", "spec.md"))
         ru_lines = ctp.read_lines(
-            os.path.join(repo_root, "versions", "0.7", "spec.ru.md"))
+            os.path.join(repo_root, "versions", "0.8", "spec.ru.md"))
         zh_lines = ctp.read_lines(
-            os.path.join(repo_root, "versions", "0.7", "spec.zh.md"))
+            os.path.join(repo_root, "versions", "0.8", "spec.zh.md"))
 
         def tokens_per_lhs(lines):
             sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
@@ -157,7 +157,7 @@ class ExtractorsAndPinsTests:
         per_file = {}
         for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
             lines = ctp.read_lines(
-                os.path.join(repo_root, "versions", "0.7", name))
+                os.path.join(repo_root, "versions", "0.8", name))
             sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
             start, end = sections["4"]
             semi = ctp.extract_semi_formal_rhs(lines, start, end, excluded)
@@ -190,7 +190,7 @@ class ExtractorsAndPinsTests:
         tab_lang = {"spec.md": "en", "spec.ru.md": "ru", "spec.zh.md": "zh"}
         for name in ("spec.md", "spec.ru.md", "spec.zh.md"):
             lines = ctp.read_lines(
-                os.path.join(repo_root, "versions", "0.7", name))
+                os.path.join(repo_root, "versions", "0.8", name))
             sections, _, _, _, excluded, _, _, _ = ctp.parse_file(lines)
             start, end = sections["4"]
             semi = ctp.extract_semi_formal_rhs(lines, start, end, excluded)

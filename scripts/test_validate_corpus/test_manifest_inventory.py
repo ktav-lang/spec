@@ -237,7 +237,7 @@ class ManifestAndInventoryTests:
         self.assertEqual(code, 1)
         self.assertIn(
             "unsupported corpus inventory version '%s'" % CURRENT_VERSION, out)
-        self.assertIn("supported: '0.6.4', '9.9.9'", out)
+        self.assertIn("supported: '0.6.4', '0.7.1', '9.9.9'", out)
 
     def test_malformed_release_declaration_fails_loudly(self):
         tests = self.build_full()
@@ -419,6 +419,7 @@ class ManifestAndInventoryTests:
                 "valid": {"count": 2}, "invalid": {"count": 2},
                 "unrepresentable": {"count": 1},
                 "parseable-unrepresentable": {"count": 1},
+                "strict-lossy": {"count": 1},
             },
             "fixture_flags": [{
                 "category": "invalid", "fixture": "invalid_utf8/bad_utf8",

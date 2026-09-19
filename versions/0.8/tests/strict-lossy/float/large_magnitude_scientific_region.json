@@ -1,0 +1,1 @@
+{"lax_value": {"big": 10000000.5}, "expected_error": "LossyScalar", "body": "10000000.5", "canonical": "1.00000005e7", "note": "At or above the § 5.9.8 scientific threshold (1e7), fixed-point spelling is lossy; the canonical form is scientific."}

@@ -18,6 +18,37 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
+## [0.8.0] —— 2026-09-19
+
+0.8.0 的规范性文本与一致性 fixture,位于 `versions/0.8/`。这是当前
+稳定规范——`versions.ktav` 将 `stable` 与 `latest` 指向 0.8.0;0.7.1
+作为上一个稳定发布仍保留在工作树中。
+
+文档的宽松入口(`parse`/`loads`)不变:每个 0.7.x 文档解析为相同的
+Value,每个规范化输出逐字节不变。
+
+### 破坏性变更
+
+- **§ 8.1 —— parser 一致性实现现在还必须提供严格解析入口**
+  (`parse_strict` / `loads_strict`),并对
+  `versions/0.8/tests/strict-lossy/` 下每个 fixture 以 `LossyScalar`
+  拒绝,该错误指明其 oracle 给出的精确 `body`/`canonical`;与此同时
+  宽松入口继续原样接受同一输入。此前没有任何章节要求严格入口的存在,
+  这就是它以 MINOR 版本而非 patch 发布的原因,不同于 0.7.1 中的
+  § 8.5(它只是让已有的 § 8.1 义务变得可检验)。实际上没有任何已知
+  实现受影响:Rust 参考实现的 `parse_strict` 在这一语料出现之前就已
+  拒绝所有这些形式,而构建于其上的每个绑定都自动继承这一行为。迁移
+  说明见附录 E。
+
+### 新增
+
+- **附录 E —— 从 0.7.x 迁移。**
+- **`versions/0.8/tests/strict-lossy/`** —— 14 个 fixture,覆盖前导零、
+  显式 `+` 号、带进制前缀(hex/octal/binary)以及数字分组下划线的
+  整数;负零;带尾随零与指数的 float;§ 5.9.8 科学记数法边界情形;
+  以及在 inline object、inline array、多行数组的裸元素和顶层 inline
+  文档中的同一检查。
+
 ## [0.7.1] —— 2026-09-16
 
 编辑性发布。一致性 parser 与 writer 的行为不变:每个 0.7.0 文档解析为

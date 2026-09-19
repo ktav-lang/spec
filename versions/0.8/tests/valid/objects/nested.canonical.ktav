@@ -1,0 +1,8 @@
+server: {
+    host: 127.0.0.1
+    port: 8080
+    timeouts: {
+        read: 30
+        write: 10
+    }
+}

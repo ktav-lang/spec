@@ -1,0 +1,1 @@
+{"expected_error": "EmptyKey", "note": "Same as quoted_double.ktav but with the single-quote delimiter, confirming the empty-segment rule is delimiter-independent (Sec 5.3.3)."}

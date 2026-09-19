@@ -49,8 +49,16 @@ ERROR_CATEGORIES_V0_7 = ERROR_CATEGORIES_V0_6 | {
     "InvalidUtf8",          # 6.15
     "UnterminatedQuotedKey",  # 6.16
 }
-ERROR_CATEGORIES_BY_VERSION = {"0.6": ERROR_CATEGORIES_V0_6, "0.7": ERROR_CATEGORIES_V0_7}
-DEFAULT_ERROR_CATEGORIES = ERROR_CATEGORIES_V0_7  # == union of all versions (0.6 is a subset)
+# 0.8 added no new Sec 6 (invalid/) category -- strict-lossy/ rejections
+# are LossyScalar, which is a parse_strict-only class, not a lax `invalid/`
+# expected_error. Same closed set as 0.7.
+ERROR_CATEGORIES_V0_8 = ERROR_CATEGORIES_V0_7
+ERROR_CATEGORIES_BY_VERSION = {
+    "0.6": ERROR_CATEGORIES_V0_6,
+    "0.7": ERROR_CATEGORIES_V0_7,
+    "0.8": ERROR_CATEGORIES_V0_8,
+}
+DEFAULT_ERROR_CATEGORIES = ERROR_CATEGORIES_V0_8  # == union of all versions (0.6/0.7 are subsets)
 
 BOUNDARY_CLASSES = {
     "integer_range",
@@ -74,13 +82,25 @@ KTAV_WHITESPACE = frozenset(
     )
 )
 CORPUS_INVENTORY_FIELDS = frozenset({"version", "files"})
-# Frozen historical profile: versions/0.6 is frozen and gains no release
-# declaration (content/release.js), so its profile stays a literal here.
+# Frozen historical profiles. versions/0.6 is deleted from the working tree
+# and gains no release declaration (content/release.js), so its profile
+# stays a literal here. versions/0.7 is still carried in the working tree
+# (unlike 0.6) with its own content/release.js still declaring "0.7.1", so
+# without an explicit frozen entry it would fall through to
+# CURRENT_CORPUS_LAYOUT below and wrongly demand strict-lossy/, which 0.7.1
+# never had.
 FROZEN_CORPUS_LAYOUT_PROFILES = {
     "0.6.4": {
         "directories": frozenset({"valid", "invalid"}),
         "files": frozenset(),
         "error_categories": ERROR_CATEGORIES_V0_6,
+    },
+    "0.7.1": {
+        "directories": frozenset({
+            "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
+        }),
+        "files": frozenset({"boundary-fixtures.json", "manifest.json"}),
+        "error_categories": ERROR_CATEGORIES_V0_7,
     },
 }
 # Structural facts of the current corpus generation. The KEY under which this
@@ -89,6 +109,7 @@ FROZEN_CORPUS_LAYOUT_PROFILES = {
 CURRENT_CORPUS_LAYOUT = {
     "directories": frozenset({
         "valid", "invalid", "unrepresentable", "parseable-unrepresentable",
+        "strict-lossy",
     }),
     "files": frozenset({"boundary-fixtures.json", "manifest.json"}),
 }
@@ -105,7 +126,7 @@ def corpus_layout_profiles(release_version):
     None selects only the frozen historical profiles.
     """
     profiles = dict(FROZEN_CORPUS_LAYOUT_PROFILES)
-    if release_version is not None:
+    if release_version is not None and release_version not in profiles:
         family = release_version.rsplit(".", 1)[0]
         if family not in ERROR_CATEGORIES_BY_VERSION:
             raise ReleaseFamilyError(

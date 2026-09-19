@@ -7,11 +7,11 @@
 **Languages:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
 > **Область версии:** обзор возможностей и примеры в этом README
-> следуют Ktav 0.7.1 — текущей стабильной спецификации. Реализациям,
-> всё ещё нацеленным на 0.6.4, следует взять
-> [тег `v0.6.4`](https://github.com/ktav-lang/spec/tree/v0.6.4) — там
-> лежат и та спецификация, и её набор соответствия; что изменилось между ними —
-> описано в [Приложении D спецификации 0.7.1](versions/0.7/spec.ru.md).
+> следуют Ktav 0.8.0 — текущей стабильной спецификации. Реализациям,
+> всё ещё нацеленным на 0.7.1, следует читать
+> [`versions/0.7/spec.ru.md`](versions/0.7/spec.ru.md) — он всё ещё
+> лежит в рабочем дереве; что изменилось между ними —
+> описано в [Приложении E спецификации 0.8.0](versions/0.8/spec.ru.md).
 
 **Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
@@ -398,21 +398,20 @@ timeout: null
 
 ## Полная спецификация
 
-- **Текущая стабильная:** [Ktav 0.7.1](versions/0.7/spec.ru.md) — выпущена 2026-09-16; обзор возможностей этого README следует ей.
-- **Предыдущая стабильная:** Ktav 0.6.4 — выпущена 2026-08-23 и больше
-  не хранится в рабочем дереве. Её спецификация и набор соответствия
-  доступны по [тегу `v0.6.4`](https://github.com/ktav-lang/spec/tree/v0.6.4).
+- **Текущая стабильная:** [Ktav 0.8.0](versions/0.8/spec.ru.md) — выпущена 2026-09-19; обзор возможностей этого README следует ей.
+- **Предыдущая стабильная:** [Ktav 0.7.1](versions/0.7/spec.ru.md) — выпущена 2026-09-16.
 - **Машиночитаемый индекс** выпущенных/стабильных версий: [`versions.ktav`](versions.ktav).
 - **История версий:** [`CHANGELOG.ru.md`](CHANGELOG.ru.md).
 
 ## Набор тестов соответствия
 
 Каждая версия поставляется с языконезависимым набором тестов в
-[`versions/<v>/tests/`](versions/0.7/tests/). В корпусе 0.7.1
-есть четыре фикстурные категории (`valid/`, `invalid/`, `unrepresentable/` и
-`parseable-unrepresentable/`) плюс один верхнеуровневый файл метаданных.
-В более старых корпусах категорий меньше — в наборе 0.6.4, доступном по
-тегу `v0.6.4`, есть только `valid/` и `invalid/`. Runner
+[`versions/<v>/tests/`](versions/0.8/tests/). В корпусе 0.8.0
+есть пять фикстурных категорий (`valid/`, `invalid/`, `unrepresentable/`,
+`parseable-unrepresentable/` и `strict-lossy/`) плюс один
+верхнеуровневый файл метаданных. В более старых корпусах категорий
+меньше — в наборе 0.7.1 есть только первые четыре; в наборе 0.6.4,
+доступном по тегу `v0.6.4`, есть только `valid/` и `invalid/`. Runner
 соответствия MUST обходить каждую фикстурную категорию, присутствующую в
 целевой версии — молчаливый пропуск незнакомой категории даёт ложно-зелёный
 результат, что хуже, чем полное отсутствие фикстур для неё.
@@ -465,18 +464,25 @@ timeout: null
   допускающие только String-причины `CRByte`, `BothFormsRequired`,
   `TrailingWhitespaceCollision` и `LeadingWhitespaceCollision`, без иных
   файлов и без canonical-output.
+- **`strict-lossy/`** *(с 0.8)* — скаляры, чью лексическую форму
+  нестрогая точка входа (`parse`/`loads`) принимает и молча
+  канонизирует, но которую строгая точка входа
+  (`parse_strict`/`loads_strict`) MUST отвергать с `LossyScalar`.
+  Каждый случай — пара `<name>.ktav` + `<name>.json`; `.json` даёт и
+  результат нестрогого парсинга (`lax_value`), и точные `body`/`canonical`,
+  которые MUST называть строгий отказ.
 
-Versioned `scripts/locks/corpus-inventory.0.7.lock.json`
-отображает каждый относительный путь 0.7 в `valid/`, `invalid/`,
-`unrepresentable/` и `parseable-unrepresentable/`, а также
-`boundary-fixtures.json`, на его SHA-256. CI передаёт
+Versioned `scripts/locks/corpus-inventory.0.8.lock.json`
+отображает каждый относительный путь 0.8 в `valid/`, `invalid/`,
+`unrepresentable/`, `parseable-unrepresentable/` и `strict-lossy/`, а
+также `boundary-fixtures.json`, на его SHA-256. CI передаёт
 соответствующий lock в `validate_corpus.py --corpus-inventory-lock`:
 
 ```sh
-python scripts/validate_corpus.py versions/0.7/tests \
+python scripts/validate_corpus.py versions/0.8/tests \
   --require-unrepresentable --require-boundary \
-  --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json \
-  --corpus-inventory-lock scripts/locks/corpus-inventory.0.7.lock.json
+  --boundary-manifest-lock scripts/locks/boundary-fixtures.0.8.lock.json \
+  --corpus-inventory-lock scripts/locks/corpus-inventory.0.8.lock.json
 ```
 
 Каждый lock отвергает добавления, удаления, изменение содержимого и
@@ -543,7 +549,10 @@ semantic/schema checks.
 │   ├── archive/                           (0.7+) архивированный одноразовый бутстрап юнитов контента
 │   │   └── extract_content_units.py         см. content/README.md; отказывается перезаписывать content/
 │   └── locks/                             versioned lock-файлы корпуса, boundary и inventory секций
-│       ├── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256)
+│       ├── corpus-inventory.0.8.lock.json  (0.8: пути корпуса + SHA-256)
+│       ├── boundary-fixtures.0.8.lock.json (0.8: boundary-листья — fixture, path, class)
+│       ├── section-inventory.0.8.lock.json (0.8: порядок секций + структурные поля)
+│       ├── corpus-inventory.0.7.lock.json  (0.7: пути корпуса + SHA-256; 0.7 всё ещё в дереве)
 │       ├── boundary-fixtures.0.7.lock.json (0.7: boundary-листья — fixture, path, class)
 │       └── section-inventory.0.7.lock.json (0.7: порядок секций + структурные поля)
 ├── .github/workflows/     CI: проверка байт-идентичности content/ (0.7+), валидация корпуса,
@@ -584,12 +593,12 @@ Rust crate — эталонный парсер, и каждый биндинг �
 расширение на PyO3 вместо C ABI, а JS — несколько артефактов под
 конкретные среды: WASM для браузеров, N-API для Node и вдобавок путь
 через C ABI. Все они разбирают ту версию формата, которую
-поддерживает ядро Rust (сейчас — стабильная 0.7.1); language-agnostic
+поддерживает ядро Rust (сейчас — стабильная 0.8.0); language-agnostic
 набор `tests/` ниже прогоняется на всех из них при каждом релизе.
 
 Строите новую реализацию? Начните со `spec.md` целевой версии
-([`spec.ru.md`](versions/0.7/spec.ru.md), раздел 8 — Compliance)
-и прогоните набор [`tests/`](versions/0.7/tests/) через свой парсер.
+([`spec.ru.md`](versions/0.8/spec.ru.md), раздел 8 — Compliance)
+и прогоните набор [`tests/`](versions/0.8/tests/) через свой парсер.
 
 ## Вклад
 

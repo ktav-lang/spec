@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "The line's first byte is `[`, and the same-line `]` closes the inline-array attempt before the trailing `: 1` can be considered a pair separator. The non-whitespace content after that closer therefore has the `MalformedInlineCompound` precedence of § 5.2 rule 8; it never reaches key validation."}

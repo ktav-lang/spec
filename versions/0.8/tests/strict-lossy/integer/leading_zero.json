@@ -1,0 +1,1 @@
+{"lax_value": {"zip": 1234}, "expected_error": "LossyScalar", "body": "01234", "canonical": "1234", "note": "A leading zero on a decimal integer is dropped by canonicalization."}

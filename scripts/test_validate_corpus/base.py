@@ -16,7 +16,7 @@ import validate_corpus
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 CURRENT_RELEASE = release_info.load_release_file(
-    os.path.join(REPO_ROOT, "versions", "0.7", "content", "release.js"))
+    os.path.join(REPO_ROOT, "versions", "0.8", "content", "release.js"))
 CURRENT_VERSION = CURRENT_RELEASE["version"]
 CURRENT_RELEASE_JS = ("export default "
                       + json.dumps(CURRENT_RELEASE, ensure_ascii=False, indent=2)
@@ -67,6 +67,12 @@ class CorpusTestCase(unittest.TestCase):
                    '{"value": {"f": "a\\rb"}, '
                    '"unrepresentable_reason": "CRByte", '
                    '"note": "parser-produced writer failure"}')
+        self.write(root + "/strict-lossy/leading_zero.ktav", "zip: 01234\n")
+        self.write(root + "/strict-lossy/leading_zero.json",
+                   '{"lax_value": {"zip": 1234}, '
+                   '"expected_error": "LossyScalar", '
+                   '"body": "01234", "canonical": "1234", '
+                   '"note": "leading zero dropped by canonicalization"}')
         self.write(root + "/boundary-fixtures.json", json.dumps(
             {"boundary_dependent_leaves": [
                 {"fixture": "boundary", "path": "/overflow",
@@ -78,6 +84,7 @@ class CorpusTestCase(unittest.TestCase):
                 "invalid": {"count": 1},
                 "unrepresentable": {"count": 1},
                 "parseable-unrepresentable": {"count": 1},
+                "strict-lossy": {"count": 1},
             },
             "fixture_flags": [],
         }))

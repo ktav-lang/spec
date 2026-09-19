@@ -1,0 +1,8 @@
+a: {
+    wrapped:: {value}
+    other: text
+}
+b: [
+    :: {not-object}
+    :: [not-array]
+]

@@ -273,7 +273,7 @@ def content_unit_dir(name):
     manifest.js; only its NAME is fixed.
     """
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    content = os.path.join(repo_root, "versions", "0.7", "content")
+    content = os.path.join(repo_root, "versions", "0.8", "content")
     with open(os.path.join(content, "manifest.js"), encoding="utf-8") as fh:
         manifest = json.loads(fh.read().replace("export default ", "", 1))
     for unit in manifest:

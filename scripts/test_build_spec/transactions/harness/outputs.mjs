@@ -28,7 +28,7 @@ import path from 'node:path';
 export async function writeBuildRestoresMissingGeneratedContentReadmesFromReadmeSourceJs() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-readme-write-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     const fixtures = baseFixtures();
     const manifest = fixtures.map((u) => u.name);
@@ -36,7 +36,7 @@ export async function writeBuildRestoresMissingGeneratedContentReadmesFromReadme
     makeContent(versionDir, fixtures, manifest);
     write(path.join(contentDir, README_SOURCE_FILE),
       bodySource(expected.en, expected.ru, expected.zh));
-    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.7.lock.json'),
+    write(path.join(temp, 'scripts', 'locks', 'section-inventory.0.8.lock.json'),
       JSON.stringify({
         format: 'ktav-section-inventory',
         units: lockUnits(fixtures, manifest),
@@ -65,7 +65,7 @@ export async function writeBuildRejectsASpecificationDestinationSymlinkWithoutTo
   }
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-symlink-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const outside = path.join(temp, 'outside-spec.md');
@@ -158,7 +158,7 @@ export async function checkBuildReportsAMissingGeneratedOutputDeterministically(
 export async function writeBuildRejectsAGeneratedReadmeDirectoryBeforeCreatingTemporaryOutputs() {
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-write-special-'));
   try {
-    const versionDir = path.join(temp, 'versions', '0.7');
+    const versionDir = path.join(temp, 'versions', '0.8');
     const contentDir = path.join(versionDir, 'content');
     makeContent(versionDir, baseFixtures(), ['frontmatter', 'named-abstract', 'sec-1']);
     const build = await buildBuffers(contentDir);
