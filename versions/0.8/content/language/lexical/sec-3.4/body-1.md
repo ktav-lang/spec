@@ -13,7 +13,7 @@ Comments MUST occupy their own line; trailing comments at the end of
 a content line are not supported. Since comments are recognised only
 at the start of a trimmed line, the literal byte pair `##` in the
 middle of a value, key, or other content is just two `#` characters
-and needs no escape — there is no `\#` escape sequence in 0.7.0.
+and needs no escape — there is no `\#` escape sequence in 0.8.0.
 
 >>>>> lang=ru
 
@@ -31,7 +31,7 @@ and needs no escape — there is no `\#` escape sequence in 0.7.0.
 Поскольку комментарий распознаётся только в начале обрезанной
 строки, литеральная пара байтов `##` в середине значения, ключа
 или иного содержимого — это просто два символа `#` и не требует
-экранирования: escape-последовательности `\#` в 0.7.0 нет.
+экранирования: escape-последовательности `\#` в 0.8.0 нет.
 
 >>>>> lang=zh
 
@@ -44,5 +44,5 @@ CRLF、LF 与 CR 永远不是注释体字节。注释不产生 Value,被忽略�
 
 注释 MUST 独占一行;不支持行末追加注释。由于注释仅在 trim 后行首
 被识别,值、键或其他内容**中间**的字面字节对 `##` 仅是两个 `#`
-字符,无需 escape —— 0.7.0 没有 `\#` 转义序列。
+字符,无需 escape —— 0.8.0 没有 `\#` 转义序列。
 

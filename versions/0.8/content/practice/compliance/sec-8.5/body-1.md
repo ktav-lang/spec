@@ -5,7 +5,7 @@ this section's conformance corpus: the closed set of category
 directories under `versions/0.8/tests/`, the exact fixture count for
 each one, and every fixture whose primary input is not decodable as
 text and is instead given to the implementation under test as a raw
-byte sequence. A conformance test runner for Ktav 0.7 MUST load
+byte sequence. A conformance test runner for Ktav 0.8 MUST load
 this file before enumerating any fixture, and MUST reject a manifest
 whose `schema_version` field names a schema newer than the runner
 implements rather than guess at its shape. Such a runner:
@@ -41,7 +41,7 @@ implements rather than guess at its shape. Such a runner:
 каждой из них и каждая фикстура, чей первичный ввод не декодируется
 как текст и вместо этого передаётся тестируемой реализации как
 последовательность сырых байт. Раннер конформанс-тестов для Ktav
-0.7 MUST загружать этот файл до перечисления любой фикстуры и
+0.8 MUST загружать этот файл до перечисления любой фикстуры и
 MUST отвергать манифест, чьё поле `schema_version` называет схему
 новее той, которую реализует раннер, вместо того чтобы угадывать
 её форму. Такой раннер:
@@ -76,7 +76,7 @@ MUST отвергать манифест, чьё поле `schema_version` на�
 `versions/0.8/tests/manifest.json` 是本节 conformance 语料库的
 机器可读清单:`versions/0.8/tests/` 下的封闭类别目录集合、每个
 类别的精确 fixture 数量,以及每个其主输入不可解码为文本、而是作为
-原始字节序列交给被测实现的 fixture。Ktav 0.7 的 conformance
+原始字节序列交给被测实现的 fixture。Ktav 0.8 的 conformance
 测试运行器 MUST 在枚举任何 fixture 之前加载此文件,并且 MUST
 拒绝其 `schema_version` 字段所指模式比运行器所实现的更新的清单,
 而不是去猜测其形状。这样的运行器:

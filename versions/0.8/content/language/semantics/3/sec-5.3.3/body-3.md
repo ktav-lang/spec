@@ -7,7 +7,7 @@
   unwrapped there. `{a: "b"}` is the pair `a` mapped to the
   three-character String `"b"` (quote, `b`, quote — an ordinary bare
   inline scalar, per § 5.2's existing scalar-typing rules), not an
-  unwrapped String `b`: 0.7.0 does not add JSON-style value quoting.
+  unwrapped String `b`: 0.8.0 does not add JSON-style value quoting.
   This is NOT the same as saying the value-escaping rules are
   unchanged, though: § 3.7's three quote escapes (`\"`, `\'`,
   `` \` ``) are recognised in every escape-aware context alike,
@@ -179,7 +179,7 @@
   `{a: "b"}` — это пара `a`, отображённая на трёхсимвольную String
   `"b"` (кавычка, `b`, кавычка — обычный голый inline-скаляр, по уже
   существующим правилам типизации скаляра § 5.2), а не развёрнутая
-  String `b`: 0.7.0 не добавляет JSON-подобное квотирование значений.
+  String `b`: 0.8.0 не добавляет JSON-подобное квотирование значений.
   Это НЕ означает, что правила экранирования значений не изменились,
   однако: три кавычечных escape § 3.7 (`\"`, `\'`, `` \` ``)
   распознаются в любом escape-осведомлённом контексте одинаково,
@@ -364,7 +364,7 @@
   `<quoted-segment>`,绝不是分隔符,在那里也绝不会被剥离或展开。
   `{a: "b"}` 是键 `a` 映射到三字符 String `"b"`(引号、`b`、引号
   —— 一个普通的裸 inline 标量,依据 § 5.2 既有的标量类型判定
-  规则),而不是展开后的 String `b`:0.7.0 并未加入 JSON 风格的
+  规则),而不是展开后的 String `b`:0.8.0 并未加入 JSON 风格的
   值加引号。但这并不意味着值的 escape 规则未变:§ 3.7 的三个引号
   escape(`\"`、`\'`、`` \` ``)在每一个 escape 感知的上下文中
   都被同等识别,包括 inline 标量值 —— 正如 `\.` / `\:` 早已如此

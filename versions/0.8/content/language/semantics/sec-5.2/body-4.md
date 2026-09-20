@@ -35,7 +35,7 @@
     value that exceeds the implementation's supported range falls
     through to rule 15 (String). To guarantee interoperability, a
     portable document SHOULD NOT rely on Integer-typing for values
-    outside the i64 range; a 0.7.0-conformant parser running on a
+    outside the i64 range; a 0.8.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
     A **redundant leading zero** is a base-10 digit run whose first
     digit is `0` while at least one further digit follows, with or
@@ -67,7 +67,7 @@
     Integer literal does under rule 13. The grammar of § 3.6 can
     express magnitudes beyond what any Float domain holds finite,
     but no such literal is ever classified as Float: a
-    0.7.0-conformant parser MUST NOT produce a non-finite Float via
+    0.8.0-conformant parser MUST NOT produce a non-finite Float via
     this rule — which is what makes § 5.9.0's "no literal grammar
     of § 3.6 produces a non-finite Float" claim true. Underflow to
     ±0.0 (e.g. `1e-9999` on binary64) is not a fallback case: zero
@@ -117,7 +117,7 @@
     `bignum`); значение, превышающее поддерживаемый реализацией
     диапазон, проваливается в правило 15 (String). Для гарантии
     интероперабельности переносимый документ SHOULD NOT полагаться
-    на Integer-типизацию вне i64-диапазона; 0.7.0-конформный парсер
+    на Integer-типизацию вне i64-диапазона; 0.8.0-конформный парсер
     на строго-i64 бэкенде MUST помещать такие переполняющие тела в
     правило 15.
     **Избыточный ведущий ноль** — это ряд цифр по основанию 10, чья
@@ -150,7 +150,7 @@
     Integer-литерал в правиле 13. Грамматика § 3.6 может выражать
     величины, которые ни один домен Float не вмещает конечным
     значением, но такой литерал никогда не классифицируется как
-    Float: 0.7.0-конформный парсер MUST NOT порождать неконечный
+    Float: 0.8.0-конформный парсер MUST NOT порождать неконечный
     Float через это правило — именно это делает истинным
     утверждение § 5.9.0 о том, что «ни одна грамматика литералов
     § 3.6 не порождает неконечный Float». Underflow в ±0.0
@@ -189,7 +189,7 @@
     (例如 `bignum` / 任意精度);
     超出实现支持范围的值回退到规则 15(String)。为保证互操作,
     可移植文档 SHOULD NOT 依赖于 i64 范围之外的 Integer 类型化;
-    运行于严格 i64 后端的 0.7.0 兼容解析器 MUST 将这类溢出体归入
+    运行于严格 i64 后端的 0.8.0 兼容解析器 MUST 将这类溢出体归入
     规则 15。
     **冗余前导零**指以 `0` 开头且后面至少还有一位数字的十进制数字串,
     无论有无符号、忽略下划线分隔符:`01234`、`-045`、`00`、`0_7`。
@@ -209,7 +209,7 @@
     非有限的字面量 —— 例如 binary64 后端遇到 `1e9999`,溢出为
     无穷 —— 回退到规则 15(String),与规则 13 中超出范围的整数
     字面量完全一致。§ 3.6 的语法可以表达任何 Float 域都无法有限
-    表示的量级,但这类字面量永远不会被分类为 Float:0.7.0 兼容
+    表示的量级,但这类字面量永远不会被分类为 Float:0.8.0 兼容
     解析器 MUST NOT 经由此规则产生非有限 Float —— 这正是
     § 5.9.0「§ 3.6 的任何字面量语法都不产生非有限 Float」这一
     断言为真的原因。下溢到 ±0.0(例如 binary64 上的 `1e-9999`)

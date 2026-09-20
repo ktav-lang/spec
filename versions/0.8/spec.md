@@ -15,35 +15,26 @@ Multi-line strings and inline compounds use small, visible opt-in
 markers.
 
 This document specifies the syntax and semantics of the format at
-version 0.7.0. Implementations in any programming language may claim
-"Ktav 0.7.0 compliance" iff they satisfy every normative statement
+version 0.8.0. Implementations in any programming language may claim
+"Ktav 0.8.0 compliance" iff they satisfy every normative statement
 below.
 
-0.7.0: § 3.3 whitespace changes from an implementation-defined `MAY` to
-a fixed, exhaustively-enumerated 25-code-point `MUST` (§ 3.3); § 4's
-key-segment trimming widens from ASCII-only to the same fixed set, resolving
-a standing internal contradiction; the `\uXXXX` escape (§ 3.7.1) and
-quoted keys (§ 5.3.3, delimiters `"` / `'` / `` ` ``) are added; and
-the `(…)` multi-line string form now also strips trailing whitespace from
-every content line — `(…)` already removed each line's shared leading
-indent (§ 5.6). The five universal breaking changes are: a leading U+FEFF
-is stripped from the document; `(…)` no longer preserves trailing
-whitespace on content lines; a leading unescaped `"`, `'`, or `` ` ``
-in a key segment opens a quoted segment instead of being ordinary key
-content (so an Object pair `"port": 1` names `port`, not `"port"`);
-a recognised escape in an inline scalar forces String before keyword or
-numeric classification (so `1\.0` is String, not Float); and a float
-literal that is non-finite in the declared Float domain falls back to String
-instead of producing a non-finite Float (§ 5.2 rule 14). Separately, an
-implementation that literally followed old § 3.3 / § 4 wording and trimmed
-only the specified ASCII whitespace has a conditional migration review for
-the other members of the 25-code-point set at structural, blank-line,
-comment, root-dispatch, separator, scalar/key-edge, and stripped-block
-content positions; this is not one of the five universal changes. Also,
-the 0.7.0 binary64 minimum and `roundTiesToEven` can change values for a
-previously conforming narrower-domain implementation (for example, binary32
-rounds `16777217.0` to `16777216.0`); this is an implementation-dependent
-numeric migration hazard, not a universal sixth change.
+0.8.0: § 5.2's rules 13–14 gain a redundant-leading-zero exception, and
+§ 8.1 gains an obligation on a parser-conforming implementation to expose
+a strict parsing entry point. The one universal breaking change is: a
+base-10 digit run whose first digit is `0` while at least one further
+digit follows — `01234`, `-045`, `00`, `0_7`, and a float's integer part
+in `01.5`, `05e3` — is no longer inferred as a number at all. Such a body
+falls through to rule 15 and is a String carrying the digits exactly as
+written, so `zip: 01234` is `String("01234")` and not `Integer(1234)`,
+through every entry point. `0`, `0.5`, `0x1A`, `0o755`, `0b1010`,
+`1_000_000` and `+7` are unaffected, and canonical renderings do not
+change — the writer keys the `::` marker to § 3.6's grammar, which is
+untouched. Separately, § 8.1 now requires a strict parsing entry point
+that rejects a lossy scalar with `LossyScalar`; that is an obligation on
+an implementation rather than a change to what a document means, and no
+known implementation is affected, because the reference implementation
+already behaved this way before the corpus that checks it existed.
 
 ## 1. Introduction
 
@@ -61,7 +52,7 @@ This rules out indentation-significant whitespace (YAML),
 trailing-comma arithmetic (JSON), anchors and aliases (YAML), schema
 directives, and heredoc markers that cross many lines.
 
-Compared with 0.1.x, version 0.7.0:
+Compared with 0.1.x, version 0.8.0:
 
 - Drops the typed markers `:i` and `:f`. Numbers, booleans and `null`
   are inferred from the lexical form of the scalar instead. The raw
@@ -72,7 +63,7 @@ Compared with 0.1.x, version 0.7.0:
 - Replaces single `#` comments with **double `##`** comments that
   occupy a whole line. A single `#` is now an ordinary character.
 
-Compared with 0.5.0, version 0.7.0:
+Compared with 0.5.0, version 0.8.0:
 
 - Keys now process the full escape-sequence set (§ 3.7). Two new
   escapes — `\.` (literal dot) and `\:` (literal colon) — allow
@@ -178,7 +169,7 @@ Comments MUST occupy their own line; trailing comments at the end of
 a content line are not supported. Since comments are recognised only
 at the start of a trimmed line, the literal byte pair `##` in the
 middle of a value, key, or other content is just two `#` characters
-and needs no escape — there is no `\#` escape sequence in 0.7.0.
+and needs no escape — there is no `\#` escape sequence in 0.8.0.
 
 ### 3.5 Blank Lines
 
@@ -923,7 +914,7 @@ this compound scan.
     value that exceeds the implementation's supported range falls
     through to rule 15 (String). To guarantee interoperability, a
     portable document SHOULD NOT rely on Integer-typing for values
-    outside the i64 range; a 0.7.0-conformant parser running on a
+    outside the i64 range; a 0.8.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
     A **redundant leading zero** is a base-10 digit run whose first
     digit is `0` while at least one further digit follows, with or
@@ -955,7 +946,7 @@ this compound scan.
     Integer literal does under rule 13. The grammar of § 3.6 can
     express magnitudes beyond what any Float domain holds finite,
     but no such literal is ever classified as Float: a
-    0.7.0-conformant parser MUST NOT produce a non-finite Float via
+    0.8.0-conformant parser MUST NOT produce a non-finite Float via
     this rule — which is what makes § 5.9.0's "no literal grammar
     of § 3.6 produces a non-finite Float" claim true. Underflow to
     ±0.0 (e.g. `1e-9999` on binary64) is not a fallback case: zero
@@ -1190,7 +1181,7 @@ content quoted once.
   unwrapped there. `{a: "b"}` is the pair `a` mapped to the
   three-character String `"b"` (quote, `b`, quote — an ordinary bare
   inline scalar, per § 5.2's existing scalar-typing rules), not an
-  unwrapped String `b`: 0.7.0 does not add JSON-style value quoting.
+  unwrapped String `b`: 0.8.0 does not add JSON-style value quoting.
   This is NOT the same as saying the value-escaping rules are
   unchanged, though: § 3.7's three quote escapes (`\"`, `\'`,
   `` \` ``) are recognised in every escape-aware context alike,
@@ -2522,7 +2513,7 @@ instead.
 Previously: *Inline non-empty compound*. In 0.5.0+, inline non-empty
 compounds are valid (§ 5.8). This number is reserved to avoid
 renumbering older error catalogs. Implementations MUST NOT emit an
-error labelled `InlineNonEmptyCompound` when parsing 0.7.0 documents.
+error labelled `InlineNonEmptyCompound` when parsing 0.8.0 documents.
 
 ### 6.8 I/O Errors
 
@@ -2533,7 +2524,7 @@ I/O failure while reading a document yields an `Io` error.
 Previously: *Invalid typed scalar*. In 0.5.0+, typed markers `:i` /
 `:f` no longer exist; this number is reserved. Implementations
 MUST NOT emit an error labelled `InvalidTypedScalar` when parsing
-0.7.0 documents.
+0.8.0 documents.
 
 ### 6.10 Missing Separator Space
 
@@ -2880,7 +2871,7 @@ double quotes are re-escaped as `\"` in canonical output:
 
 ## 8. Compliance
 
-An implementation may claim **Ktav 0.7.0 compliance** at one or more
+An implementation may claim **Ktav 0.8.0 compliance** at one or more
 of the following levels.
 
 ### 8.1 Parser-conforming
@@ -3025,7 +3016,7 @@ such a Value with an error rather than serialise it (§ 5.9.0).
 Implementations MAY claim parser-only, writer-only, or both
 levels of conformance. An implementation MAY support older Ktav
 format versions in parallel (e.g. 0.1.1) under a configuration
-flag, but MUST treat a document as 0.7.0 by default unless the
+flag, but MUST treat a document as 0.8.0 by default unless the
 caller explicitly selects a different target version — this
 specification defines no in-document version marker.
 
@@ -3039,7 +3030,7 @@ this section's conformance corpus: the closed set of category
 directories under `versions/0.8/tests/`, the exact fixture count for
 each one, and every fixture whose primary input is not decodable as
 text and is instead given to the implementation under test as a raw
-byte sequence. A conformance test runner for Ktav 0.7 MUST load
+byte sequence. A conformance test runner for Ktav 0.8 MUST load
 this file before enumerating any fixture, and MUST reject a manifest
 whose `schema_version` field names a schema newer than the runner
 implements rather than guess at its shape. Such a runner:

@@ -14,7 +14,7 @@ This rules out indentation-significant whitespace (YAML),
 trailing-comma arithmetic (JSON), anchors and aliases (YAML), schema
 directives, and heredoc markers that cross many lines.
 
-Compared with 0.1.x, version 0.7.0:
+Compared with 0.1.x, version 0.8.0:
 
 - Drops the typed markers `:i` and `:f`. Numbers, booleans and `null`
   are inferred from the lexical form of the scalar instead. The raw
@@ -25,7 +25,7 @@ Compared with 0.1.x, version 0.7.0:
 - Replaces single `#` comments with **double `##`** comments that
   occupy a whole line. A single `#` is now an ordinary character.
 
-Compared with 0.5.0, version 0.7.0:
+Compared with 0.5.0, version 0.8.0:
 
 - Keys now process the full escape-sequence set (§ 3.7). Two new
   escapes — `\.` (literal dot) and `\:` (literal colon) — allow
@@ -48,7 +48,7 @@ Compared with 0.5.0, version 0.7.0:
 якоря и алиасы (YAML), схемные директивы и heredoc-маркеры,
 пересекающие много строк.
 
-По сравнению с 0.1.x, версия 0.7.0:
+По сравнению с 0.1.x, версия 0.8.0:
 
 - Убирает типизированные маркеры `:i` и `:f`. Числа, булевы и `null`
   выводятся из лексической формы скаляра. Сырой маркер `::` сохранён
@@ -59,7 +59,7 @@ Compared with 0.5.0, version 0.7.0:
 - Заменяет одиночные `#` комментарии на **двойные `##`** комментарии,
   занимающие отдельную строку. Одиночный `#` теперь обычный символ.
 
-По сравнению с 0.5.0, версия 0.7.0:
+По сравнению с 0.5.0, версия 0.8.0:
 
 - Ключи теперь обрабатывают полный набор escape-последовательностей
   (§ 3.7). Два новых escape — `\.` (литеральная точка) и `\:`
@@ -80,7 +80,7 @@ Ktav 文档是一系列行,共同描述一个层级化对象或数组。典型�
 这排除了缩进敏感(YAML)、尾部逗号约束(JSON)、锚点与别名(YAML)、
 schema 指令、跨多行的 heredoc 标记等。
 
-相比 0.1.x,版本 0.7.0:
+相比 0.1.x,版本 0.8.0:
 
 - 移除了类型标记 `:i` 和 `:f`。数字、布尔、`null` 从标量字面形式
   推断。`::` 原始标记保留用于在文本形式原本会匹配数字 / 关键字时
@@ -90,7 +90,7 @@ schema 指令、跨多行的 heredoc 标记等。
 - 将单 `#` 注释改为**双 `##`** 注释,占据一整行。单 `#` 现在
   是普通字符。
 
-相比 0.5.0,版本 0.7.0:
+相比 0.5.0,版本 0.8.0:
 
 - 键现在处理完整的 escape 序列集(§ 3.7)。两个新 escape —— `\.`
   (字面点)与 `\:`(字面冒号)—— 允许键段包含先前为结构性的字符。
