@@ -1,13 +1,13 @@
-# versions/0.7/content/ —— 规范内容单元
+# versions/0.8/content/ —— 规范内容单元
 
 **Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
 
 ## 这个目录是什么
 
-本目录是 `versions/0.7/spec.md`、`versions/0.7/spec.ru.md` 与
-`versions/0.7/spec.zh.md` 的**逐节来源(源头)**。
+本目录是 `versions/0.8/spec.md`、`versions/0.8/spec.ru.md` 与
+`versions/0.8/spec.zh.md` 的**逐节来源(源头)**。
 
-- `versions/0.7/` 下的三个 `.md` 文件是**生成的构件**。它们仍保留在
+- `versions/0.8/` 下的三个 `.md` 文件是**生成的构件**。它们仍保留在
   仓库中,以便在 GitHub 上直接阅读规范,但**切勿手动编辑**:手工
   改动会被下一次构建覆盖,并使 `node scripts/build_spec.mjs --check`
   失败。
@@ -23,7 +23,7 @@
 `named-<slug>/`(`named-abstract`、`named-appendix-a` ..
 `named-appendix-d`)。另有:
 
-- `scripts/locks/section-inventory.0.7.lock.json` —— 独立的、有版本的有序
+- `scripts/locks/section-inventory.0.8.lock.json` —— 独立的、有版本的有序
   inventory。Builder 在普通 CLI 运行中必须读取它,并拒绝与 manifest 的成员
   或顺序发生漂移。
 - `README.source.md` —— 本目录三个 README 共用的 `{ en, ru, zh }` source
@@ -227,7 +227,7 @@ N-1 个切割点**对整个单元只选一次**,并应用于所有语言。它�
 `["frontmatter", "named-abstract", "sec-1", ...]` 开头,以
 `[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
 `"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的
-真实位置。独立的 lock `scripts/locks/section-inventory.0.7.lock.json`
+真实位置。独立的 lock `scripts/locks/section-inventory.0.8.lock.json`
 按 manifest 顺序为每个单元保存一条确定性的结构记录。每条记录严格包含
 `{ unit, kind, number, level, sep }`;缺少的结构值使用 `null`。
 `kind`、`number`、`level` 和 `sep` MUST 与对应的 `meta.js`
@@ -312,7 +312,7 @@ closed-world 不变量都会被拒绝。
 
 推荐工作流:编辑单元文件 -> 运行 `node scripts/build_spec.mjs` ->
 核对三个 `.md` 文件的 `git diff` 是否与你的意图完全一致 -> 运行
-`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> 把单元改动与重新生成的
+`python scripts/check_translation_parity.py versions/0.8/spec.md versions/0.8/spec.ru.md versions/0.8/spec.zh.md` -> 把单元改动与重新生成的
 `.md` 文件**一起**提交。
 
 ## 如何新增一节

@@ -1,14 +1,14 @@
-# versions/0.7/content/ — spec content units
+# versions/0.8/content/ — spec content units
 
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
 ## What this directory is
 
 This directory is the **per-section source of truth** for
-`versions/0.7/spec.md`, `versions/0.7/spec.ru.md`, and
-`versions/0.7/spec.zh.md`.
+`versions/0.8/spec.md`, `versions/0.8/spec.ru.md`, and
+`versions/0.8/spec.zh.md`.
 
-- The three `.md` files at `versions/0.7/` are **generated artifacts**. They
+- The three `.md` files at `versions/0.8/` are **generated artifacts**. They
   remain committed in the repo so the spec is directly readable on GitHub,
   but they must **never be hand-edited**: a hand edit is overwritten by the
   next build and makes `node scripts/build_spec.mjs --check` fail.
@@ -24,7 +24,7 @@ This directory is the **per-section source of truth** for
 `sec-3.1`, `sec-5.3.3`, `sec-10.7`), and 6 named `named-<slug>/`
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Plus:
 
-- `scripts/locks/section-inventory.0.7.lock.json` is an independent,
+- `scripts/locks/section-inventory.0.8.lock.json` is an independent,
   versioned ordered inventory. The builder requires it in normal CLI runs
   and rejects manifest order or membership drift against it.
 - `README.source.md` is the single `{ en, ru, zh }` source object for the
@@ -257,7 +257,7 @@ order. It starts `["frontmatter", "named-abstract", "sec-1", ...]` and ends
 `[..., "named-appendix-d"]`. It is **never sorted alphabetically**:
 `"sec-10.7"` must come after `"sec-2"`, and named sections sit at their real
 document positions. The independent lock at
-`scripts/locks/section-inventory.0.7.lock.json` stores one deterministic
+`scripts/locks/section-inventory.0.8.lock.json` stores one deterministic
 record per manifest entry, in manifest order. Each record has exactly
 `{ unit, kind, number, level, sep }`; absent structural values are `null`.
 The `kind`, `number`, `level`, and `sep` values MUST match the
@@ -361,7 +361,7 @@ this README is rejected.
 
 Recommended workflow: edit unit files -> run `node scripts/build_spec.mjs`
 -> verify `git diff` on the three `.md` files shows exactly what you
-intended -> run `python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> commit the unit
+intended -> run `python scripts/check_translation_parity.py versions/0.8/spec.md versions/0.8/spec.ru.md versions/0.8/spec.zh.md` -> commit the unit
 changes and the regenerated `.md` files **together**.
 
 ## How to add a new section

@@ -1,14 +1,14 @@
-# versions/0.7/content/ — исходники спецификации по секциям
+# versions/0.8/content/ — исходники спецификации по секциям
 
 **Languages:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
 ## Что это за директория
 
 Эта директория — **источник истины по секциям** для
-`versions/0.7/spec.md`, `versions/0.7/spec.ru.md` и
-`versions/0.7/spec.zh.md`.
+`versions/0.8/spec.md`, `versions/0.8/spec.ru.md` и
+`versions/0.8/spec.zh.md`.
 
-- Три файла `.md` в `versions/0.7/` — **сгенерированные артефакты**. Они
+- Три файла `.md` в `versions/0.8/` — **сгенерированные артефакты**. Они
   остаются в репозитории, чтобы спецификацию можно было читать на GitHub
   напрямую, но их **нельзя редактировать вручную**: ручная правка будет
   перезаписана следующей сборкой и уронит
@@ -25,7 +25,7 @@
 `sec-3.1`, `sec-5.3.3`, `sec-10.7`) и 6 именованных `named-<slug>/`
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Плюс:
 
-- `scripts/locks/section-inventory.0.7.lock.json` — независимый
+- `scripts/locks/section-inventory.0.8.lock.json` — независимый
   версионированный упорядоченный inventory. Builder требует его при обычном
   CLI-запуске и отвергает расхождение состава или порядка с manifest.
 - `README.source.md` — единый source object `{ en, ru, zh }` для трёх README
@@ -267,7 +267,7 @@ Markdown.
 ...]` и заканчивается `[..., "named-appendix-d"]`. Он **никогда не
 сортируется по алфавиту**: `"sec-10.7"` должен идти после `"sec-2"`, а
 именованные секции стоят на своих реальных позициях в документе. Независимый
-lock `scripts/locks/section-inventory.0.7.lock.json` хранит по одной
+lock `scripts/locks/section-inventory.0.8.lock.json` хранит по одной
 детерминированной записи на элемент manifest в его порядке. Каждая запись имеет
 ровно поля `{ unit, kind, number, level, sep }`; отсутствующие структурные
 значения равны `null`. Значения `kind`, `number`, `level` и `sep`
@@ -371,7 +371,7 @@ closed-world-свойство, задокументированное в это�
 Рекомендуемый рабочий процесс: правите файлы юнитов -> запускаете
 `node scripts/build_spec.mjs` -> проверяете по `git diff`, что изменения
 трёх файлов `.md` — ровно то, что вы имели в виду -> запускаете
-`python scripts/check_translation_parity.py versions/0.7/spec.md versions/0.7/spec.ru.md versions/0.7/spec.zh.md` -> коммитите изменения юнитов и
+`python scripts/check_translation_parity.py versions/0.8/spec.md versions/0.8/spec.ru.md versions/0.8/spec.zh.md` -> коммитите изменения юнитов и
 регенерированные файлы `.md` **вместе**.
 
 ## Как добавить новую секцию

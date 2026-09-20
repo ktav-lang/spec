@@ -96,11 +96,11 @@ function rx(template) {
 //
 // The name is now only half true, and saying so beats letting it rot:
 // `versions.ktav` is the last genuinely hand-maintained entry. README and
-// CHANGELOG are generated from README.source.md and CHANGELOG.source.md,
-// and are listed here because the ARTIFACT is what ships and therefore
-// what must carry the right version — but a failure means editing the
-// SOURCE, since a fix applied to the artifact is overwritten by the next
-// build and rejected by --check.
+// CHANGELOG are generated from their `root-docs/<DOC>/` unit trees (see
+// root_docs.mjs), and are listed here because the ARTIFACT is what ships
+// and therefore what must carry the right version — but a failure means
+// editing the SOURCE UNIT, since a fix applied to the artifact is
+// overwritten by the next build and rejected by --check.
 //
 // Anchors are regexes pinned to the exact current-version shapes (path
 // anchors, dates, banner lines), so historical-version mentions (0.6.x,

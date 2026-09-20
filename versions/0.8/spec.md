@@ -913,7 +913,8 @@ this compound scan.
 11. If the body is exactly `true` → Bool `true`.
 12. If the body is exactly `false` → Bool `false`.
 13. If the body matches the **integer literal** grammar (§ 3.6) and
-    its numeric value fits at least the i64 range
+    its digit run does **not** begin with a redundant leading zero,
+    and its numeric value fits at least the i64 range
     (-2^63 .. 2^63 - 1, i.e. -9_223_372_036_854_775_808 ..
     9_223_372_036_854_775_807): Integer carrying the integer value.
     The canonical textual form is the base-10 decimal normalisation
@@ -924,6 +925,19 @@ this compound scan.
     portable document SHOULD NOT rely on Integer-typing for values
     outside the i64 range; a 0.7.0-conformant parser running on a
     strictly-i64 backend MUST place such overflow bodies into rule 15.
+    A **redundant leading zero** is a base-10 digit run whose first
+    digit is `0` while at least one further digit follows, with or
+    without a sign and ignoring underscore separators: `01234`,
+    `-045`, `00`, `0_7`. Such a body is never an Integer; it falls
+    through to rule 15 and is a String carrying the digits exactly as
+    written. Inferring `1234` from `01234` would destroy the
+    difference between the identifier `01234` — a postal code, a
+    phone number, an account number — and the quantity `1234`, and no
+    later stage can restore it, which is why this is the one numeric
+    spelling § 5.2 refuses rather than canonicalises. The exception is
+    confined to base 10: in `0x1A`, `0o755` and `0b1010` the `0`
+    belongs to the base prefix and is not a redundant digit, and a
+    body of exactly `0` has no further digit to make it redundant.
 14. If the body matches the **float literal** grammar (§ 3.6) and
     its numeric value is finite in the implementation's declared
     Float domain (§ 5): Float carrying the numeric value parsed
@@ -946,6 +960,10 @@ this compound scan.
     of § 3.6 produces a non-finite Float" claim true. Underflow to
     ±0.0 (e.g. `1e-9999` on binary64) is not a fallback case: zero
     is finite, so such a literal is an ordinary Float.
+    Rule 13's redundant-leading-zero exception applies here too, to
+    the digits before the decimal point — or before the exponent in
+    the point-less alternative: `01.5` and `05e3` are Strings, while
+    `0.5`, whose integer part is exactly `0`, is an ordinary Float.
 15. Otherwise → String whose content is the body, as written.
 
 The keyword forms `null`, `true`, `false` and the numeric literals
@@ -3845,15 +3863,27 @@ no existing document's meaning changes because of it.
 
 ## Appendix E. Migration from 0.7.x
 
-This is a document-behaviour non-event: no valid document changes its
-Value or its acceptance under the lax entry point (`parse`/`loads`)
-between 0.7.x and 0.8.0. The only change is to what a parser-conforming
-implementation must additionally expose and verify.
+0.8.0 carries two changes: one that alters a document's Value, and one
+that adds an obligation on an implementation.
 
-§ 8.1 now requires a strict parsing entry point (`parse_strict` /
+**§ 5.2 — the Value change.** A decimal integer whose digit run begins
+with a redundant leading zero is no longer inferred as a number; it is
+a String carrying the digits exactly as written. `zip: 01234` was
+`Integer(1234)` under 0.7.x and is the String `"01234"` under 0.8.0,
+through every entry point, the lax one included. Rule 14 applies the
+same exception to a float's integer part (`01.5`, `05e3`). To find
+affected documents, look for a base-10 scalar matching `[+-]?0[0-9_]+`
+after a plain `:` separator; a document that wants the numeric reading
+must drop the zero (`zip: 1234`), and one that wants the String needs
+no change at all — that is now what it already means. Deliberately
+unaffected: `0`, `0.5`, `0x1A`/`0o755`/`0b1010` (whose `0` belongs to
+the base prefix), `1_000_000` and `+7` all keep inferring numbers.
+
+**§ 8.1 — the implementation obligation.** § 8.1 now requires a strict
+parsing entry point (`parse_strict` /
 `loads_strict`) that rejects a lossy scalar — one whose lexical form
 differs from the canonical form of the number § 5's rules 13–14 infer
-from it, such as a leading zero (`01234`), an explicit `+` sign
+from it, such as an explicit `+` sign
 (`+79991234567`), a base-prefixed literal (`0x1A2B`, `0o755`,
 `0b1010`), digit-group underscores (`1_000_000`), or a non-canonical
 float spelling (`1.10`, `5e3`) — with `LossyScalar`, naming the exact

@@ -73,17 +73,19 @@ const REAL_RELEASE = JSON.parse(
 
 // What a real repository root holds, for fixtures that run the CLI over
 // a temp copy. `versions.ktav` is the only genuinely hand-written entry
-// left; README and CHANGELOG are now generated from their `.source.md`,
-// and the sources must be copied WITH them. An artifact arriving without
-// its source is precisely the state the builder refuses — correctly, and
+// left; README and CHANGELOG are now generated from their
+// `root-docs/<DOC>/` unit trees (root_doc_units.mjs), and the source
+// must be copied WITH the artifacts. An artifact arriving without its
+// source is precisely the state the builder refuses — correctly, and
 // this list going stale is what made it refuse a fixture.
 const HANDWRITTEN_ROOT_FILES = [
   'versions.ktav',
-  'README.source.md',
   'README.md', 'README.ru.md', 'README.zh.md',
-  'CHANGELOG.source.md',
   'CHANGELOG.md', 'CHANGELOG.ru.md', 'CHANGELOG.zh.md',
 ];
+// README's and CHANGELOG's sources are unit trees, not single files —
+// copied recursively, separately from the flat file list above.
+const HANDWRITTEN_ROOT_DIRS = ['root-docs/README', 'root-docs/CHANGELOG'];
 
 // Appendix A's entry for the current version. Not a root file — it lives
 // in a content unit, and meta is never token-substituted, which is
@@ -104,6 +106,9 @@ const APPENDIX_META_REL = `versions/0.8/content/${APPENDIX_UNIT}/meta.js`;
 function copyHandwrittenRootFiles(root) {
   for (const rel of HANDWRITTEN_ROOT_FILES) {
     fs.copyFileSync(path.join(process.cwd(), rel), path.join(root, rel));
+  }
+  for (const rel of HANDWRITTEN_ROOT_DIRS) {
+    fs.cpSync(path.join(process.cwd(), rel), path.join(root, rel), { recursive: true });
   }
 }
 

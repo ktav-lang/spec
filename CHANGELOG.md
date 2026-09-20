@@ -28,12 +28,23 @@ Normative text and conformance fixtures for 0.8.0, under
 `versions.ktav` points `stable` and `latest` at 0.8.0; 0.7.1 remains
 carried in the working tree as the previous stable release.
 
-No change to what a document's lax entry point (`parse`/`loads`) does:
-every 0.7.x document parses to the same Value, and every canonical
-rendering is unchanged byte for byte.
-
 ### Breaking
 
+- **§ 5.2 — a decimal integer with a redundant leading zero is a String,
+  not an Integer.** `zip: 01234` now parses to the String `"01234"`
+  through *every* entry point, lax included; under 0.7.x it was
+  `Integer(1234)` and the zero was gone for good. This is the change the
+  0.8 line exists for: a postal code, a phone number or an account
+  number written without a forced-string marker survives a parse and a
+  write-back intact, because § 5.2 no longer infers a number when doing
+  so would destroy the spelling. A **redundant leading zero** is a
+  base-10 digit run whose first digit is `0` with at least one further
+  digit, sign and underscores ignored (`01234`, `-045`, `00`, `0_7`);
+  rule 14 applies the same exception to a float's integer part (`01.5`,
+  `05e3`). Deliberately unaffected, and still inferred as numbers:
+  `0` itself, `0.5`, the base-prefixed forms `0x1A`/`0o755`/`0b1010`
+  (whose `0` belongs to the prefix), `1_000_000` and `+7`.
+  A document that wants the numeric reading must drop the zero.
 - **§ 8.1 — a parser-conforming implementation must now also expose a
   strict parsing entry point** (`parse_strict` / `loads_strict`) and
   reject every fixture under `versions/0.8/tests/strict-lossy/` with
@@ -51,12 +62,19 @@ rendering is unchanged byte for byte.
 ### Added
 
 - **Appendix E — Migration from 0.7.x.**
-- **`versions/0.8/tests/strict-lossy/`** — 14 fixtures covering
-  leading-zero, plus-signed, base-prefixed (hex/octal/binary), and
-  underscored integers; negative zero; trailing-zero and exponent
-  floats; the § 5.9.8 scientific-region boundary; and the same check
-  inside an inline object, an inline array, a bare multi-line array
-  item, and a top-level inline document.
+- **`versions/0.8/tests/strict-lossy/`** — 13 fixtures covering the
+  spellings the lax entry point still canonicalises: plus-signed,
+  base-prefixed (hex/octal/binary) and underscored integers; negative
+  zero; trailing-zero and exponent floats; the § 5.9.8
+  scientific-region boundary; and the same check inside an inline
+  object, an inline array, a bare multi-line array item, and a
+  top-level inline document. The leading-zero case is deliberately
+  NOT here: § 5.2 now keeps it a String, so nothing is lost and there
+  is nothing for a strict parse to reject.
+- **`versions/0.8/tests/valid/numbers/{integer,float}/leading_zero_is_string`**
+  — both sides of the § 5.2 exception in one fixture each: the
+  leading-zero forms as Strings, next to the forms that still infer
+  numbers, so an implementation cannot over-apply the rule either.
 
 ## [0.7.1] — 2026-09-16
 

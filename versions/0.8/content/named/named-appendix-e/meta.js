@@ -7,5 +7,5 @@ export default {
     "ru": "Приложение E. Миграция с 0.7.x",
     "zh": "附录 E. 从 0.7.x 迁移"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }

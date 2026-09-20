@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { assembleRootDocUnits, hasRootDocUnits } from './root_doc_units.mjs';
 import {
   BODY_LINE_LIMIT,
   BODY_TARGET_LINES,
@@ -32,6 +33,14 @@ const TOP_LEVEL_ALLOWED_FILES = new Set([
   'README.md', 'README.ru.md', 'README.zh.md', README_SOURCE_FILE,
   RELEASE_FILE, 'manifest.js', 'package.json',
 ]);
+
+// A per-version README may be assembled from a `readme-units/` unit tree
+// (root_doc_units.mjs's shape — same as the repository-root documents)
+// instead of the single README_SOURCE_FILE. Exempted from the manifest's
+// unit/group-directory walk below: it is not a content unit, it is an
+// alternative source for the top-level README, closed-world validated
+// by assembleRootDocUnits itself.
+const README_UNITS_DIR = 'readme-units';
 
 function readJsonDefault(filePath) {
   let buf;
@@ -450,6 +459,36 @@ function validateBodySplitting(unit, meta, parts) {
   }
 }
 
+// Non-last units must end with EXACTLY two trailing LFs ("\n\n"), i.e.
+// exactly one blank line; a run of 3+ trailing LFs is also rejected.
+// Exception: empty "container" sections whose whole body is exactly "\n" in
+// every language (heading immediately followed by subsections — the lone
+// "\n" supplies the blank line). The last unit must end with a single "\n".
+// Shared by content.mjs's numbered/named spec units and root_doc_units.mjs's
+// root-document units — the contract does not depend on what generates the
+// heading (or on there being one at all).
+export function validateUnitTerminalNewlines(unit, parts, isLast) {
+  const last = parts[parts.length - 1];
+  for (const lang of LANGS) {
+    const s = last[lang];
+    if (isLast) {
+      if (s.endsWith('\n\n')) {
+        failUnit(unit, `${lang}: last unit's final chunk must end with a single "\\n" but ends with "\\n\\n" (trailing blank line)`);
+      } else if (!s.endsWith('\n')) {
+        failUnit(unit, `${lang}: last unit's final chunk must end with "\\n"`);
+      }
+    } else if (!s.endsWith('\n\n') || s.endsWith('\n\n\n')) {
+      const wholeBody = parts.map((p) => p[lang]).join('');
+      const container = wholeBody === '\n' && LANGS.every((l) => parts.map((p) => p[l]).join('') === '\n');
+      if (container) continue;
+      const shape = s.endsWith('\n\n\n')
+        ? '"\\n\\n\\n" or more (two or more trailing blank lines)'
+        : s.endsWith('\n') ? '"\\n" (single newline)' : 'no trailing newline';
+      failUnit(unit, `${lang}: non-last unit's final chunk must end with "\\n\\n" (exactly one blank line; only whole-body "\\n" container sections are exempt), got ${shape}`);
+    }
+  }
+}
+
 // Closed-world validation of a content dir. Throws Error on first violation.
 // Returns { manifest, units } where units is a Map unit -> { meta, parts }.
 // Content sources are data, never code. manifest.js and meta.js are written
@@ -530,7 +569,9 @@ export async function validateContentDir(contentDir, options = {}) {
     for (const ent of levelEntries) {
       const child = rel === '' ? ent.name : `${rel}/${ent.name}`;
       if (ent.isDirectory()) {
-        if (manifestSet.has(child)) {
+        if (rel === '' && ent.name === README_UNITS_DIR) {
+          // Not a content unit — validated separately by readReadmeSource.
+        } else if (manifestSet.has(child)) {
           actualDirs.add(child);
         } else if (groupDirs.has(child)) {
           walkLevel(child, fs.readdirSync(path.join(contentDir, child), { withFileTypes: true }));
@@ -558,14 +599,22 @@ export async function validateContentDir(contentDir, options = {}) {
     }
   }
 
-  // 2b. README.source.js is required input. Its three generated README
-  // outputs remain allowlisted above, but validation must permit them to be
-  // absent so normal write mode can restore them. --check requires and
-  // byte-compares all three outputs below.
-  if (!actualFiles.has(README_SOURCE_FILE)) {
-    fail(`required file "${README_SOURCE_FILE}" is missing under content/ (the three READMEs must come from one source object)`);
+  // 2b. Exactly one README source shape is required input: either
+  // README_SOURCE_FILE (single file) or readme-units/manifest.js (unit
+  // tree, same shape root_doc_units.mjs uses for the repository-root
+  // documents). The three generated README outputs remain allowlisted
+  // above, but validation must permit them to be absent so normal write
+  // mode can restore them. --check requires and byte-compares all three
+  // outputs below.
+  const readmeUnitsDir = path.join(contentDir, README_UNITS_DIR);
+  const hasUnits = hasRootDocUnits(readmeUnitsDir);
+  if (!actualFiles.has(README_SOURCE_FILE) && !hasUnits) {
+    fail(`required file "${README_SOURCE_FILE}" (or "${README_UNITS_DIR}/manifest.js") is missing under content/ (the three READMEs must come from one source)`);
   }
-  const readmes = readReadmeSource(contentDir);
+  if (actualFiles.has(README_SOURCE_FILE) && hasUnits) {
+    fail(`both "${README_SOURCE_FILE}" and "${README_UNITS_DIR}/manifest.js" exist under content/ — exactly one README source shape is allowed, remove the one not in use`);
+  }
+  const readmes = hasUnits ? assembleRootDocUnits(readmeUnitsDir) : readReadmeSource(contentDir);
 
   // 3. Frontmatter invariant.
   if (manifest[0] !== 'frontmatter') {
@@ -694,30 +743,7 @@ export async function validateContentDir(contentDir, options = {}) {
     validateUnitHeadings(unit, meta, parts);
 
     // 6. Terminal-newline invariant (per language).
-    // Non-last units must end with EXACTLY two trailing LFs ("\n\n"), i.e.
-    // exactly one blank line; a run of 3+ trailing LFs is also rejected.
-    // Exception: empty "container" sections whose whole body is exactly "\n" in every
-    // language (heading immediately followed by subsections — the lone "\n"
-    // supplies the blank line). The last unit must end with a single "\n".
-    const last = parts[parts.length - 1];
-    for (const lang of LANGS) {
-      const s = last[lang];
-      if (isLast) {
-        if (s.endsWith('\n\n')) {
-          failUnit(unit, `${lang}: last unit's final chunk must end with a single "\\n" but ends with "\\n\\n" (trailing blank line)`);
-        } else if (!s.endsWith('\n')) {
-          failUnit(unit, `${lang}: last unit's final chunk must end with "\\n"`);
-        }
-      } else if (!s.endsWith('\n\n') || s.endsWith('\n\n\n')) {
-        const wholeBody = parts.map((p) => p[lang]).join('');
-        const container = wholeBody === '\n' && LANGS.every((l) => parts.map((p) => p[l]).join('') === '\n');
-        if (container) continue;
-        const shape = s.endsWith('\n\n\n')
-          ? '"\\n\\n\\n" or more (two or more trailing blank lines)'
-          : s.endsWith('\n') ? '"\\n" (single newline)' : 'no trailing newline';
-        failUnit(unit, `${lang}: non-last unit's final chunk must end with "\\n\\n" (exactly one blank line; only whole-body "\\n" container sections are exempt), got ${shape}`);
-      }
-    }
+    validateUnitTerminalNewlines(unit, parts, isLast);
 
     units.set(unit, { meta, parts });
   }
