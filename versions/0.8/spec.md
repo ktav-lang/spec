@@ -673,7 +673,7 @@ Value is one of: **Null**, **Bool**, **Integer**, **Float**, **String**,
   integer literal outside the i64 range is a String for a
   minimum-domain implementation, so `i64_overflow_to_string.json`
   expects the String `"9223372036854775808"`. § 8.1 / § 8.2 and
-  `versions/0.7/tests/boundary-fixtures.json` define, at the level
+  `versions/0.8/tests/boundary-fixtures.json` define, at the level
   of individual leaves, exactly where and how a wider-domain
   implementation MAY legitimately diverge from a minimum-domain
   fixture oracle. The canonical textual form of an Integer
@@ -1738,8 +1738,8 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. Every `.json` file in `versions/0.7/tests/unrepresentable/`
-and `versions/0.7/tests/parseable-unrepresentable/` MUST be a JSON object
+it. Every `.json` file in `versions/0.8/tests/unrepresentable/`
+and `versions/0.8/tests/parseable-unrepresentable/` MUST be a JSON object
 with exactly these three fields and no others:
 
 - `value`: a recursively valid JSON mapping of the Value. JSON objects
@@ -2011,8 +2011,13 @@ MUST test the following branches in order; exactly one branch applies:
   thus `::  x` has body `x`, not ` x`. This branch applies only when the
   body is a physically safe non-empty one-line String under § 5.9.7 — with
   no `LF` or `CR`, leading/trailing whitespace, or ASCII control byte other
-  than `TAB`. The body would otherwise
-  be reinterpreted by § 5.2 as a number, keyword, an inline
+  than `TAB`. The body either matches § 3.6's integer or float literal
+  grammar — the marker is keyed to that GRAMMAR match, not to § 5.2's
+  classification outcome, so it is still emitted for the
+  redundant-leading-zero forms rules 13–14 send to rule 15, and a
+  canonical document therefore never depends on that exception having
+  been applied — or would otherwise
+  be reinterpreted by § 5.2 as a keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would
   otherwise collide with a line-level structural token (a body of
@@ -2884,7 +2889,7 @@ A parser-conforming implementation:
 
 - Satisfies every normative MUST / MUST NOT statement in this
   document that pertains to parsing.
-- Accepts every fixture under `versions/0.7/tests/valid/` and
+- Accepts every fixture under `versions/0.8/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
   oracle. In every JSON Value oracle, the number token's lexical shape
   fixes the Value kind: a token containing none of `.`, `e`, or `E`
@@ -2900,7 +2905,7 @@ A parser-conforming implementation:
   crosses that leaf's named boundary. If no such divergence occurs, the
   listed leaf MUST match normally; the exemption never extends to any
   other leaf.
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
   mix boundary-dependent leaves with ordinary ones (e.g.
@@ -2926,23 +2931,24 @@ A parser-conforming implementation:
   § 5's rules 13–14 to the leaf's body produces. Every field not
   listed in `boundary-fixtures.json`, in every fixture, carries no
   exemption for any implementation of any domain.
-- Rejects every fixture under `versions/0.7/tests/invalid/` with
+- Rejects every fixture under `versions/0.8/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 - Accepts every `<name>.ktav` under
-  `versions/0.7/tests/parseable-unrepresentable/` and produces the
+  `versions/0.8/tests/parseable-unrepresentable/` and produces the
   sibling JSON's `value`. These inputs cover the parser-produced
   `CRByte`, `BothFormsRequired`, `TrailingWhitespaceCollision`,
   and `LeadingWhitespaceCollision` cases; the category has no
   canonical-output files because its writer result MUST be rejection.
 - Exposes a strict parsing entry point, and for every fixture under
-  `versions/0.7/tests/strict-lossy/`: through the lax entry point
+  `versions/0.8/tests/strict-lossy/`: through the lax entry point
   (`parse`), accepts the fixture and produces the Value named in the
   sibling JSON's `lax_value`; through the strict entry point
   (`parse_strict`), rejects the same input with `LossyScalar` naming
   the exact `body` and `canonical` given in that JSON. A fixture is
   *lossy* when its lexical form differs from the canonical form of the
-  number § 5's rules 13–14 infer from it (`1.10` → `1.1`, `01234` →
-  `1234`, `0x1A2B` → `6699`, …): the lax entry point accepts such a
+  number § 5's rules 13–14 infer from it (`1.10` → `1.1`, `+7` → `7`,
+  `0x1A2B` → `6699`, …; never a leading-zero decimal — § 5.2 keeps
+  that a String, so nothing is lost): the lax entry point accepts such a
   scalar unchanged and silently canonicalises it, while the strict
   entry point exists so an author can catch the same case before it
   round-trips into a different literal. Each `name.json` MUST contain
@@ -2955,11 +2961,11 @@ A parser-conforming implementation:
 A writer-conforming implementation:
 
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
-- For each fixture under `versions/0.7/tests/valid/`, produces —
+- For each fixture under `versions/0.8/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
   output equal to `name.canonical.ktav`, except for the contribution
   of a leaf that
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists for that fixture. Under § 8.1,
   every ordinary, non-exempt field MUST match its JSON oracle in the
   tested implementation's declared domain; an ordinary numeric field
@@ -2975,7 +2981,7 @@ A writer-conforming implementation:
   its domain. An implementation supporting only the minimum domain
   MUST match every `valid/` fixture's `.canonical.ktav` exactly,
   in full, including every listed boundary leaf.
-- For each fixture under `versions/0.7/tests/unrepresentable/`,
+- For each fixture under `versions/0.8/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
   (§ 5.9.0) — via whatever error-reporting shape its own API uses;
@@ -2989,7 +2995,7 @@ A writer-conforming implementation:
   programmatic Float carrier, is outside the parser and canonical domains,
   and MUST preserve the distinction between NaN, +Infinity, and -Infinity.
 - For each fixture under
-  `versions/0.7/tests/parseable-unrepresentable/`, when given
+  `versions/0.8/tests/parseable-unrepresentable/`, when given
   `name.json["value"]`, rejects that Value with the reason code
   named in `name.json["unrepresentable_reason"]`. These
   fixtures are pairs, not valid triples, and MUST NOT have a canonical
@@ -3028,9 +3034,9 @@ by a conformance test runner that satisfies § 8.5.
 
 ### 8.5 Conformance Runner Contract
 
-`versions/0.7/tests/manifest.json` is a machine-readable inventory of
+`versions/0.8/tests/manifest.json` is a machine-readable inventory of
 this section's conformance corpus: the closed set of category
-directories under `versions/0.7/tests/`, the exact fixture count for
+directories under `versions/0.8/tests/`, the exact fixture count for
 each one, and every fixture whose primary input is not decodable as
 text and is instead given to the implementation under test as a raw
 byte sequence. A conformance test runner for Ktav 0.7 MUST load
@@ -3345,10 +3351,18 @@ shorter output (§ 10.4).
 
 ### 0.8.0 — 2026-09-19
 
-No change to the lax entry point (`parse`/`loads`): every document that
-parsed under 0.7.x parses to the same Value under 0.8.0, and every
-canonical rendering is unchanged byte for byte.
+Two changes: one alters the Value a document parses to, the other adds
+an obligation on a parser-conforming implementation.
 
+- **§ 5.2 — a redundant leading zero is no longer a number.** Rules
+  13–14 send a base-10 digit run whose first digit is `0` with at least
+  one further digit (`01234`, `-045`, `00`, `0_7`, and a float's
+  integer part in `01.5`, `05e3`) to rule 15 instead: it is a String
+  carrying the digits as written. `zip: 01234` was `Integer(1234)` and
+  is now `"01234"`, through every entry point. `0`, `0.5`, `0x1A`,
+  `0o755`, `0b1010`, `1_000_000` and `+7` are unaffected. Canonical
+  renderings do not change — the writer keys the `::` marker to § 3.6's
+  grammar, which is untouched. See Appendix E.
 - **§ 8.1 — new obligation.** A parser-conforming implementation must
   now also expose a strict parsing entry point (`parse_strict` /
   `loads_strict`) and, for each fixture under

@@ -597,7 +597,7 @@ decoded escape 产生的码点的处理。
   (§ 5.2 规则 13):超出 i64 范围的整数字面量对最小域实现而言是
   String,故 `i64_overflow_to_string.json` 期望 String
   `"9223372036854775808"`。§ 8.1 / § 8.2 与
-  `versions/0.7/tests/boundary-fixtures.json` 在单个叶子的层面上
+  `versions/0.8/tests/boundary-fixtures.json` 在单个叶子的层面上
   定义了更宽域实现 MAY 在何处以及如何合法偏离最小域 fixture
   oracle。Integer 的规范文本形式为基-10
   十进制串,无下划线、无前导零
@@ -1411,8 +1411,8 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
-`versions/0.7/tests/unrepresentable/` 与
-`versions/0.7/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
+`versions/0.8/tests/unrepresentable/` 与
+`versions/0.8/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
 MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 
 - `value`:递归有效的 Value JSON 映射。JSON Object 映射为 Object,
@@ -1626,7 +1626,10 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
   体之前最大连续的行边界内空白序列;因此 `::  x` 的体是 `x`,而
   不是 ` x`。此分支仅适用于 § 5.9.7 所定义的物理安全非空单行
   String:不含 `LF` 或 `CR`、前后空白,也不含除 `TAB` 外的 ASCII
-  控制字节。当体本应被 § 5.2 重解释为数字、
+  控制字节。当体要么匹配 § 3.6 的整数或 float 字面量语法 ——
+  该标记绑定的是这一*语法*匹配,而非 § 5.2 的分类结果,因此对于
+  规则 13–14 送往规则 15 的冗余前导零形式它依然会被输出,规范文档
+  因此从不依赖该例外是否已被应用 —— 要么本应被 § 5.2 重解释为
   关键词、inline 复合值、多行字符串开启符(体恰好为 `(` 或
   `((`),或(通过 § 5.7 的 shortcut)空 String,或本会与行级别的
   结构性 token 冲突(体恰好为 `}` 或 `]`,或以 `##` 或两字节
@@ -2340,7 +2343,7 @@ bare-with-escape 输出发生了变化。
 Parser-conforming 实现:
 
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
-- 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与对应
+- 接受 `versions/0.8/tests/valid/` 下每个 fixture 并产生与对应
   `name.json` 等价的 Value。在每个 JSON Value oracle 中,数字 token
   的词法形状固定 Value kind:不含 `.`、`e` 或 `E` 的 token 表示
   Integer;含其中任一项的 token 表示 Float,包括 `-0.0`。对于普通
@@ -2350,7 +2353,7 @@ Parser-conforming 实现:
   只有当源 Ktav 字面量在被测实现声明的域中解释后,因越过该叶指明的
   边界而在值或 kind 上不同于最小域 oracle token 时,manifest 豁免才
   适用。若没有这种差异,列出的叶 MUST 正常匹配;豁免绝不扩展到其他叶。
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如
   `big_overflow_to_string` 的 `tiny` 字段在每个符合规范的域中都是
@@ -2370,21 +2373,22 @@ Parser-conforming 实现:
   § 5 的规则 13–14 所产生的结果。`boundary-fixtures.json` 未列出
   叶的每个字段,在每个 fixture 中,对任何域的任何实现均不带任何
   豁免。
-- 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
+- 拒绝 `versions/0.8/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
-- 接受 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+- 接受 `versions/0.8/tests/parseable-unrepresentable/` 下每个
   `<name>.ktav`,并产生其 sibling JSON 的 `value`。这些输入覆盖
   parser 产生的 `CRByte`、`BothFormsRequired`、
   `TrailingWhitespaceCollision` 与 `LeadingWhitespaceCollision` 情形;
   该类别没有 canonical-output 文件,因为 writer 结果 MUST 是拒绝。
 - 提供一个严格解析入口,并且对
-  `versions/0.7/tests/strict-lossy/` 下每个 fixture:通过宽松入口
+  `versions/0.8/tests/strict-lossy/` 下每个 fixture:通过宽松入口
   (`parse`)接受该 fixture,并产生 sibling JSON 的 `lax_value` 中
   命名的 Value;通过严格入口(`parse_strict`)以 `LossyScalar`
   拒绝同一输入,该错误指明该 JSON 中给出的精确 `body` 与
   `canonical`。当一个 fixture 的词法形式不同于 § 5 规则 13–14 从中
-  推断出的数字的规范形式时,它就是 *lossy*(`1.10` → `1.1`、
-  `01234` → `1234`、`0x1A2B` → `6699` 等等):宽松入口原样接受这样
+  推断出的数字的规范形式时,它就是 *lossy*(`1.10` → `1.1`、`+7` → `7`、
+  `0x1A2B` → `6699` 等等;绝不会是带前导零的十进制字面量 —— § 5.2
+  让它保持为 String,因此没有任何信息丢失):宽松入口原样接受这样
   的标量并悄悄将其规范化,而严格入口的存在,是为了让作者能在
   round-trip 把它变成另一个字面量之前就发现同一问题。每个
   `name.json` MUST 恰好包含 `lax_value`、`expected_error`(始终为
@@ -2396,10 +2400,10 @@ Parser-conforming 实现:
 Writer-conforming 实现:
 
 - 满足 § 5.9 所有规范性 MUST / MUST NOT 声明。
-- 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
+- 对 `versions/0.8/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
   字节相同的输出,但该 fixture 在
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   中列出的叶自身贡献除外。依 § 8.1,每个普通且未豁免的字段 MUST
   在被测实现声明的域中与 JSON oracle 匹配;普通数值字段不要求持有
   一个普遍适用的最小域 Value。列出的边界叶 MAY 不同,仅当源字面量
@@ -2409,7 +2413,7 @@ Writer-conforming 实现:
   它们 MUST 是实现实际持有 Value 的正确规范形式(§ 5.9),并对该实现
   域保持内部一致与确定。仅支持最小域的实现 MUST 完整、精确匹配每个
   `valid/` fixture 的 `.canonical.ktav`,包括每个列出的边界叶。
-- 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
+- 对 `versions/0.8/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
   其自身 API 的任意错误报告形式;规范性的是代码名称,而非呈现
@@ -2419,7 +2423,7 @@ Writer-conforming 实现:
   MUST 在 Value 树中有递归见证,而不得从文件名推导。对于 NonFiniteFloat,
   $float sentinel 通过抽象程序化 Float 载体提供,位于解析器与规范域
   之外,且 MUST 保持 NaN、+Infinity 与 -Infinity 三者的区别。
-- 对 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+- 对 `versions/0.8/tests/parseable-unrepresentable/` 下每个
   fixture,在给定 `name.json["value"]` 时,以
   `name.json["unrepresentable_reason"]` 指明的原因代码拒绝该
   Value。这些 fixture 是
@@ -2455,8 +2459,8 @@ parse-emit 循环的不动点。不可表示的 Value 不在此不变式的范�
 
 ### 8.5 Conformance 测试运行器契约
 
-`versions/0.7/tests/manifest.json` 是本节 conformance 语料库的
-机器可读清单:`versions/0.7/tests/` 下的封闭类别目录集合、每个
+`versions/0.8/tests/manifest.json` 是本节 conformance 语料库的
+机器可读清单:`versions/0.8/tests/` 下的封闭类别目录集合、每个
 类别的精确 fixture 数量,以及每个其主输入不可解码为文本、而是作为
 原始字节序列交给被测实现的 fixture。Ktav 0.7 的 conformance
 测试运行器 MUST 在枚举任何 fixture 之前加载此文件,并且 MUST
@@ -2702,9 +2706,17 @@ bare-with-escape 留作同样有效的规范选择:确定性要求(§ 5.9)
 
 ### 0.8.0 —— 2026-09-19
 
-宽松入口(`parse`/`loads`)不变:每个在 0.7.x 中能解析的文档在
-0.8.0 中解析为相同的 Value,每个规范化输出逐字节不变。
+两项变更:一项改变文档解析所得的 Value,另一项为 parser 一致性实现
+增加义务。
 
+- **§ 5.2 —— 冗余前导零不再是数字。** 规则 13–14 会把以 `0` 开头且
+  后面至少还有一位数字的十进制数字串(`01234`、`-045`、`00`、`0_7`,
+  以及 `01.5`、`05e3` 中 float 的整数部分)改送到规则 15:它是一个
+  按书写原样携带这些数字的 String。`zip: 01234` 曾是
+  `Integer(1234)`,现在是 `"01234"` —— 通过每一个入口。`0`、`0.5`、
+  `0x1A`、`0o755`、`0b1010`、`1_000_000` 与 `+7` 不受影响。规范化
+  输出不变 —— 写出器把 `::` 标记绑定到未被触动的 § 3.6 语法。
+  见附录 E。
 - **§ 8.1 —— 新增义务。** parser 一致性实现现在还必须提供严格解析
   入口(`parse_strict` / `loads_strict`),并且对
   `versions/0.8/tests/strict-lossy/` 下每个 fixture,以 `LossyScalar`

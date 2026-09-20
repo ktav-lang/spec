@@ -1,7 +1,7 @@
 >>>>> lang=en
 - Satisfies every normative MUST / MUST NOT statement in this
   document that pertains to parsing.
-- Accepts every fixture under `versions/0.7/tests/valid/` and
+- Accepts every fixture under `versions/0.8/tests/valid/` and
   produces a Value equivalent to the corresponding `name.json`
   oracle. In every JSON Value oracle, the number token's lexical shape
   fixes the Value kind: a token containing none of `.`, `e`, or `E`
@@ -17,7 +17,7 @@
   crosses that leaf's named boundary. If no such divergence occurs, the
   listed leaf MUST match normally; the exemption never extends to any
   other leaf.
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists the individual Object fields (leaves) known to probe a
   numeric-domain boundary (§ 5.2) — not whole fixtures: a fixture MAY
   mix boundary-dependent leaves with ordinary ones (e.g.
@@ -43,23 +43,24 @@
   § 5's rules 13–14 to the leaf's body produces. Every field not
   listed in `boundary-fixtures.json`, in every fixture, carries no
   exemption for any implementation of any domain.
-- Rejects every fixture under `versions/0.7/tests/invalid/` with
+- Rejects every fixture under `versions/0.8/tests/invalid/` with
   the error category named in `name.json["expected_error"]`.
 - Accepts every `<name>.ktav` under
-  `versions/0.7/tests/parseable-unrepresentable/` and produces the
+  `versions/0.8/tests/parseable-unrepresentable/` and produces the
   sibling JSON's `value`. These inputs cover the parser-produced
   `CRByte`, `BothFormsRequired`, `TrailingWhitespaceCollision`,
   and `LeadingWhitespaceCollision` cases; the category has no
   canonical-output files because its writer result MUST be rejection.
 - Exposes a strict parsing entry point, and for every fixture under
-  `versions/0.7/tests/strict-lossy/`: through the lax entry point
+  `versions/0.8/tests/strict-lossy/`: through the lax entry point
   (`parse`), accepts the fixture and produces the Value named in the
   sibling JSON's `lax_value`; through the strict entry point
   (`parse_strict`), rejects the same input with `LossyScalar` naming
   the exact `body` and `canonical` given in that JSON. A fixture is
   *lossy* when its lexical form differs from the canonical form of the
-  number § 5's rules 13–14 infer from it (`1.10` → `1.1`, `01234` →
-  `1234`, `0x1A2B` → `6699`, …): the lax entry point accepts such a
+  number § 5's rules 13–14 infer from it (`1.10` → `1.1`, `+7` → `7`,
+  `0x1A2B` → `6699`, …; never a leading-zero decimal — § 5.2 keeps
+  that a String, so nothing is lost): the lax entry point accepts such a
   scalar unchanged and silently canonicalises it, while the strict
   entry point exists so an author can catch the same case before it
   round-trips into a different literal. Each `name.json` MUST contain
@@ -70,7 +71,7 @@
 >>>>> lang=ru
 - Удовлетворяет каждому нормативному MUST / MUST NOT в этом
   документе, относящемуся к парсингу.
-- Принимает каждую фикстуру из `versions/0.7/tests/valid/` и даёт
+- Принимает каждую фикстуру из `versions/0.8/tests/valid/` и даёт
   Value, эквивалентное соответствующему `name.json` оракулу. В каждом
   JSON-оракуле Value лексическая форма числового токена фиксирует kind
   Value: токен без `.`, `e` и `E` обозначает Integer; токен с любым
@@ -85,7 +86,7 @@
   оракула минимального домена из-за пересечения названной границы этого
   листа. Если такого расхождения нет, перечисленный лист MUST совпадать
   обычным образом; освобождение никогда не распространяется на другой лист.
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   перечисляет отдельные поля Object (листья), известные как
   boundary-probing — зондирующие границу числового домена (§ 5.2), —
   а не целые фикстуры: фикстура MAY смешивать зависящие от границы
@@ -114,23 +115,24 @@
   перечисленное в `boundary-fixtures.json`, в каждой фикстуре не
   несёт никакого освобождения ни для какой реализации какого бы то
   ни было домена.
-- Отвергает каждую фикстуру из `versions/0.7/tests/invalid/` с
+- Отвергает каждую фикстуру из `versions/0.8/tests/invalid/` с
   категорией ошибки, указанной в `name.json["expected_error"]`.
 - Принимает каждый `<name>.ktav` из
-  `versions/0.7/tests/parseable-unrepresentable/` и даёт `value`
+  `versions/0.8/tests/parseable-unrepresentable/` и даёт `value`
   соседнего JSON. Эти вводы покрывают порождённые парсером случаи
   `CRByte`, `BothFormsRequired`, `TrailingWhitespaceCollision` и
   `LeadingWhitespaceCollision`; у категории нет canonical-output,
   поскольку результат writer'а MUST быть отказом.
 - Предоставляет строгую точку входа для парсинга, и для каждой
-  фикстуры из `versions/0.7/tests/strict-lossy/`: через нестрогую
+  фикстуры из `versions/0.8/tests/strict-lossy/`: через нестрогую
   точку входа (`parse`) принимает фикстуру и даёт Value, названное в
   `lax_value` соседнего JSON; через строгую точку входа
   (`parse_strict`) отвергает тот же ввод с `LossyScalar`, называющим
   точные `body` и `canonical` из этого JSON. Фикстура *lossy*, когда
   её лексическая форма отличается от канонической формы числа,
-  выводимого правилами 13–14 § 5 (`1.10` → `1.1`, `01234` → `1234`,
-  `0x1A2B` → `6699`, …): нестрогая точка входа принимает такой скаляр
+  выводимого правилами 13–14 § 5 (`1.10` → `1.1`, `+7` → `7`,
+  `0x1A2B` → `6699`, …; никогда не десятичный литерал с ведущим
+  нулём — § 5.2 оставляет его String, так что терять нечего): нестрогая точка входа принимает такой скаляр
   без изменений и молча канонизирует его, а строгая точка входа
   существует для того, чтобы автор мог поймать этот же случай до
   того, как round-trip превратит его в другой литерал. Каждый
@@ -141,7 +143,7 @@
 
 >>>>> lang=zh
 - 满足本文档所有与解析相关的规范性 MUST / MUST NOT 声明。
-- 接受 `versions/0.7/tests/valid/` 下每个 fixture 并产生与对应
+- 接受 `versions/0.8/tests/valid/` 下每个 fixture 并产生与对应
   `name.json` 等价的 Value。在每个 JSON Value oracle 中,数字 token
   的词法形状固定 Value kind:不含 `.`、`e` 或 `E` 的 token 表示
   Integer;含其中任一项的 token 表示 Float,包括 `-0.0`。对于普通
@@ -151,7 +153,7 @@
   只有当源 Ktav 字面量在被测实现声明的域中解释后,因越过该叶指明的
   边界而在值或 kind 上不同于最小域 oracle token 时,manifest 豁免才
   适用。若没有这种差异,列出的叶 MUST 正常匹配;豁免绝不扩展到其他叶。
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   列出已知探测数值域边界(§ 5.2)的各个对象字段(叶)—— 而非整个
   fixture:一个 fixture MAY 将依赖边界的叶与普通叶混合(例如
   `big_overflow_to_string` 的 `tiny` 字段在每个符合规范的域中都是
@@ -171,21 +173,22 @@
   § 5 的规则 13–14 所产生的结果。`boundary-fixtures.json` 未列出
   叶的每个字段,在每个 fixture 中,对任何域的任何实现均不带任何
   豁免。
-- 拒绝 `versions/0.7/tests/invalid/` 下每个 fixture,错误类别
+- 拒绝 `versions/0.8/tests/invalid/` 下每个 fixture,错误类别
   与 `name.json["expected_error"]` 一致。
-- 接受 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+- 接受 `versions/0.8/tests/parseable-unrepresentable/` 下每个
   `<name>.ktav`,并产生其 sibling JSON 的 `value`。这些输入覆盖
   parser 产生的 `CRByte`、`BothFormsRequired`、
   `TrailingWhitespaceCollision` 与 `LeadingWhitespaceCollision` 情形;
   该类别没有 canonical-output 文件,因为 writer 结果 MUST 是拒绝。
 - 提供一个严格解析入口,并且对
-  `versions/0.7/tests/strict-lossy/` 下每个 fixture:通过宽松入口
+  `versions/0.8/tests/strict-lossy/` 下每个 fixture:通过宽松入口
   (`parse`)接受该 fixture,并产生 sibling JSON 的 `lax_value` 中
   命名的 Value;通过严格入口(`parse_strict`)以 `LossyScalar`
   拒绝同一输入,该错误指明该 JSON 中给出的精确 `body` 与
   `canonical`。当一个 fixture 的词法形式不同于 § 5 规则 13–14 从中
-  推断出的数字的规范形式时,它就是 *lossy*(`1.10` → `1.1`、
-  `01234` → `1234`、`0x1A2B` → `6699` 等等):宽松入口原样接受这样
+  推断出的数字的规范形式时,它就是 *lossy*(`1.10` → `1.1`、`+7` → `7`、
+  `0x1A2B` → `6699` 等等;绝不会是带前导零的十进制字面量 —— § 5.2
+  让它保持为 String,因此没有任何信息丢失):宽松入口原样接受这样
   的标量并悄悄将其规范化,而严格入口的存在,是为了让作者能在
   round-trip 把它变成另一个字面量之前就发现同一问题。每个
   `name.json` MUST 恰好包含 `lax_value`、`expected_error`(始终为

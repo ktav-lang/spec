@@ -9,7 +9,7 @@
   integer literal outside the i64 range is a String for a
   minimum-domain implementation, so `i64_overflow_to_string.json`
   expects the String `"9223372036854775808"`. § 8.1 / § 8.2 and
-  `versions/0.7/tests/boundary-fixtures.json` define, at the level
+  `versions/0.8/tests/boundary-fixtures.json` define, at the level
   of individual leaves, exactly where and how a wider-domain
   implementation MAY legitimately diverge from a minimum-domain
   fixture oracle. The canonical textual form of an Integer
@@ -65,7 +65,7 @@
   i64-диапазона для реализации с минимальным доменом — это String,
   поэтому `i64_overflow_to_string.json` ожидает String
   `"9223372036854775808"`. § 8.1 / § 8.2 и
-  `versions/0.7/tests/boundary-fixtures.json` определяют на уровне
+  `versions/0.8/tests/boundary-fixtures.json` определяют на уровне
   отдельных листьев, где именно и как реализация с более широким
   доменом MAY законно расходиться с oracle минимального домена.
   Каноническая текстовая форма Integer —
@@ -122,7 +122,7 @@
   (§ 5.2 规则 13):超出 i64 范围的整数字面量对最小域实现而言是
   String,故 `i64_overflow_to_string.json` 期望 String
   `"9223372036854775808"`。§ 8.1 / § 8.2 与
-  `versions/0.7/tests/boundary-fixtures.json` 在单个叶子的层面上
+  `versions/0.8/tests/boundary-fixtures.json` 在单个叶子的层面上
   定义了更宽域实现 MAY 在何处以及如何合法偏离最小域 fixture
   oracle。Integer 的规范文本形式为基-10
   十进制串,无下划线、无前导零

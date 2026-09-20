@@ -1,10 +1,10 @@
 >>>>> lang=en
 - Satisfies every normative MUST / MUST NOT statement of § 5.9.
-- For each fixture under `versions/0.7/tests/valid/`, produces —
+- For each fixture under `versions/0.8/tests/valid/`, produces —
   when given the Value parsed from `name.ktav` — a byte-exact
   output equal to `name.canonical.ktav`, except for the contribution
   of a leaf that
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   lists for that fixture. Under § 8.1,
   every ordinary, non-exempt field MUST match its JSON oracle in the
   tested implementation's declared domain; an ordinary numeric field
@@ -20,7 +20,7 @@
   its domain. An implementation supporting only the minimum domain
   MUST match every `valid/` fixture's `.canonical.ktav` exactly,
   in full, including every listed boundary leaf.
-- For each fixture under `versions/0.7/tests/unrepresentable/`,
+- For each fixture under `versions/0.8/tests/unrepresentable/`,
   rejects the Value described by `name.json["value"]` with the
   reason code named in `name.json["unrepresentable_reason"]`
   (§ 5.9.0) — via whatever error-reporting shape its own API uses;
@@ -34,7 +34,7 @@
   programmatic Float carrier, is outside the parser and canonical domains,
   and MUST preserve the distinction between NaN, +Infinity, and -Infinity.
 - For each fixture under
-  `versions/0.7/tests/parseable-unrepresentable/`, when given
+  `versions/0.8/tests/parseable-unrepresentable/`, when given
   `name.json["value"]`, rejects that Value with the reason code
   named in `name.json["unrepresentable_reason"]`. These
   fixtures are pairs, not valid triples, and MUST NOT have a canonical
@@ -44,10 +44,10 @@ The canonical form is defined in § 5.9.
 
 >>>>> lang=ru
 - Удовлетворяет каждому нормативному MUST / MUST NOT в § 5.9.
-- Для каждой фикстуры из `versions/0.7/tests/valid/` выдаёт —
+- Для каждой фикстуры из `versions/0.8/tests/valid/` выдаёт —
   при подаче Value, разобранного из `name.ktav` — байт-точный
   вывод, равный `name.canonical.ktav`, кроме вклада листа, который
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   перечисляет для этой фикстуры. Согласно § 8.1 каждое обычное,
   не освобождённое поле MUST совпадать с JSON-оракулом в заявленном
   домене тестируемой реализации; обычное числовое поле не обязано
@@ -64,7 +64,7 @@ The canonical form is defined in § 5.9.
   домена реализации. Реализация только с минимальным доменом MUST
   в полном объёме и в точности совпасть с `.canonical.ktav` каждой
   фикстуры `valid/`, включая каждый перечисленный граничный лист.
-- Для каждой фикстуры из `versions/0.7/tests/unrepresentable/`
+- Для каждой фикстуры из `versions/0.8/tests/unrepresentable/`
   отклоняет Value, описанное в `name.json["value"]`, с кодом
   причины, указанным в `name.json["unrepresentable_reason"]`
   (§ 5.9.0) — через любую форму отчёта об ошибке своего API;
@@ -78,7 +78,7 @@ The canonical form is defined in § 5.9.
   доменов парсера и canonical domain, а различия NaN, +Infinity и -Infinity
   MUST сохраняться.
 - Для каждой фикстуры из
-  `versions/0.7/tests/parseable-unrepresentable/` при подаче
+  `versions/0.8/tests/parseable-unrepresentable/` при подаче
   `name.json["value"]` отвергает этот Value с кодом причины из
   `name.json["unrepresentable_reason"]`. Это пары, а не valid-тройки;
   у них MUST NOT быть canonical-output файла.
@@ -87,10 +87,10 @@ The canonical form is defined in § 5.9.
 
 >>>>> lang=zh
 - 满足 § 5.9 所有规范性 MUST / MUST NOT 声明。
-- 对 `versions/0.7/tests/valid/` 下每个 fixture,在给定从
+- 对 `versions/0.8/tests/valid/` 下每个 fixture,在给定从
   `name.ktav` 解析的 Value 时,产生与 `name.canonical.ktav`
   字节相同的输出,但该 fixture 在
-  [`versions/0.7/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
+  [`versions/0.8/tests/boundary-fixtures.json`](tests/boundary-fixtures.json)
   中列出的叶自身贡献除外。依 § 8.1,每个普通且未豁免的字段 MUST
   在被测实现声明的域中与 JSON oracle 匹配;普通数值字段不要求持有
   一个普遍适用的最小域 Value。列出的边界叶 MAY 不同,仅当源字面量
@@ -100,7 +100,7 @@ The canonical form is defined in § 5.9.
   它们 MUST 是实现实际持有 Value 的正确规范形式(§ 5.9),并对该实现
   域保持内部一致与确定。仅支持最小域的实现 MUST 完整、精确匹配每个
   `valid/` fixture 的 `.canonical.ktav`,包括每个列出的边界叶。
-- 对 `versions/0.7/tests/unrepresentable/` 下每个 fixture,以
+- 对 `versions/0.8/tests/unrepresentable/` 下每个 fixture,以
   `name.json["unrepresentable_reason"]` 中指明的原因代码
   (§ 5.9.0)拒绝 `name.json["value"]` 所描述的 Value —— 可通过
   其自身 API 的任意错误报告形式;规范性的是代码名称,而非呈现
@@ -110,7 +110,7 @@ The canonical form is defined in § 5.9.
   MUST 在 Value 树中有递归见证,而不得从文件名推导。对于 NonFiniteFloat,
   $float sentinel 通过抽象程序化 Float 载体提供,位于解析器与规范域
   之外,且 MUST 保持 NaN、+Infinity 与 -Infinity 三者的区别。
-- 对 `versions/0.7/tests/parseable-unrepresentable/` 下每个
+- 对 `versions/0.8/tests/parseable-unrepresentable/` 下每个
   fixture,在给定 `name.json["value"]` 时,以
   `name.json["unrepresentable_reason"]` 指明的原因代码拒绝该
   Value。这些 fixture 是

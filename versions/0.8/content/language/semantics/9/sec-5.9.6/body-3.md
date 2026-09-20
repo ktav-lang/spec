@@ -55,8 +55,13 @@
   thus `::  x` has body `x`, not ` x`. This branch applies only when the
   body is a physically safe non-empty one-line String under § 5.9.7 — with
   no `LF` or `CR`, leading/trailing whitespace, or ASCII control byte other
-  than `TAB`. The body would otherwise
-  be reinterpreted by § 5.2 as a number, keyword, an inline
+  than `TAB`. The body either matches § 3.6's integer or float literal
+  grammar — the marker is keyed to that GRAMMAR match, not to § 5.2's
+  classification outcome, so it is still emitted for the
+  redundant-leading-zero forms rules 13–14 send to rule 15, and a
+  canonical document therefore never depends on that exception having
+  been applied — or would otherwise
+  be reinterpreted by § 5.2 as a keyword, an inline
   compound, a multi-line-string opener (a body of exactly `(` or
   `((`), or (via § 5.7's shortcuts) the empty String, or would
   otherwise collide with a line-level structural token (a body of
@@ -152,8 +157,14 @@
   тело `x`, а не ` x`. Эта ветвь применяется только к физически безопасной
   по § 5.9.7 непустой однострочной String без `LF` или `CR`,
   ведущего/хвостового пробела и ASCII управляющих байтов, кроме `TAB`.
-  Когда тело иначе было
-  бы переинтерпретировано по § 5.2 как число, ключевое слово,
+  Когда тело либо совпадает с грамматикой целого или
+  float-литерала § 3.6 — маркер привязан именно к совпадению с
+  ГРАММАТИКОЙ, а не к результату классификации § 5.2, поэтому он
+  по-прежнему выводится для форм с избыточным ведущим нулём, которые
+  правила 13–14 отправляют в правило 15, и канонический документ
+  никогда не зависит от того, было ли применено это исключение, — либо
+  иначе было
+  бы переинтерпретировано по § 5.2 как ключевое слово,
   inline-составное, опенер многострочной строки (тело в точности
   `(` или `((`), либо (через shortcut'ы § 5.7) как пустая String,
   либо иначе столкнулось бы со структурным токеном на уровне
@@ -226,7 +237,10 @@ Array 的第一个项会经过 § 5.0.1 的根类型检测;其余任何位置的
   体之前最大连续的行边界内空白序列;因此 `::  x` 的体是 `x`,而
   不是 ` x`。此分支仅适用于 § 5.9.7 所定义的物理安全非空单行
   String:不含 `LF` 或 `CR`、前后空白,也不含除 `TAB` 外的 ASCII
-  控制字节。当体本应被 § 5.2 重解释为数字、
+  控制字节。当体要么匹配 § 3.6 的整数或 float 字面量语法 ——
+  该标记绑定的是这一*语法*匹配,而非 § 5.2 的分类结果,因此对于
+  规则 13–14 送往规则 15 的冗余前导零形式它依然会被输出,规范文档
+  因此从不依赖该例外是否已被应用 —— 要么本应被 § 5.2 重解释为
   关键词、inline 复合值、多行字符串开启符(体恰好为 `(` 或
   `((`),或(通过 § 5.7 的 shortcut)空 String,或本会与行级别的
   结构性 token 冲突(体恰好为 `}` 或 `]`,或以 `##` 或两字节

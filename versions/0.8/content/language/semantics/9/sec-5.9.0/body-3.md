@@ -17,8 +17,8 @@ identity of § 8.3.
 
 Each non-representability case above has a stable **reason code**,
 normative regardless of how any given implementation's API surfaces
-it. Every `.json` file in `versions/0.7/tests/unrepresentable/`
-and `versions/0.7/tests/parseable-unrepresentable/` MUST be a JSON object
+it. Every `.json` file in `versions/0.8/tests/unrepresentable/`
+and `versions/0.8/tests/parseable-unrepresentable/` MUST be a JSON object
 with exactly these three fields and no others:
 
 >>>>> lang=ru
@@ -41,8 +41,8 @@ writer-conforming реализация MUST отклонять непредст�
 У каждого из перечисленных выше случаев непредставимости есть
 устойчивый **код причины** (reason code), нормативный независимо от
 того, как конкретная реализация выражает его в своём API. Каждый `.json`-файл
-в `versions/0.7/tests/unrepresentable/` и
-`versions/0.7/tests/parseable-unrepresentable/` MUST быть JSON-объектом
+в `versions/0.8/tests/unrepresentable/` и
+`versions/0.8/tests/parseable-unrepresentable/` MUST быть JSON-объектом
 ровно с тремя полями и без каких-либо других:
 
 >>>>> lang=zh
@@ -60,7 +60,7 @@ parser-conforming 实现接受,而序列化所得 Value 则 MUST 失败 ——
 
 上述每种不可表示情形都有一个稳定的**原因代码**(reason code),
 无论具体实现在自身 API 中如何呈现,该代码都是规范性的。
-`versions/0.7/tests/unrepresentable/` 与
-`versions/0.7/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
+`versions/0.8/tests/unrepresentable/` 与
+`versions/0.8/tests/parseable-unrepresentable/` 下的每个 `.json` 文件
 MUST 是恰好包含以下三个字段且不含其他字段的 JSON 对象:
 

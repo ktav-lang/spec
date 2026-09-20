@@ -1,9 +1,17 @@
 >>>>> lang=en
 
-No change to the lax entry point (`parse`/`loads`): every document that
-parsed under 0.7.x parses to the same Value under 0.8.0, and every
-canonical rendering is unchanged byte for byte.
+Two changes: one alters the Value a document parses to, the other adds
+an obligation on a parser-conforming implementation.
 
+- **§ 5.2 — a redundant leading zero is no longer a number.** Rules
+  13–14 send a base-10 digit run whose first digit is `0` with at least
+  one further digit (`01234`, `-045`, `00`, `0_7`, and a float's
+  integer part in `01.5`, `05e3`) to rule 15 instead: it is a String
+  carrying the digits as written. `zip: 01234` was `Integer(1234)` and
+  is now `"01234"`, through every entry point. `0`, `0.5`, `0x1A`,
+  `0o755`, `0b1010`, `1_000_000` and `+7` are unaffected. Canonical
+  renderings do not change — the writer keys the `::` marker to § 3.6's
+  grammar, which is untouched. See Appendix E.
 - **§ 8.1 — new obligation.** A parser-conforming implementation must
   now also expose a strict parsing entry point (`parse_strict` /
   `loads_strict`) and, for each fixture under
@@ -24,10 +32,18 @@ canonical rendering is unchanged byte for byte.
 
 >>>>> lang=ru
 
-Нестрогая точка входа (`parse`/`loads`) не меняется: каждый документ,
-разбиравшийся в 0.7.x, разбирается в то же Value в 0.8.0, а каждая
-каноническая запись остаётся побайтово прежней.
+Два изменения: одно меняет Value, в которое разбирается документ,
+другое добавляет обязанность parser-конформной реализации.
 
+- **§ 5.2 — избыточный ведущий ноль больше не число.** Правила 13–14
+  отправляют ряд цифр по основанию 10, чья первая цифра `0`, при этом
+  следует хотя бы ещё одна цифра (`01234`, `-045`, `00`, `0_7`, а также
+  целая часть float в `01.5`, `05e3`), в правило 15: это String,
+  несущая цифры как написано. `zip: 01234` был `Integer(1234)`, а
+  теперь `"01234"` — через любую точку входа. `0`, `0.5`, `0x1A`,
+  `0o755`, `0b1010`, `1_000_000` и `+7` не затронуты. Канонические
+  записи не меняются: писатель привязывает маркер `::` к грамматике
+  § 3.6, которая не тронута. См. Приложение E.
 - **§ 8.1 — новое обязательство.** Parser-конформная реализация
   теперь также обязана предоставлять строгую точку входа
   (`parse_strict` / `loads_strict`) и для каждой фикстуры из
@@ -48,9 +64,17 @@ canonical rendering is unchanged byte for byte.
 
 >>>>> lang=zh
 
-宽松入口(`parse`/`loads`)不变:每个在 0.7.x 中能解析的文档在
-0.8.0 中解析为相同的 Value,每个规范化输出逐字节不变。
+两项变更:一项改变文档解析所得的 Value,另一项为 parser 一致性实现
+增加义务。
 
+- **§ 5.2 —— 冗余前导零不再是数字。** 规则 13–14 会把以 `0` 开头且
+  后面至少还有一位数字的十进制数字串(`01234`、`-045`、`00`、`0_7`,
+  以及 `01.5`、`05e3` 中 float 的整数部分)改送到规则 15:它是一个
+  按书写原样携带这些数字的 String。`zip: 01234` 曾是
+  `Integer(1234)`,现在是 `"01234"` —— 通过每一个入口。`0`、`0.5`、
+  `0x1A`、`0o755`、`0b1010`、`1_000_000` 与 `+7` 不受影响。规范化
+  输出不变 —— 写出器把 `::` 标记绑定到未被触动的 § 3.6 语法。
+  见附录 E。
 - **§ 8.1 —— 新增义务。** parser 一致性实现现在还必须提供严格解析
   入口(`parse_strict` / `loads_strict`),并且对
   `versions/0.8/tests/strict-lossy/` 下每个 fixture,以 `LossyScalar`
