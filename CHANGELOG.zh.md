@@ -18,7 +18,7 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
-## [0.8.0] —— 2026-09-19
+## [0.8.0] —— 2026-09-22
 
 0.8.0 的规范性文本与一致性 fixture,位于 `versions/0.8/`。这是当前
 稳定规范——`versions.ktav` 将 `stable` 与 `latest` 指向 0.8.0;0.7.1

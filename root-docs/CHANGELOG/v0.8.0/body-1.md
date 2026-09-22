@@ -1,5 +1,5 @@
 >>>>> lang=en
-## [0.8.0] — 2026-09-19
+## [0.8.0] — 2026-09-22
 
 Normative text and conformance fixtures for 0.8.0, under
 `versions/0.8/`. This is the current stable specification —
@@ -38,7 +38,7 @@ carried in the working tree as the previous stable release.
   Appendix E for the migration note.
 
 >>>>> lang=ru
-## [0.8.0] — 2026-09-19
+## [0.8.0] — 2026-09-22
 
 Нормативный текст и фикстуры соответствия для 0.8.0, под
 `versions/0.8/`. Это текущая стабильная спецификация —
@@ -79,7 +79,7 @@ carried in the working tree as the previous stable release.
   о миграции.
 
 >>>>> lang=zh
-## [0.8.0] —— 2026-09-19
+## [0.8.0] —— 2026-09-22
 
 0.8.0 的规范性文本与一致性 fixture,位于 `versions/0.8/`。这是当前
 稳定规范——`versions.ktav` 将 `stable` 与 `latest` 指向 0.8.0;0.7.1

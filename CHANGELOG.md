@@ -21,7 +21,7 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
-## [0.8.0] — 2026-09-19
+## [0.8.0] — 2026-09-22
 
 Normative text and conformance fixtures for 0.8.0, under
 `versions/0.8/`. This is the current stable specification —

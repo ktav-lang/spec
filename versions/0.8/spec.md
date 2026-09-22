@@ -2,7 +2,7 @@
 
 **Languages:** **English** · [Русский](spec.ru.md) · [简体中文](spec.zh.md)
 **Version:** 0.8.0
-**Date:** 2026-09-19
+**Date:** 2026-09-22
 
 ## Abstract
 
@@ -3340,7 +3340,7 @@ shorter output (§ 10.4).
 
 ## Appendix A. Changes
 
-### 0.8.0 — 2026-09-19
+### 0.8.0 — 2026-09-22
 
 Two changes: one alters the Value a document parses to, the other adds
 an obligation on a parser-conforming implementation.
