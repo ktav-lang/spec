@@ -11,7 +11,10 @@
 //   content/    what a content directory may contain and what the builder
 //               says when it may not
 //   markdown/   the CommonMark rules a unit body must not break
-//   drift/      the hand-maintained files nobody generates
+//   drift/      the hand-maintained files nobody generates, plus the
+//               build-order regression covering an honest release-date bump
+//   registry/   every public Markdown file is generated, frozen or
+//               internal, and the frozen ones are hash-locked
 //   transactions/ the six-output write, its crash recovery and its locks
 //
 // The shared fixture layer — the temp-directory content builder, the
@@ -31,3 +34,5 @@ import './test_build_spec/content/shape.mjs';
 import './test_build_spec/transactions/delegations.mjs';
 import './test_build_spec/content/source-safety.mjs';
 import './test_build_spec/drift/handwritten.mjs';
+import './test_build_spec/drift/build-order.mjs';
+import './test_build_spec/registry/docs.mjs';

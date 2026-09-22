@@ -12,11 +12,11 @@ exploit downstream**.
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.7.x   | ✅                 |
-| 0.6.x and earlier | ❌ — upgrade first |
+| 0.8.x | ✅ |
+| earlier minor lines | ❌ — upgrade first |
 
 Because Ktav is pre-1.0, support follows a latest-minor-only policy:
-only the current 0.7.x minor line is supported.
+only the current 0.8.x minor line is supported.
 
 ## Reporting a vulnerability
 

@@ -13,11 +13,11 @@ exploit downstream**.
 
 | Version | Supported          |
 |---------|--------------------|
-| 0.7.x   | ✅                 |
-| 0.6.x and earlier | ❌ — upgrade first |
+| @@MINOR_LINE@@ | ✅ |
+| earlier minor lines | ❌ — upgrade first |
 
 Because Ktav is pre-1.0, support follows a latest-minor-only policy:
-only the current 0.7.x minor line is supported.
+only the current @@MINOR_LINE@@ minor line is supported.
 
 ## Reporting a vulnerability
 
@@ -36,11 +36,11 @@ spec-дефекты, из-за которых реализации **расхо�
 
 | Версия  | Поддерживается         |
 |---------|------------------------|
-| 0.7.x             | ✅                     |
-| 0.6.x и более ранние | ❌ — сперва обновитесь |
+| @@MINOR_LINE@@ | ✅ |
+| более ранние minor-линии | ❌ — сперва обновитесь |
 
 Поскольку Ktav ещё не достиг 1.0, действует политика поддержки только
-последней minor-линии: поддерживается только текущая ветка 0.7.x.
+последней minor-линии: поддерживается только текущая ветка @@MINOR_LINE@@.
 
 ## Сообщение об уязвимости
 
@@ -57,11 +57,11 @@ downstream 攻击者利用的方式产生分歧**的规范级缺陷。
 
 | 版本    | 支持                   |
 |---------|------------------------|
-| 0.7.x       | ✅                 |
-| 0.6.x 及更早 | ❌ —— 请先升级     |
+| @@MINOR_LINE@@ | ✅ |
+| 更早的 minor 版本线 | ❌ —— 请先升级 |
 
 由于 Ktav 尚未达到 1.0，支持遵循仅支持最新次版本线的政策：目前仅
-支持 0.7.x 这一 minor 版本线。
+支持 @@MINOR_LINE@@ 这一 minor 版本线。
 
 ## 上报漏洞
 

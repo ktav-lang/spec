@@ -1,8 +1,10 @@
-// The release drift check: `checkHandwrittenVersionReferences` reads the
-// files nobody generates -- versions.ktav, the three root READMEs, the
-// three CHANGELOGs, and Appendix A's meta.js -- and proves they agree
-// with release.js. These cases run it against the real repository first,
-// then against a temp copy with one file made stale at a time.
+// The release drift check: `checkHandwrittenVersionReferences` proves the
+// root READMEs and CHANGELOGs carry the current-version anchors by judging
+// the freshly built root-doc buffers, never the artifacts on disk, and
+// reads from here the files nobody generates -- versions.ktav and Appendix
+// A's meta.js -- proving they agree with release.js. These cases run it
+// against the real repository first, then against a temp copy with one
+// file made stale at a time.
 
 import {
   checkHandwrittenVersionReferences,
@@ -21,7 +23,7 @@ test('checkHandwrittenVersionReferences rejects a stale latest.version', (t) => 
 
 test('checkHandwrittenVersionReferences names only the stale README', (t) => references.checkHandwrittenVersionReferencesNamesOnlyTheStaleReadme(t));
 
-test('checkHandwrittenVersionReferences rejects a missing required file', (t) => references.checkHandwrittenVersionReferencesRejectsAMissingRequiredFile(t));
+test('checkHandwrittenVersionReferences rejects a missing versions.ktav', (t) => references.checkHandwrittenVersionReferencesRejectsAMissingVersionsKtav(t));
 
 test('checkHandwrittenVersionReferences collects all disagreements at once', (t) => references.checkHandwrittenVersionReferencesCollectsAllDisagreementsAtOnce(t));
 

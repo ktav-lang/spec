@@ -56,6 +56,28 @@ function spawnCrashAndAwaitReap(source, env) {
   return crashed;
 }
 
+// Under heavy concurrent child-process spawning (this file's own matrix,
+// plus sibling test files running at the same time), Windows can recycle
+// the just-reaped PID for an unrelated, momentarily-live process before
+// that process's own start time becomes readable — the lock then reads
+// "live, incarnation unobservable" and correctly refuses to reclaim,
+// exactly as it must for a genuinely still-owned lock. That unrelated
+// process is normally gone within milliseconds, so a short bounded retry
+// resolves it without masking a real ownership conflict.
+function recoverToleratingPidReuseRace(versionDir, contentDir) {
+  const deadline = Date.now() + 2_000;
+  for (;;) {
+    try {
+      recoverBuildOutputTransaction(versionDir, contentDir);
+      return;
+    } catch (e) {
+      if (!/owned by live process/.test(e.message) || Date.now() > deadline) throw e;
+      const until = Date.now() + 25;
+      while (Date.now() < until) { /* spin */ }
+    }
+  }
+}
+
 export async function crashBeforeFirstJournalPublicationRecoversDerivedOutputTemporariesImmediately() {  const scriptUrl = pathToFileURL(path.join(process.cwd(), 'scripts', 'build_spec.mjs')).href;
   const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-prejournal-recovery-'));
   try {
@@ -80,7 +102,7 @@ export async function crashBeforeFirstJournalPublicationRecoversDerivedOutputTem
     // Model an interrupted first write after the owner has died: the exact
     // derived name remains, but its bytes no longer match the filename digest.
     fs.truncateSync(path.join(versionDir, firstTemp), 1);
-    recoverBuildOutputTransaction(versionDir, contentDir);
+    recoverToleratingPidReuseRace(versionDir, contentDir);
     assert.equal(fs.readdirSync(versionDir).some((name) => name.endsWith('.tmp')), false);
     assert.equal(fs.readdirSync(versionDir).some((name) =>
       name.startsWith('.build-spec.transaction.lock.release.reclaim.')), false);
@@ -119,7 +141,7 @@ export async function crashRecoveryRestoresDistinctOldBytesBeforeALaterFullWrite
     assert.equal(journal.outputs.some((item) => Object.keys(item).some((key) => /path/i.test(key))), false);
 
     // Recover immediately, before asking the builder to perform another full write.
-    recoverBuildOutputTransaction(versionDir, contentDir);
+    recoverToleratingPidReuseRace(versionDir, contentDir);
     for (const lang of LANGS) {
       assert.deepEqual(fs.readFileSync(path.join(versionDir, OUT_FILES[lang])), oldBuild.bufs[lang]);
       assert.deepEqual(fs.readFileSync(path.join(contentDir, README_FILES[lang])), oldBuild.readmeBufs[lang]);
@@ -166,7 +188,7 @@ export async function distinctByteCrashMatrixCoversBackupAndInstallOffsetsInclud
       const env = { ...process.env, KTAV_BUILD_SPEC_CRASH_AFTER_RENAME: crashPoint };
       const crashed = spawnCrashAndAwaitReap(source, env);
       assert.notEqual(crashed.status, 0, `${label} child unexpectedly completed`);
-      recoverBuildOutputTransaction(versionDir, contentDir);
+      recoverToleratingPidReuseRace(versionDir, contentDir);
       for (let index = 0; index < destinations.length; index++) {
         if (missingIndexes.includes(index)) assert.equal(fs.existsSync(destinations[index]), false, destinations[index]);
         else assert.deepEqual(fs.readFileSync(destinations[index]), oldBytes[index], destinations[index]);

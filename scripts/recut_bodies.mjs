@@ -26,7 +26,7 @@ import path from 'node:path';
 import { LANGS } from './build_spec.mjs';
 import { bodySplitPlan } from './build_spec/content.mjs';
 import { bodyFileName, langSeparator } from './build_spec/shared.mjs';
-import { validateBodySourceShape } from './build_spec/units/containers.mjs';
+import { validateBodySourceShape } from '@ktav-lang/polydoc';
 
 const CONTENT = path.resolve(process.argv[2]);
 const WRITE = process.argv.includes('--write');

@@ -2,79 +2,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { LANGS } from './shared.mjs';
-import { fail } from './units/decode.mjs';
-import {
-  readCanonicalJson,
-  readJsonDefault,
-  structuralMeta,
-  validateContentDir,
-} from './content.mjs';
+import { fail } from '@ktav-lang/polydoc';
+import { readJsonDefault } from './content.mjs';
 
-/// Regenerate the section-inventory lock from the current content
-/// directory, reporting the delta.
-///
-/// The delta is the point. A flag that silently rewrites the lock is
-/// worse than editing it by hand, because the lock's only job is to
-/// make a structural change visible — a section quietly added, removed
-/// or renumbered is exactly what it guards against. Printing what
-/// changed keeps the human in the loop that the lock was built to
-/// create.
-export async function writeSectionInventoryLock(contentDir, lockPath, release) {
-  // No lock option here: the point is to rebuild it, so validating
-  // against the old one first would make a legitimate structural change
-  // impossible to record.
-  const { manifest, units } = await validateContentDir(contentDir);
-
-  const next = {
-    format: 'ktav-section-inventory',
-    units: manifest.map((unit) => structuralMeta(unit, units.get(unit).meta)),
-    version: release.version,
-  };
-
-  let previous = null;
-  if (fs.existsSync(lockPath)) {
-    try {
-      previous = readCanonicalJson(lockPath);
-    } catch {
-      process.stdout.write(
-        `build_spec: existing lock could not be decoded; writing a fresh one\n`);
-    }
-  }
-
-  const lines = [];
-  if (previous === null) {
-    lines.push(`  no previous lock: recording ${next.units.length} unit(s)`);
-  } else {
-    const before = new Map((previous.units ?? []).map((u) => [u.unit, u]));
-    const after = new Map(next.units.map((u) => [u.unit, u]));
-    for (const [name, u] of after) {
-      if (!before.has(name)) {
-        lines.push(`  + ${name} (${u.kind}${u.number === null ? '' : ' ' + u.number})`);
-      } else if (JSON.stringify(before.get(name)) !== JSON.stringify(u)) {
-        lines.push(`  ~ ${name}`);
-        lines.push(`      was ${JSON.stringify(before.get(name))}`);
-        lines.push(`      now ${JSON.stringify(u)}`);
-      }
-    }
-    for (const name of before.keys()) {
-      if (!after.has(name)) lines.push(`  - ${name}`);
-    }
-    if (previous.version !== next.version) {
-      lines.push(`  ~ version: ${JSON.stringify(previous.version)} -> ${JSON.stringify(next.version)}`);
-    }
-  }
-
-  if (lines.length === 0) {
-    process.stdout.write('build_spec: section inventory lock is already current; nothing written\n');
-    return;
-  }
-
-  process.stdout.write(
-    'build_spec: section inventory lock changes:\n' + lines.join('\n') + '\n');
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
-  fs.writeFileSync(lockPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
-  process.stdout.write(`build_spec: wrote ${lockPath}\n`);
-}
+// The section-inventory lock writer is generic (see @ktav-lang/polydoc's
+// content.mjs) — nothing here is ktav-specific about "rebuild the lock and
+// report the delta". Only this file's own hand-maintained-file checks
+// below are ktav's own release-consistency policy.
+export { writeSectionInventoryLock } from '@ktav-lang/polydoc';
 
 export function escapeRegExp(s) {
   return s.replace(/[.*+?${}()|[\]\\]/gu, '\\$&');
@@ -95,23 +30,21 @@ function rx(template) {
 // release.js declares. Nothing here is ever rewritten by this script.
 //
 // The name is now only half true, and saying so beats letting it rot:
-// `versions.ktav` is the last genuinely hand-maintained entry. README and
-// CHANGELOG are generated from their `root-docs/<DOC>/` unit trees (see
-// root_docs.mjs), and are listed here because the ARTIFACT is what ships
-// and therefore what must carry the right version — but a failure means
-// editing the SOURCE UNIT, since a fix applied to the artifact is
-// overwritten by the next build and rejected by --check.
+// `versions.ktav` is the last genuinely hand-maintained entry, and the
+// only one still read from disk. README and CHANGELOG are generated from
+// their `root-docs/<DOC>/` unit trees (see root_docs.mjs); their anchors
+// are evaluated against the freshly assembled root-doc buffers passed in
+// by the caller, never against disk, so the check validates exactly what
+// will ship. A failure still means editing the SOURCE UNIT, since a fix
+// applied to the artifact is overwritten by the next build and rejected
+// by --check.
 //
 // Anchors are regexes pinned to the exact current-version shapes (path
 // anchors, dates, banner lines), so historical-version mentions (0.6.x,
 // older release dates) can never trip the check. If a deliberate prose
 // change breaks an anchor, update the anchor consciously in the same
 // commit. All disagreements are collected and reported together.
-const HANDWRITTEN_FILES = [
-  'versions.ktav',
-  'README.md', 'README.ru.md', 'README.zh.md',
-  'CHANGELOG.md', 'CHANGELOG.ru.md', 'CHANGELOG.zh.md',
-];
+const HANDWRITTEN_FILES = ['versions.ktav'];
 
 // The current version's CHANGELOG heading. Anchored to the exact date
 // on purpose: the failure this catches is a release shipping with its
@@ -336,7 +269,7 @@ function checkAppendixHeading(root, release, disagreements) {
   }
 }
 
-export async function checkHandwrittenVersionReferences(root, release) {
+export async function checkHandwrittenVersionReferences(root, release, rootDocs) {
   const disagreements = [];
   const contents = new Map();
   for (const rel of HANDWRITTEN_FILES) {
@@ -361,7 +294,13 @@ export async function checkHandwrittenVersionReferences(root, release) {
     ...HANDWRITTEN_CHANGELOG_ANCHORS,
   };
   for (const [rel, anchors] of Object.entries(allAnchors)) {
-    const text = contents.get(rel);
+    const doc = rel.slice(0, rel.indexOf('.'));
+    const rest = rel.slice(rel.indexOf('.') + 1, -3);
+    const lang = LANGS.includes(rest) ? rest : 'en';
+    const text = rootDocs.get(doc)?.get(lang)?.toString('utf8');
+    // A missing doc means nothing was assembled for this tree; the
+    // builder's own orphan-artifact rule and the byte-identity checks
+    // cover that case, so skipping is correct here.
     if (text === undefined) continue;
     for (const anchor of anchors) {
       const pattern = anchor(release.version, release.released);
@@ -369,8 +308,8 @@ export async function checkHandwrittenVersionReferences(root, release) {
         disagreements.push(
           `${rel}: no current-version reference matching /${pattern.source}/ ` +
           `(the current version per release.js is ${JSON.stringify(release.version)}; ` +
-          'update the line, or update the anchor in checkHandwrittenVersionReferences ' +
-          'if the prose deliberately changed)');
+          'update the line in its root-docs source unit, or update the anchor in ' +
+          'checkHandwrittenVersionReferences if the prose deliberately changed)');
       }
     }
   }

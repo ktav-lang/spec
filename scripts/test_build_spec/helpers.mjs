@@ -307,6 +307,10 @@ function tokenFixtures() {
 
 // Copy the generator (hub + its ./build_spec/ module tree) into a synthetic
 // repo's scripts/ directory so spawned CLI tests run the real, split code.
+// The generator now imports @ktav-lang/polydoc as a real package, so the
+// synthetic repo needs its own node_modules entry for it — a spawned
+// build_spec.mjs resolves bare specifiers from ITS OWN location upward,
+// never from this process's node_modules.
 function installGenerator(scriptDir) {
   fs.mkdirSync(scriptDir, { recursive: true });
   fs.copyFileSync(
@@ -314,6 +318,11 @@ function installGenerator(scriptDir) {
     path.join(scriptDir, 'build_spec.mjs'));
   fs.cpSync(path.join(process.cwd(), 'scripts', 'build_spec'),
     path.join(scriptDir, 'build_spec'), { recursive: true });
+  const polydocScope = path.join(path.dirname(scriptDir), 'node_modules', '@ktav-lang');
+  fs.mkdirSync(polydocScope, { recursive: true });
+  const polydocReal = fs.realpathSync(
+    path.join(process.cwd(), 'node_modules', '@ktav-lang', 'polydoc'));
+  fs.symlinkSync(polydocReal, path.join(polydocScope, 'polydoc'), 'junction');
 }
 
 export { write, metaJs, permutations, withKeyOrder, bodySource, unitMeta, TEST_RELEASE, REAL_RELEASE, HANDWRITTEN_ROOT_FILES, APPENDIX_META_REL, copyHandwrittenRootFiles, copyDriftCheckInputs, realReleaseJs, makeContent, lockUnits, LAST, MID, baseFixtures, validate, symlinksSupportedCache, symlinksSupported, directoryLinksSupportedCache, directoryLinksSupported, makeDirectoryLink, bodyWithInteriorBlanks, bodyWithOneInteriorBlank, interiorBlankCutOffsets, splitBody, sameLanguageBodies, zipLanguageBodies, buildInTemp, installGenerator, tokenFixtures };

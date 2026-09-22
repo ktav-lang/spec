@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  buildRootDocs,
   checkHandwrittenVersionReferences,
   writeSectionInventoryLock,
 } from '../../build_spec.mjs';
@@ -24,7 +25,7 @@ export async function checkHandwrittenVersionReferencesAcceptsTheRealRepoHandMai
     // This also proves historical 0.6.4 / 0.7.0 / 2026-08-23 mentions in the
     // real files never trip the check: only current-version anchors match.
     await assert.doesNotReject(() =>
-      checkHandwrittenVersionReferences(root, REAL_RELEASE));
+      checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -38,7 +39,7 @@ export async function checkHandwrittenVersionReferencesRejectsAStaleVersionsKtav
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replace('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('versions.ktav') &&
         e.message.includes('stable') &&
         e.message.includes('"0.7.0"') &&
@@ -56,7 +57,7 @@ export async function checkHandwrittenVersionReferencesRejectsStablePointingAtVe
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replace('path: versions/0.8', 'path: versions/0.6'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => /versions\.ktav: stable\.path is "versions\/0\.6"/u.test(e.message));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -73,7 +74,7 @@ export async function checkHandwrittenVersionReferencesRejectsAStaleLatestVersio
       .replace(/(latest: \{\n\s*version: )([^\n]+)/u,
         `$10.0.1`));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('latest') &&
         e.message.includes('"0.0.1"') &&
         !/latest\.path/u.test(e.message));
@@ -86,15 +87,17 @@ export async function checkHandwrittenVersionReferencesNamesOnlyTheStaleReadme()
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-readme-'));
   try {
     copyDriftCheckInputs(root);
-    const readme = path.join(root, 'README.md');
-    fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8')
+    // Stale the SOURCE unit, not the artifact: the anchors judge the
+    // freshly built buffers, so the artifact on disk is irrelevant.
+    const readmeUnit = path.join(root, 'root-docs', 'README', 'full-specification', 'body-1.md');
+    fs.writeFileSync(readmeUnit, fs.readFileSync(readmeUnit, 'utf8')
       .split('\n')
       .map((line) => line.includes('**Current stable:**')
         ? line.replaceAll(REAL_RELEASE.version, '0.7.0')
         : line)
       .join('\n'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => {
         assert.ok(e.message.includes('README.md'), e.message);
         assert.ok(!e.message.includes('README.ru.md'), e.message);
@@ -107,14 +110,14 @@ export async function checkHandwrittenVersionReferencesNamesOnlyTheStaleReadme()
   }
 }
 
-export async function checkHandwrittenVersionReferencesRejectsAMissingRequiredFile() {
+export async function checkHandwrittenVersionReferencesRejectsAMissingVersionsKtav() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-missing-'));
   try {
     copyDriftCheckInputs(root);
-    fs.rmSync(path.join(root, 'README.zh.md'));
+    fs.rmSync(path.join(root, 'versions.ktav'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
-      (e) => e.message.includes('README.zh.md'));
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
+      (e) => e.message.includes('versions.ktav'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
@@ -127,15 +130,15 @@ export async function checkHandwrittenVersionReferencesCollectsAllDisagreementsA
     const ktav = path.join(root, 'versions.ktav');
     fs.writeFileSync(ktav, fs.readFileSync(ktav, 'utf8')
       .replaceAll('version: ' + REAL_RELEASE.version, 'version: 0.7.0'));
-    const readme = path.join(root, 'README.md');
-    fs.writeFileSync(readme, fs.readFileSync(readme, 'utf8')
+    const readmeUnit = path.join(root, 'root-docs', 'README', 'full-specification', 'body-1.md');
+    fs.writeFileSync(readmeUnit, fs.readFileSync(readmeUnit, 'utf8')
       .split('\n')
       .map((line) => line.includes('**Current stable:**')
         ? line.replaceAll(REAL_RELEASE.version, '0.7.0')
         : line)
       .join('\n'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => {
         assert.ok(e.message.includes('stable'), e.message);
         assert.ok(e.message.includes('latest'), e.message);
@@ -158,7 +161,7 @@ export async function checkHandwrittenVersionReferencesRejectsUnparseableVersion
     assert.notEqual(firstClose, -1);
     fs.writeFileSync(ktav, text.slice(0, firstClose) + '\n' + text.slice(firstClose + 3));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => /versions\.ktav: cannot parse/u.test(e.message));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -172,12 +175,12 @@ export async function checkHandwrittenVersionReferencesRejectsAChangelogStillRea
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-changelog-'));
   try {
     copyDriftCheckInputs(root);
-    const file = path.join(root, 'CHANGELOG.md');
-    fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
+    const unit = path.join(root, 'root-docs', 'CHANGELOG', 'v0.8.0', 'body-1.md');
+    fs.writeFileSync(unit, fs.readFileSync(unit, 'utf8')
       .replace(`## [${REAL_RELEASE.version}] — ${REAL_RELEASE.released}`,
         `## [${REAL_RELEASE.version}] — unreleased`));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('CHANGELOG.md') &&
         e.message.includes(REAL_RELEASE.released));
   } finally {
@@ -193,7 +196,7 @@ export async function checkHandwrittenVersionReferencesRejectsAnAppendixAHeading
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
       .replace(`"— ${REAL_RELEASE.released}"`, '"— unreleased"'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('meta.title.en') &&
         e.message.includes('unreleased'));
   } finally {
@@ -209,7 +212,7 @@ export async function checkHandwrittenVersionReferencesRejectsAnAppendixANumberT
     fs.writeFileSync(file, fs.readFileSync(file, 'utf8')
       .replace(`"number": "${REAL_RELEASE.version}"`, '"number": "9.9.9"'));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('meta.number') && e.message.includes('9.9.9'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -264,7 +267,7 @@ export async function checkHandwrittenVersionReferencesRejectsAMissingAppendixAU
     copyDriftCheckInputs(root);
     fs.rmSync(path.join(root, APPENDIX_META_REL));
     await assert.rejects(
-      () => checkHandwrittenVersionReferences(root, REAL_RELEASE),
+      () => checkHandwrittenVersionReferences(root, REAL_RELEASE, buildRootDocs(root)),
       (e) => e.message.includes('Appendix A has no unit'));
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

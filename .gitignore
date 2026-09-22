@@ -1,6 +1,10 @@
 # Local working directories
 /docs_local
 
+# npm (the @ktav-lang/polydoc local dependency lives in node_modules as a
+# symlink to ../polydoc — never committed)
+/node_modules/
+
 # /wrush task worktrees — always created here, in-tree
 /worktrees/
 

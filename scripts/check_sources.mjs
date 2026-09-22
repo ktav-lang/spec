@@ -9,262 +9,183 @@
 // while reducing thirteen of its fourteen bullets to stubs, and the
 // checker passed. These checks read the sources instead, where a defect
 // can be pointed at a file and a line rather than at a rendered section.
+// The four checks themselves (parts-aligned, list-parity, indent-shapes,
+// unwrapped) live in @ktav-lang/polydoc's checkSources — generic over any
+// configured set of languages, not specific to this repository.
 //
-// Four checks, each earned by a defect that reached the corpus:
-//
-//   parts-aligned    part k must hold the same fragment in every
-//                    language; the acceptance of the shared-cut work
-//                    rests on it.
-//   list-parity      the bullets must survive translation.
-//   indent-shapes    text pasted at a depth no construct justifies.
-//   unwrapped        a translation paragraph left as one long line.
-//
-// Usage: node scripts/check_sources.mjs <content-dir> [--verbose]
+// Usage: node scripts/check_sources.mjs [<content-dir>] [--verbose]
 //        exit 0 when clean, 1 with a report on stderr otherwise.
+//
+// With no <content-dir> the script sweeps every LIVING source-unit tree
+// of the repository: the current release's content dir plus its
+// readme-units, and every root-docs/<DOC>/ tree that has a manifest.js.
+// Frozen version trees — any versions/<v>/content other than the release
+// path — are reported as skipped, never silently. The known pre-existing
+// source defects are recorded in KNOWN_SOURCE_DEFECTS below and reported
+// as notes instead of failures; anything else fails.
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { LANGS } from './build_spec.mjs';
-import { validateBodySourceShape } from './build_spec/units/containers.mjs';
+import { checkSources, readUnits } from '@ktav-lang/polydoc';
+import { RELEASE_PATH } from './build_spec.mjs';
 
-const FENCE_RE = /^\s*(```|~~~)/u;
-const WIDE_CP_RE = /[ᄀ-ᅟ⺀-꓏가-힣豈-﫿︰-﹯＀-｠￠-￦]/u;
+export { checkSources, readUnits };
 
-/// Display width, counting East Asian wide code points as two columns —
-/// which is how they occupy a terminal and a side-by-side diff.
-function displayWidth(line) {
-  let width = 0;
-  for (const ch of line) width += WIDE_CP_RE.test(ch) ? 2 : 1;
-  return width;
+// --------------------------------------------------- known source defects
+
+// An honest baseline ratchet. The six problems below exist in the sources
+// today and each needs a translator or a content owner, not a checker, so
+// fixing them is out of scope for this script. They are reported as notes
+// instead of failures; every OTHER problem still fails — including a new
+// defect in one of these units, because each entry is keyed to the exact
+// wording of its defect, not just to the unit.
+export const KNOWN_SOURCE_DEFECTS = [
+  // root-docs/CHANGELOG — stub translation of a historical entry; needs a translator.
+  { unit: 'v0.5.0', contains: 'section:5.2 sits in different parts across languages' },
+  // root-docs/CHANGELOG — historical prose edited without re-wrapping; a translator must re-wrap it.
+  { unit: 'v0.7.0', contains: 'ru line 175 is 134 columns' },
+  // versions/0.8/content/readme-units — stub translation in the author instructions; needs a translator.
+  { unit: 'unit-contents', contains: 'error:JavaScript sits in different parts across languages' },
+  // versions/0.8/content/readme-units — a shared fence was re-cut without re-cutting the translations; a content owner must re-cut it.
+  { unit: 'how-the-generator-builds-a-file', contains: 'how-the-generator-builds-a-file: fence:' },
+  // versions/0.8/content/readme-units — a translation invented a manifest bullet; a content owner must correct it.
+  { unit: 'manifest-js', contains: 'bullet count differs (en=3 ru=3 zh=4)' },
+  // versions/0.8/content/readme-units — prose edited without re-wrapping; a translator must re-wrap it.
+  { unit: 'unit-contents', contains: 'ru line 8 is 147 columns' },
+];
+
+export function isKnownSourceDefect(problem) {
+  return KNOWN_SOURCE_DEFECTS.some(({ unit, contains }) =>
+    (problem.startsWith(`${unit}:`) || problem.startsWith(`${unit} `)) &&
+    problem.includes(contains));
 }
 
-/// Lines outside fenced blocks. Inside a fence, indentation and line
-/// breaks are content, not formatting, and none of these checks apply.
-function proseLines(text) {
-  const rows = [];
-  let inFence = false;
-  text.split('\n').forEach((line, i) => {
-    if (FENCE_RE.test(line)) { inFence = !inFence; return; }
-    if (!inFence) rows.push({ number: i + 1, line });
-  });
-  return rows;
-}
+// ------------------------------------------------------------ tree sweep
 
-const LIST_MARKER_RE = /^(\s*)(\d+\.[ \t]+|[-*+][ \t]+)/u;
-
-// ---------------------------------------------------------------- parts
-
-const FENCE_BLOCK_RE = /^(```|~~~)[^\n]*\n([\s\S]*?)^\1[^\n]*$/gmu;
-const SECTION_REF_RE = /§\s*([\d.]+[\d])/gu;
-const ERROR_NAME_RE = /\b([A-Z][a-z]+(?:[A-Z][a-z]+)+)\b/gu;
-
-/// Items that are never translated, so their position is comparable
-/// across languages: code blocks, § references and error names.
-function untranslatedItems(text) {
-  const counts = new Map();
-  const add = (kind, value) => {
-    const key = `${kind}:${value}`;
-    counts.set(key, (counts.get(key) ?? 0) + 1);
-  };
-  for (const m of text.matchAll(FENCE_BLOCK_RE)) add('fence', m[2].trim());
-  for (const m of text.matchAll(SECTION_REF_RE)) add('section', m[1]);
-  for (const m of text.matchAll(ERROR_NAME_RE)) add('error', m[1]);
-  return counts;
-}
-
-/// MISALIGNMENT — the same item sitting in part 1 of English and part 2
-/// of Russian. That means the cut points drifted apart and the files are
-/// slices rather than translations. A differing NUMBER of mentions inside
-/// the same part is a prose question, not a split defect, and is reported
-/// separately by the caller rather than failing the build.
-function checkPartsAligned(units, problems, notes) {
-  for (const { unit, parts } of units) {
-    if (parts.length < 2) continue;
-    const placement = new Map();
-    parts.forEach((blocks, partIndex) => {
-      for (const lang of LANGS) {
-        for (const [key, count] of untranslatedItems(blocks[lang])) {
-          if (!placement.has(key)) placement.set(key, new Map());
-          const byLang = placement.get(key);
-          if (!byLang.has(lang)) byLang.set(lang, new Map());
-          byLang.get(lang).set(partIndex, count);
-        }
-      }
-    });
-
-    for (const [key, byLang] of placement) {
-      const present = [...byLang.keys()];
-      if (present.length < 2) continue;
-      const partsOf = (lang) => [...byLang.get(lang).keys()].sort((a, b) => a - b);
-      const reference = partsOf(present[0]);
-      for (const lang of present.slice(1)) {
-        if (JSON.stringify(partsOf(lang)) !== JSON.stringify(reference)) {
-          problems.push(`${unit}: ${key} sits in different parts across languages (` +
-            present.map((l) => `${l}=${partsOf(l).map((p) => p + 1).join('+')}`).join(', ') +
-            '); the parts are slices, not translations');
-          break;
-        }
-      }
-      for (const partIndex of reference) {
-        const counts = present.map((lang) => byLang.get(lang).get(partIndex) ?? 0);
-        if (new Set(counts).size > 1) {
-          notes.push(`${unit} part ${partIndex + 1}: ${key} mentioned ` +
-            present.map((l, i) => `${l}=${counts[i]}`).join(' ') +
-            ' — same part, different count; a prose question, not a split defect');
-        }
+/// Every LIVING source-unit tree under repoRoot, as `{ trees, skipped }`.
+/// Trees are `{ label, dir }` with the label a repo-relative path. Frozen
+/// version trees come back in `skipped` with a reason, so the sweep is
+/// never silently narrower than the repository. A missing root-docs/ or
+/// versions/ is an empty result, not an error — synthetic roots in tests.
+export function findSourceTrees(repoRoot) {
+  const trees = [];
+  const skipped = [];
+  const rootDocs = path.join(repoRoot, 'root-docs');
+  if (fs.existsSync(rootDocs)) {
+    for (const name of fs.readdirSync(rootDocs).sort()) {
+      const dir = path.join(rootDocs, name);
+      if (fs.existsSync(path.join(dir, 'manifest.js'))) {
+        trees.push({ label: `root-docs/${name}`, dir });
       }
     }
   }
-}
-
-// ----------------------------------------------------------------- list
-
-/// Bullets and numbered items must survive translation. This is the check
-/// the rendered-document parity gate cannot make: it compares sections,
-/// and a section keeps its § references and keywords even when its list
-/// has been reduced to stubs.
-function checkListParity(units, problems) {
-  for (const { unit, parts } of units) {
-    parts.forEach((blocks, partIndex) => {
-      const count = (text, re) => proseLines(text).filter((r) => re.test(r.line)).length;
-      for (const [kind, re] of [['bullet', /^\s*[-*+][ \t]/u], ['ordered', /^\s*\d+\.[ \t]/u]]) {
-        const values = LANGS.map((lang) => count(blocks[lang], re));
-        if (new Set(values).size > 1) {
-          problems.push(`${unit} part ${partIndex + 1}: ${kind} count differs (` +
-            LANGS.map((l, i) => `${l}=${values[i]}`).join(' ') +
-            '); a translation dropped or invented list items');
+  const versions = path.join(repoRoot, 'versions');
+  if (fs.existsSync(versions)) {
+    for (const v of fs.readdirSync(versions).sort()) {
+      const dir = path.join(versions, v, 'content');
+      if (!fs.existsSync(path.join(dir, 'manifest.js'))) continue;
+      const rel = `versions/${v}/content`;
+      if (rel === `${RELEASE_PATH}/content`) {
+        trees.push({ label: rel, dir });
+        const readmeUnits = path.join(dir, 'readme-units');
+        if (fs.existsSync(path.join(readmeUnits, 'manifest.js'))) {
+          trees.push({ label: `${rel}/readme-units`, dir: readmeUnits });
         }
+      } else {
+        skipped.push({
+          label: rel,
+          why: 'frozen — never rebuilt; only the release version content tree is living',
+        });
       }
-    });
+    }
   }
+  trees.sort((a, b) => (a.label < b.label ? -1 : a.label > b.label ? 1 : 0));
+  return { trees, skipped };
 }
 
-// --------------------------------------------------------------- indent
+const KNOWN_NOTE_PREFIX = 'note: known pre-existing ' +
+  '(see KNOWN_SOURCE_DEFECTS in scripts/check_sources.mjs): ';
 
-/// An indent the translation uses that English never does, MINUS indents
-/// justified by a list marker in the translation's own block.
-///
-/// That exemption is the whole check. Russian wraps a bullet English fits
-/// on one line, so it legitimately uses a continuation indent English had
-/// no occasion for. Two stricter designs were tried and rejected:
-/// requiring a continuation to match its marker's column flags deliberate
-/// table alignment, and flags a paragraph that correctly returns to an
-/// outer level after a nested list.
-function checkIndentShapes(units, problems) {
-  for (const { unit, parts } of units) {
-    parts.forEach((blocks, partIndex) => {
-      const shape = (text) => {
-        const indents = new Set();
-        const markerIndents = new Set();
-        for (const { line } of proseLines(text)) {
-          if (line.trim() === '') continue;
-          indents.add(line.length - line.trimStart().length);
-          const m = LIST_MARKER_RE.exec(line);
-          if (m) markerIndents.add(m[1].length + m[2].length);
-        }
-        return { indents, markerIndents };
-      };
-      const en = shape(blocks.en);
-      for (const lang of LANGS) {
-        if (lang === 'en') continue;
-        const t = shape(blocks[lang]);
-        for (const indent of t.indents) {
-          if (en.indents.has(indent) || t.markerIndents.has(indent)) continue;
-          problems.push(`${unit} part ${partIndex + 1}: ${lang} indents by ${indent}, ` +
-            `which English never uses and no list marker in the block justifies`);
-        }
-      }
-    });
+function checkTree(dir) {
+  const units = readUnits(dir);
+  const { problems, notes } = checkSources(units);
+  const files = units.reduce((n, u) => n + u.parts.length, 0);
+  const known = problems.filter((p) => isKnownSourceDefect(p));
+  const unknown = problems.filter((p) => !isKnownSourceDefect(p));
+  return { units, files, notes, known, unknown };
+}
+
+function printNotes({ known, notes }, verbose) {
+  for (const problem of known) {
+    process.stdout.write(`${KNOWN_NOTE_PREFIX}${problem}\n`);
   }
-}
-
-// ------------------------------------------------------------ unwrapped
-
-/// A translation line far wider than the widest English line in the same
-/// file — the shape of a paragraph edited by substitution and never
-/// re-wrapped.
-///
-/// Relative on purpose. An absolute column limit does not survive contact
-/// with this corpus: grammar productions and aligned example tables run
-/// past ninety columns in ALL THREE languages, legitimately, so any gate
-/// that catches the real defects also catches them. Measured against the
-/// 0.7 corpus, the relative rule finds five genuine unwrapped paragraphs
-/// and nothing else.
-const WIDTH_RATIO = 1.4;
-const WIDTH_MARGIN = 20;
-
-function checkUnwrapped(units, problems) {
-  for (const { unit, parts } of units) {
-    parts.forEach((blocks, partIndex) => {
-      const widest = (text) => proseLines(text)
-        .reduce((max, r) => Math.max(max, displayWidth(r.line)), 0);
-      const enMax = widest(blocks.en);
-      if (enMax === 0) return;
-      for (const lang of LANGS) {
-        if (lang === 'en') continue;
-        for (const { number, line } of proseLines(blocks[lang])) {
-          const width = displayWidth(line);
-          if (width > enMax * WIDTH_RATIO && width > enMax + WIDTH_MARGIN) {
-            problems.push(`${unit} part ${partIndex + 1}: ${lang} line ${number} is ` +
-              `${width} columns against an English maximum of ${enMax}; ` +
-              're-wrap it, the paragraph was edited without re-wrapping');
-          }
-        }
-      }
-    });
+  if (verbose || notes.length > 0) {
+    for (const note of notes) process.stdout.write(`note: ${note}\n`);
   }
-}
-
-// ------------------------------------------------------------------ cli
-
-export function readUnits(contentDir) {
-  const manifest = JSON.parse(
-    fs.readFileSync(path.join(contentDir, 'manifest.js'), 'utf8').replace('export default ', ''));
-  return manifest.map((unit) => {
-    const dir = path.join(contentDir, ...unit.split('/'));
-    const names = fs.readdirSync(dir)
-      .filter((n) => /^body-\d+\.md$/u.test(n))
-      .sort((a, b) => Number(a.slice(5, -3)) - Number(b.slice(5, -3)));
-    const parts = names.map((name) => validateBodySourceShape(
-      unit, 1, fs.readFileSync(path.join(dir, name), 'utf8'), `${unit}/${name}`));
-    return { unit, parts };
-  });
-}
-
-export function checkSources(units) {
-  const problems = [];
-  const notes = [];
-  checkPartsAligned(units, problems, notes);
-  checkListParity(units, problems);
-  checkIndentShapes(units, problems);
-  checkUnwrapped(units, problems);
-  return { problems, notes };
 }
 
 function cli() {
   const args = process.argv.slice(2);
   const verbose = args.includes('--verbose');
   const contentDir = args.find((a) => !a.startsWith('--'));
-  if (contentDir === undefined) {
-    process.stderr.write('usage: node scripts/check_sources.mjs <content-dir> [--verbose]\n');
-    process.exit(2);
-  }
-  const units = readUnits(path.resolve(contentDir));
-  const { problems, notes } = checkSources(units);
-  const files = units.reduce((n, u) => n + u.parts.length, 0);
 
-  if (verbose || notes.length > 0) {
-    for (const note of notes) process.stdout.write(`note: ${note}\n`);
+  if (contentDir !== undefined) {
+    const report = checkTree(path.resolve(contentDir));
+    printNotes(report, verbose);
+    if (report.unknown.length > 0) {
+      for (const problem of report.unknown) {
+        process.stderr.write(`check_sources: ${problem}\n`);
+      }
+      process.stderr.write(`check_sources: FAIL — ${report.unknown.length} problem(s) ` +
+        `across ${report.units.length} unit(s), ${report.files} body file(s)\n`);
+      process.exit(1);
+    }
+    process.stdout.write(`check_sources: PASS — ${report.units.length} unit(s), ` +
+      `${report.files} body file(s), ${report.notes.length + report.known.length} note(s)\n`);
+    process.exit(0);
   }
-  if (problems.length > 0) {
-    for (const problem of problems) process.stderr.write(`check_sources: ${problem}\n`);
-    process.stderr.write(`check_sources: FAIL — ${problems.length} problem(s) ` +
-      `across ${units.length} unit(s), ${files} body file(s)\n`);
+
+  const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const { trees, skipped } = findSourceTrees(repoRoot);
+  if (trees.length === 0) {
+    process.stderr.write(`check_sources: no source trees found under ${repoRoot}\n`);
     process.exit(1);
   }
-  process.stdout.write(`check_sources: PASS — ${units.length} unit(s), ${files} body file(s), ` +
-    `${notes.length} note(s)\n`);
+  for (const { label, why } of skipped) {
+    process.stdout.write(`check_sources: skipping ${label} (${why})\n`);
+  }
+  let unitTotal = 0;
+  let fileTotal = 0;
+  let knownTotal = 0;
+  let unknownTotal = 0;
+  for (const tree of trees) {
+    const report = checkTree(tree.dir);
+    printNotes(report, verbose);
+    unitTotal += report.units.length;
+    fileTotal += report.files;
+    knownTotal += report.known.length;
+    unknownTotal += report.unknown.length;
+    for (const problem of report.unknown) {
+      process.stderr.write(`check_sources: ${problem}\n`);
+    }
+    if (report.unknown.length > 0) {
+      process.stdout.write(`check_sources ${tree.label}: FAIL — ` +
+        `${report.unknown.length + report.known.length} problem(s) ` +
+        `(${report.unknown.length} unknown, ${report.known.length} known)\n`);
+    } else {
+      process.stdout.write(`check_sources ${tree.label}: PASS — ${report.units.length} unit(s), ` +
+        `${report.files} body file(s), ${report.notes.length + report.known.length} note(s)\n`);
+    }
+  }
+  if (unknownTotal > 0) {
+    process.stderr.write(`check_sources: FAIL — ${unknownTotal} unknown problem(s) ` +
+      `across ${trees.length} tree(s), ${knownTotal} known pre-existing\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`check_sources: PASS — ${trees.length} tree(s), ${unitTotal} unit(s), ` +
+    `${fileTotal} body file(s), ${knownTotal} known pre-existing\n`);
   process.exit(0);
 }
 

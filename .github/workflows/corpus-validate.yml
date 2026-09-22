@@ -26,8 +26,8 @@ jobs:
       - name: Run content builder adversarial tests
         run: node --test scripts/test_build_spec.mjs
 
-      - name: Check translation structure in the content sources
-        run: node scripts/check_sources.mjs versions/0.8/content
+      - name: Check translation structure in every source tree
+        run: node scripts/check_sources.mjs
 
       - name: Run source checker unit tests
         run: node --test scripts/test_check_sources.mjs

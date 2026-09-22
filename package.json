@@ -1,0 +1,9 @@
+{
+  "name": "@ktav-lang/spec",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@ktav-lang/polydoc": "0.1.0"
+  }
+}

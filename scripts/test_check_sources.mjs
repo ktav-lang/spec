@@ -7,9 +7,17 @@
 //
 // Usage: node scripts/test_check_sources.mjs
 
-import { checkSources } from './check_sources.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+import { checkSources, findSourceTrees, isKnownSourceDefect, KNOWN_SOURCE_DEFECTS, readUnits } from './check_sources.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /// One unit, given as `parts[partIndex][lang]`.
 const unit = (name, parts) => [{ unit: name, parts }];
@@ -125,4 +133,90 @@ test('a single-part unit is never checked for alignment', () => {
     en: '§ 5.2 twice: § 5.2\n', ru: '§ 5.2\n', zh: '§ 5.2\n',
   }]));
   assert.equal(problems.filter((p) => /different parts/.test(p)).length, 0);
+});
+
+test('the sweep finds every living source tree and skips the frozen one', () => {
+  const { trees, skipped } = findSourceTrees(repoRoot);
+  assert.deepEqual(trees.map((t) => t.label), [
+    'root-docs/CHANGELOG',
+    'root-docs/CONTRIBUTING',
+    'root-docs/README',
+    'root-docs/SECURITY',
+    'versions/0.8/content',
+    'versions/0.8/content/readme-units',
+  ]);
+  const frozen = skipped.find((s) => s.label === 'versions/0.7/content');
+  assert.ok(frozen, `expected the frozen 0.7 tree in ${JSON.stringify(skipped)}`);
+  assert.match(frozen.why, /frozen/);
+});
+
+test('a dropped zh bullet in a root-docs tree is found — the review scenario', () => {
+  const manifest = 'export default ' + JSON.stringify(['main'], null, 2) + '\n';
+  const meta = 'export default ' + JSON.stringify({
+    kind: 'frontmatter',
+    number: null,
+    level: null,
+    title: null,
+    bodyParts: 1,
+  }, null, 2) + '\n';
+  const full = '>>>>> lang=en\n- one\n- two\n- three\n' +
+    '>>>>> lang=ru\n- один\n- два\n- три\n' +
+    '>>>>> lang=zh\n- 一\n- 二\n- 三\n';
+  const broken = full.replace('- 一\n', '');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'check-sources-'));
+  const body = path.join(dir, 'main', 'body-1.md');
+  try {
+    fs.writeFileSync(path.join(dir, 'manifest.js'), manifest);
+    fs.mkdirSync(path.join(dir, 'main'));
+    fs.writeFileSync(path.join(dir, 'main', 'meta.js'), meta);
+    fs.writeFileSync(body, full);
+    assert.deepEqual(checkSources(readUnits(dir)).problems, []);
+    fs.writeFileSync(body, broken);
+    const { problems } = checkSources(readUnits(dir));
+    assert.ok(problems.some((p) => /bullet count differs \(en=3 ru=3 zh=2\)/.test(p)),
+      `expected a dropped zh bullet, got ${JSON.stringify(problems)}`);
+    fs.writeFileSync(body, full);
+    assert.deepEqual(checkSources(readUnits(dir)).problems, []);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('every current source problem is either known or fatal — the ratchet holds both ways', () => {
+  const dirs = [
+    path.join(repoRoot, 'root-docs', 'CHANGELOG'),
+    path.join(repoRoot, 'versions', '0.8', 'content', 'readme-units'),
+  ];
+  const problems = dirs.flatMap((dir) => checkSources(readUnits(dir)).problems);
+  assert.ok(problems.length > 0, 'expected the baseline defects to reproduce');
+  const unknown = problems.filter((p) => !isKnownSourceDefect(p));
+  assert.deepEqual(unknown, [],
+    `unknown problem(s) in the baseline: ${JSON.stringify(unknown)}`);
+  for (const { unit, contains } of KNOWN_SOURCE_DEFECTS) {
+    assert.ok(
+      problems.some((p) =>
+        (p.startsWith(`${unit}:`) || p.startsWith(`${unit} `)) && p.includes(contains)),
+      'baseline entry no longer matches anything — the defect was fixed, remove the entry: ' +
+      `${unit}: ${contains}`);
+  }
+});
+
+test('isKnownSourceDefect is keyed to the exact defect, not just the unit', () => {
+  assert.equal(isKnownSourceDefect(
+    'manifest-js part 1: bullet count differs (en=3 ru=3 zh=4); a translation dropped or invented list items'), true);
+  assert.equal(isKnownSourceDefect(
+    'manifest-js part 1: bullet count differs (en=3 ru=3 zh=1); a translation dropped or invented list items'), false);
+  assert.equal(isKnownSourceDefect(
+    'v0.5.0 part 2: section:9.9 sits in different parts across languages (en=1, ru=2); the parts are slices, not translations'), false);
+});
+
+test('the new CI command sweeps the real repository green', () => {
+  const { status, stdout, stderr } = spawnSync(
+    process.execPath, [path.join(repoRoot, 'scripts', 'check_sources.mjs')],
+    { cwd: repoRoot, encoding: 'utf8' });
+  assert.equal(status, 0, `exit ${status}\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+  for (const expected of ['versions/0.8/content', 'root-docs/SECURITY', 'skipping versions/0.7/content']) {
+    assert.ok(stdout.includes(expected),
+      `expected stdout to include ${JSON.stringify(expected)}:\n${stdout}`);
+  }
 });

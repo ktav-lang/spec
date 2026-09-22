@@ -1,40 +1,73 @@
-import path from 'node:path';
+// Thin ktav-specific configuration layer over @ktav-lang/polydoc, the
+// generic "assemble multi-language documents from per-section triple-
+// translated source units" engine this file used to implement directly.
+// configure() must run before any other polydoc export is used; every
+// other build_spec/*.mjs module imports LANGS etc. from HERE (never
+// directly from polydoc), which is what guarantees this runs first.
+//
+// Every export below is named explicitly, not `export *`: several sibling
+// wrapper files (root_docs.mjs, registry.mjs) locally override a handful
+// of polydoc exports with ktav-specific defaults, and a blanket re-export
+// here would silently make those names AMBIGUOUS (and therefore undefined)
+// at build_spec.mjs's own aggregate `export *` — ES modules resolve a
+// name exported identically by every star-source, but drop it the moment
+// two star-sources disagree on which binding it is.
+import {
+  configure,
+  defaultSectionInventoryLockPath as polydocDefaultSectionInventoryLockPath,
+  LANGS,
+  OUT_FILES,
+  README_FILES,
+  README_SOURCE_FILE,
+  BODY_FILE_RE,
+  bodyFileName,
+  LANG_SEPARATOR_RE,
+  langSeparator,
+  RELEASE_FILE,
+  VERSION_TOKEN,
+  DATE_TOKEN,
+  MINOR_LINE_TOKEN,
+  minorLineOf,
+  MAX_BODY_PARTS,
+  BODY_LINE_LIMIT,
+  BODY_TARGET_LINES,
+  NUMBERED_HEADING_PREFIX_RE,
+  UNICODE_WORD_CODE_POINT_RE,
+} from '@ktav-lang/polydoc';
 
-export const LANGS = ['en', 'ru', 'zh'];
-export const OUT_FILES = { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' };
-export const README_FILES = { en: 'README.md', ru: 'README.ru.md', zh: 'README.zh.md' };
-export const README_SOURCE_FILE = 'README.source.md';
+configure({
+  langs: ['en', 'ru', 'zh'],
+  outFileNames: { en: 'spec.md', ru: 'spec.ru.md', zh: 'spec.zh.md' },
+  readmeFileNames: { en: 'README.md', ru: 'README.ru.md', zh: 'README.zh.md' },
+  sectionInventoryLockFormat: 'ktav-section-inventory',
+  rootDocuments: ['README', 'CHANGELOG', 'CONTRIBUTING', 'SECURITY'],
+});
 
-// Body sources are Markdown, one file per part, carrying all three
-// languages behind `>>>>> lang=<code>` separator lines. Keeping the name and
-// the pattern here means the extension is stated once.
-export const BODY_FILE_RE = /^body-(\d+)\.md$/u;
-export const bodyFileName = (k) => `body-${k}.md`;
-// The separator deliberately is NOT Markdown syntax that the document
-// itself uses. `##` was the obvious choice and the wrong one: a heading
-// marker is the single most common construct in a specification, so the
-// delimiter would have competed with the content it delimits.
-export const LANG_SEPARATOR_RE = /^>>>>> lang=.*$/gm;
-export const langSeparator = (lang) => `>>>>> lang=${lang}`;
-export const RELEASE_FILE = 'release.js';
-export const VERSION_TOKEN = '@@VERSION@@';
-export const DATE_TOKEN = '@@DATE@@';
+export {
+  LANGS,
+  OUT_FILES,
+  README_FILES,
+  README_SOURCE_FILE,
+  BODY_FILE_RE,
+  bodyFileName,
+  LANG_SEPARATOR_RE,
+  langSeparator,
+  RELEASE_FILE,
+  VERSION_TOKEN,
+  DATE_TOKEN,
+  MINOR_LINE_TOKEN,
+  minorLineOf,
+  MAX_BODY_PARTS,
+  BODY_LINE_LIMIT,
+  BODY_TARGET_LINES,
+  NUMBERED_HEADING_PREFIX_RE,
+  UNICODE_WORD_CODE_POINT_RE,
+};
+
+// The lock's filename carries the spec's own current version, which
+// polydoc has no reason to know.
 export const SECTION_INVENTORY_LOCK_FILE = 'section-inventory.0.8.lock.json';
 
-const NUMBERED_HEADING_PREFIX_RE = /^\d+(?:\.\d+)*/u;
-const UNICODE_WORD_CODE_POINT_RE = /^[\p{L}\p{N}_]/u;
-
-const BODY_LINE_LIMIT = 40;
-const BODY_TARGET_LINES = 30;
-// The split rule targets roughly 30 lines per file. This cap still permits
-// about 122,880 body lines, but prevents metadata from driving an unbounded
-// body-file loop before the files themselves have been inspected.
-export const MAX_BODY_PARTS = 4096;
-
 export function defaultSectionInventoryLockPath(contentDir) {
-  return path.resolve(
-    contentDir, '..', '..', '..', 'scripts', 'locks', SECTION_INVENTORY_LOCK_FILE);
+  return polydocDefaultSectionInventoryLockPath(contentDir, SECTION_INVENTORY_LOCK_FILE);
 }
-
-
-export { BODY_LINE_LIMIT, BODY_TARGET_LINES, NUMBERED_HEADING_PREFIX_RE, UNICODE_WORD_CODE_POINT_RE };

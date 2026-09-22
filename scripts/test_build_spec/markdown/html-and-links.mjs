@@ -437,11 +437,14 @@ test('suppressed Setext interruption completes lazy link definitions before type
 });
 
 test('large unterminated link-definition rollback is iterative and non-variadic', () => {
-  // Reads the generator's SOURCE TEXT, so the path is anchored two
-  // directories up at scripts/ rather than beside this file — the same
-  // hop every module that moved down a level has had to account for.
+  // Reads the generator's SOURCE TEXT. The heading scanner now lives in
+  // @ktav-lang/polydoc (scripts/build_spec/units/containers.mjs is a thin
+  // re-export), so the path is anchored three directories up at the repo
+  // root and into node_modules — the same hop every module that moved has
+  // had to account for.
   const source = fs.readFileSync(
-    new URL('../../build_spec/units/containers.mjs', import.meta.url), 'utf8');
+    new URL('../../../node_modules/@ktav-lang/polydoc/src/units/containers.mjs', import.meta.url),
+    'utf8');
   const rollback = source.match(
     /const rollbackLinkDefinition = \(\) => \{[\s\S]*?\n  \};/
   )?.[0];

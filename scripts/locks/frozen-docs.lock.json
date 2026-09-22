@@ -1,0 +1,29 @@
+{
+  "format": "ktav-frozen-docs",
+  "files": [
+    {
+      "path": "versions/0.7/content/README.md",
+      "sha256": "f08084c1311e44b46129e7f04fc5a3708c72486fab242fca0a1e8f45d2558a96"
+    },
+    {
+      "path": "versions/0.7/content/README.ru.md",
+      "sha256": "4e5f4b15297ae181eddf495d75f4758e80cc5902e689918316a678b901e84382"
+    },
+    {
+      "path": "versions/0.7/content/README.zh.md",
+      "sha256": "e000f760224c70bbd22f45d1a24170d4ca4e5d154d4a733ddf5856a0996e0cd3"
+    },
+    {
+      "path": "versions/0.7/spec.md",
+      "sha256": "9137c11b8fe4570794b63f0353e93569448ebddac5c269e48fe3d5dae3730339"
+    },
+    {
+      "path": "versions/0.7/spec.ru.md",
+      "sha256": "703021ff7124fe19c6d8f1f5dfab5dde9c6b9901fd792545e754de2a5fe35484"
+    },
+    {
+      "path": "versions/0.7/spec.zh.md",
+      "sha256": "837642df21549b95dadb7a70c36a6dfc09cd5cde72f3b03428ca04a860a43320"
+    }
+  ]
+}
