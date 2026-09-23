@@ -22,17 +22,17 @@
 // test_build_spec/helpers.mjs and is imported by the modules that need
 // it, not re-declared per file.
 
-import './test_build_spec/content/release-tokens.mjs';
-import './test_build_spec/content/root-docs.mjs';
-import './test_build_spec/markdown/headings.mjs';
-import './test_build_spec/markdown/html-and-links.mjs';
-import './test_build_spec/content/structure.mjs';
-import './test_build_spec/content/nesting.mjs';
-import './test_build_spec/content/diagnostics.mjs';
-import './test_build_spec/markdown/nesting.mjs';
-import './test_build_spec/content/shape.mjs';
-import './test_build_spec/transactions/delegations.mjs';
-import './test_build_spec/content/source-safety.mjs';
-import './test_build_spec/drift/handwritten.mjs';
-import './test_build_spec/drift/build-order.mjs';
-import './test_build_spec/registry/docs.mjs';
+import './internal/builder/test_build_spec/content/release-tokens.mjs';
+import './internal/builder/test_build_spec/content/root-docs.mjs';
+import './internal/builder/test_build_spec/markdown/headings.mjs';
+import './internal/builder/test_build_spec/markdown/html-and-links.mjs';
+import './internal/builder/test_build_spec/content/structure.mjs';
+import './internal/builder/test_build_spec/content/nesting.mjs';
+import './internal/builder/test_build_spec/content/diagnostics.mjs';
+import './internal/builder/test_build_spec/markdown/nesting.mjs';
+import './internal/builder/test_build_spec/content/shape.mjs';
+import './internal/builder/test_build_spec/transactions/delegations.mjs';
+import './internal/builder/test_build_spec/content/source-safety.mjs';
+import './internal/builder/test_build_spec/drift/handwritten.mjs';
+import './internal/builder/test_build_spec/drift/build-order.mjs';
+import './internal/builder/test_build_spec/registry/docs.mjs';

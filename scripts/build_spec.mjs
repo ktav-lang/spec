@@ -29,7 +29,7 @@
 //   writeBuildOutputs(..., { renameSync, unlinkSync }), defaultSectionInventoryLockPath(contentDir)
 
 //
-// Implementation lives in ./build_spec/ — this entry keeps the CLI and
+// Implementation lives in ./internal/builder/build_spec/ — this entry keeps the CLI and
 // re-exports the importable API.
 
 import fs from 'node:fs';
@@ -37,9 +37,9 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { fail } from '@ktav-lang/polydoc';
-import { LANGS, OUT_FILES, defaultSectionInventoryLockPath } from './build_spec/shared.mjs';
-import { buildBuffers, readRelease } from './build_spec/content.mjs';
-import { buildRootDocs, checkRootDocs, writeRootDocs } from './build_spec/root_docs.mjs';
+import { LANGS, OUT_FILES, defaultSectionInventoryLockPath } from './internal/builder/build_spec/shared.mjs';
+import { buildBuffers, readRelease } from './internal/builder/build_spec/content.mjs';
+import { buildRootDocs, checkRootDocs, writeRootDocs } from './internal/builder/build_spec/root_docs.mjs';
 import { pendingTransactionPaths } from '@ktav-lang/polydoc';
 import { recoverBuildOutputTransaction } from '@ktav-lang/polydoc';
 import {
@@ -47,14 +47,14 @@ import {
   validateWriteRoots,
   writeBuildOutputs,
 } from '@ktav-lang/polydoc';
-import { checkHandwrittenVersionReferences, writeSectionInventoryLock } from './build_spec/drift.mjs';
+import { checkHandwrittenVersionReferences, writeSectionInventoryLock } from './internal/builder/build_spec/drift.mjs';
 import {
   checkDocsRegistry,
   defaultFrozenDocsLockPath,
   writeFrozenDocsLock,
-} from './build_spec/registry.mjs';
+} from './internal/builder/build_spec/registry.mjs';
 
-export * from './build_spec/shared.mjs';
+export * from './internal/builder/build_spec/shared.mjs';
 // units/decode.mjs, units/blocks.mjs, units/containers.mjs, transaction/*.mjs
 // and outputs.mjs were pure `export {...} from '@ktav-lang/polydoc'` stubs —
 // deleted; their exact export lists are re-exported directly here instead.
@@ -82,7 +82,7 @@ export {
   resolveLinkDefinitionLine, restoreHeadingState, scanHeadings,
   sourceSliceAtExpandedPosition, validateBodySourceShape, validateUnitHeadings,
 } from '@ktav-lang/polydoc';
-export * from './build_spec/content.mjs';
+export * from './internal/builder/build_spec/content.mjs';
 export {
   PROCESS_INCARNATION, RECOVERABLE_ARTIFACTS, RECOVERABLE_OWNER_KEYS,
   TRANSACTION_DIGEST_RE, TRANSACTION_FORMAT, TRANSACTION_JOURNAL_FILE,
@@ -149,9 +149,9 @@ export {
   lineAtByte, formatMismatchDiagnostic, readCheckTarget, resolvedWriteRoot,
   unitForLine, validateWriteRoots,
 } from '@ktav-lang/polydoc';
-export * from './build_spec/root_docs.mjs';
-export * from './build_spec/drift.mjs';
-export * from './build_spec/registry.mjs';
+export * from './internal/builder/build_spec/root_docs.mjs';
+export * from './internal/builder/build_spec/drift.mjs';
+export * from './internal/builder/build_spec/registry.mjs';
 
 function usage() {
   process.stdout.write(

@@ -31,10 +31,10 @@ jobs:
         run: node --test scripts/test_build_spec.mjs
 
       - name: Check translation structure in every source tree
-        run: node scripts/check_sources.mjs
+        run: node scripts/internal/sources/check_sources.mjs
 
       - name: Run source checker unit tests
-        run: node --test scripts/test_check_sources.mjs
+        run: node --test scripts/internal/sources/test_check_sources.mjs
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -47,10 +47,10 @@ jobs:
           python scripts/validate_corpus.py versions/0.8/tests --require-unrepresentable --require-boundary --require-manifest --boundary-manifest-lock scripts/locks/boundary-fixtures.0.8.lock.json --corpus-inventory-lock scripts/locks/corpus-inventory.0.8.lock.json
 
       - name: Run validator unit tests
-        run: python scripts/test_validate_corpus.py
+        run: python scripts/internal/corpus/test_validate_corpus.py
 
       - name: Check EN/RU/ZH translation parity
         run: python scripts/check_translation_parity.py versions/0.8/spec.md versions/0.8/spec.ru.md versions/0.8/spec.zh.md
 
       - name: Run translation parity checker unit tests
-        run: python scripts/test_check_translation_parity.py
+        run: python scripts/internal/parity/test_check_translation_parity.py

@@ -224,7 +224,9 @@ Exit codes:
     2  usage error (missing/unreadable file)
 """
 
+import os
 import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "internal", "parity"))
 
 from check_translation_parity import main
 
