@@ -1,0 +1,9 @@
+## A top-level multiline Array (root kind Array, Sec 5.2 rules 1-2)
+## whose items mix uppercase-prefixed Strings (0X1A, 0B1) with
+## lowercase-prefixed Integers (0x1A, 0b1).
+[
+0X1A
+0x1A
+0B1
+0b1
+]

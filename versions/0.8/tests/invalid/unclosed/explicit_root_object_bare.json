@@ -1,0 +1,1 @@
+{"expected_error": "UnclosedCompound", "note": "Explicit root Object opened with a lone `{` but no matching `}`."}

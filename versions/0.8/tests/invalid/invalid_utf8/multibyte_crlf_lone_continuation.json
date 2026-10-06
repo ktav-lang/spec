@@ -1,0 +1,1 @@
+{"expected_error":"InvalidUtf8","note":"Sec 3.1/6.15: lone continuation byte 0x80 at byte offset 33 (physical line 3), after multibyte UTF-8 content and CRLF terminators; InvalidUtf8 is detected before any line-oriented processing."}

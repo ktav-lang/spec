@@ -1,0 +1,1 @@
+{"expected_error":"InvalidUtf8","note":"Sec 3.1/6.15: C0 AF at offsets 3-4 is an overlong encoding of U+002F; lead bytes C0 and C1 are illegal in UTF-8."}

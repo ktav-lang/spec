@@ -18,6 +18,11 @@ versions/*/tests/valid/io/lone_cr_in_value.canonical.ktav -text
 versions/*/tests/valid/inline/escape/all_escapes.canonical.ktav -text
 versions/*/tests/valid/inline/escape/newline.canonical.ktav -text
 
+# Exception: this invalid fixture's exact CRLF bytes (an explicit root Array
+# opened with `[` + CRLF and never closed) are the test condition; `-text`
+# keeps git from normalizing the CR away at check-in.
+versions/*/tests/invalid/unclosed/explicit_root_array_crlf.ktav -text
+
 # Exception: this fixture intentionally contains a content line consisting
 # of a single space character (a whitespace-only line inside a verbatim
 # multi-line string, preserved byte-for-byte as regression coverage). A
@@ -26,3 +31,9 @@ versions/*/tests/valid/inline/escape/newline.canonical.ktav -text
 # whitespace gate doesn't permanently red-flag correct fixture content.
 versions/*/tests/valid/multiline/verbatim_whitespace_only_line_in_middle.ktav whitespace=-trailing-space
 versions/*/tests/valid/multiline/verbatim_whitespace_only_line_in_middle.canonical.ktav whitespace=-trailing-space
+
+# Exception: every fixture under invalid/invalid_utf8/ is deliberately not
+# valid UTF-8 (Sec 3.1, Sec 6.15) and its exact bytes are the test
+# condition; two of them contain CR bytes that `* text=auto` would
+# normalize away at check-in. `-text` keeps git from ever rewriting them.
+versions/*/tests/invalid/invalid_utf8/*.ktav -text

@@ -830,8 +830,24 @@ this exact order:
    string is closed; otherwise the raw (untrimmed) line is added to
    the content of the multi-line string.
 4. If this is the document's first content line, the root kind is
-   set as in § 5.0.1; processing then proceeds with the same line
-   under the chosen-kind dispatch (rules 5–8).
+   determined as in § 5.0.1, and the matched § 5.0.1 rule also
+   determines how this line is consumed: the line is consumed
+   exactly once, and it is never dispatched a second time.
+   - If § 5.0.1 rule 2 or rule 3 matched (closed inline compound
+     root): the line is the entire root Value. It is consumed whole,
+     and rules 5–8 do not apply to it at all.
+   - If § 5.0.1 rule 4 or rule 5 matched (lone `{` / `[`): the line
+     is consumed as the root's opening line itself; the root context
+     is that multi-line Object / Array, and the line is not
+     re-processed as an array-item or pair line.
+   - If § 5.0.1 rule 6 matched (pair candidate): the root context is
+     an Object, and the line is processed once as the document's
+     first pair line (§ 5.3).
+   - If § 5.0.1 rule 7 matched (array-item line): the root context
+     is an Array, and the line is processed once as the document's
+     first array-item line (§ 5.4).
+   - If § 5.0.1 rule 8 matched: `UnbalancedBracket` error (§ 6.1);
+     nothing is opened and no root context is set.
 5. If the trimmed line is exactly `}` → close the innermost open
    Object, otherwise error (§ 6.1).
 6. If the trimmed line is exactly `]` → close the innermost open
@@ -842,6 +858,17 @@ this exact order:
 8. If the innermost open compound is an Object, or there is no open
    compound and the root is an Object (§ 5.0.1): treat the line as
    a **pair line** (§ 5.3).
+
+No line is processed twice: the first content line is consumed once
+by the § 5.0.1 rule matched in rule 4, and rules 5–8 never act on
+that line again. An explicit root opened by a lone `{` or `[`
+(§ 5.0.1 rules 4–5) left unclosed at end-of-file — its matching
+`}` / `]` never found — is an `UnclosedCompound` error (§ 6.1); an
+implicit root (§ 5.0.1 rules 1, 6, and 7) needs no closing line. The
+priority of orphan content after a completed root is unchanged: once
+the root Value is fully constructed, any further non-blank,
+non-comment line is an `OrphanLineAfterTopLevelInline` error
+(§ 6.14).
 
 ### 5.2 Scalar Value Interpretation
 
@@ -2628,13 +2655,29 @@ explanation for documents that mistakenly continue past the root.
 ### 6.15 Invalid UTF-8
 
 A document whose raw bytes are not valid UTF-8 (§ 3.1, § 9.3) is an
-`InvalidUtf8` error. This check happens before any line-oriented or
-grammar-level processing — a document that fails it MUST NOT also be
-diagnosed with any other category in this section, since none of the
-byte-oriented rules those categories depend on (line terminators,
-`<key-char>`, escape sequences, ...) are well-defined over a byte
-sequence that isn't valid UTF-8 to begin with. The error span SHOULD
-point at the byte offset of the first invalid sequence.
+`InvalidUtf8` error, and this validation happens before any
+line-oriented or grammar-level processing: a document that fails it
+MUST NOT also be diagnosed with any other category in this section.
+The reason is ordering, not an absence of structure in the raw
+bytes: a Ktav document is UTF-8-encoded Unicode code points (§ 3.1),
+so input that fails to decode has no text for the grammar to act on.
+The line terminators of § 3.2 — `LF` (`0x0A`), `CR` (`0x0D`),
+`CR LF` (`0x0D 0x0A`) — are fixed ASCII byte sequences that stay
+well-defined over raw bytes, independently of UTF-8 validation, so
+the original byte stream does support raw diagnostics.
+
+In particular, a 1-based diagnostic line number is computable
+directly over the original bytes: count line terminators exactly as
+§ 3.2 defines them (each `LF`, lone `CR`, or `CR LF` sequence is one
+terminator), before any byte-order-mark removal (§ 3.1), trimming,
+or newline normalisation. `InvalidUtf8` is a source-content parse
+error like every other category in this section, so the § 6
+location requirement applies to it in full: a 1-based source line
+number computed as above, and a half-open byte-offset span
+`[start, end)` covering the offending region. The error span SHOULD
+point at the byte offset of the first invalid sequence; § 6 requires
+the span to cover the offending region and does not fix its exact
+width, and this section mandates no particular width either.
 
 ### 6.16 Unterminated Quoted Key
 

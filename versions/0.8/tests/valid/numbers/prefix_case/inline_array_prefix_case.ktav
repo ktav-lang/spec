@@ -1,0 +1,3 @@
+## The same case-sensitivity rule inside an inline Array: 0X1A and 0B1
+## are Strings, while 0x1A and 0b1 are Integers.
+mixed: [0X1A, 0x1A, 0B1, 0b1]

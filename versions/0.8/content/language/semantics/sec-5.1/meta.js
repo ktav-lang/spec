@@ -8,5 +8,5 @@ export default {
     "ru": "Диспетчеризация по строкам",
     "zh": "逐行分发"
   },
-  "bodyParts": 1
+  "bodyParts": 2
 }
