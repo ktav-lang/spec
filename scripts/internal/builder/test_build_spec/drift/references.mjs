@@ -175,7 +175,7 @@ export async function checkHandwrittenVersionReferencesRejectsAChangelogStillRea
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ktav-handwritten-changelog-'));
   try {
     copyDriftCheckInputs(root);
-    const unit = path.join(root, 'root-docs', 'CHANGELOG', 'v0.8.0', 'body-1.md');
+    const unit = path.join(root, 'root-docs', 'CHANGELOG', `v${REAL_RELEASE.version}`, 'body-1.md');
     fs.writeFileSync(unit, fs.readFileSync(unit, 'utf8')
       .replace(`## [${REAL_RELEASE.version}] — ${REAL_RELEASE.released}`,
         `## [${REAL_RELEASE.version}] — unreleased`));

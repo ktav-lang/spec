@@ -55,7 +55,7 @@ function syncSourcesToNewDate(repo, newDate) {
   const old = REAL_RELEASE.released;
   for (const rel of [
     'versions.ktav',
-    path.join('root-docs', 'CHANGELOG', 'v0.8.0', 'body-1.md'),
+    path.join('root-docs', 'CHANGELOG', `v${REAL_RELEASE.version}`, 'body-1.md'),
     path.join('root-docs', 'README', 'full-specification', 'body-1.md'),
   ]) {
     const p = path.join(repo, rel);
@@ -88,7 +88,7 @@ test('a release-date bump synced into the source units rebuilds over the stale a
 
     // The buffers the check validated are the ones that got written.
     const changelog = fs.readFileSync(path.join(temp, 'CHANGELOG.md'), 'utf8');
-    assert.ok(changelog.includes('[0.8.0] — 2027-03-01'),
+    assert.ok(changelog.includes(`[${REAL_RELEASE.version}] — 2027-03-01`),
       'the written CHANGELOG.md must carry the new date');
     const check = runBuildSpec(temp, ['--check']);
     assert.equal(check.status, 0, `--check after the rebuild must pass:\n${check.stderr}`);
@@ -116,7 +116,7 @@ test('a release-date bump that skips the source units still fails the build', ()
     assert.match(second.stderr, /README\.md/, 'the readme anchor failure must be named');
     // Nothing was written: the artifact still carries the old date.
     const changelog = fs.readFileSync(path.join(temp, 'CHANGELOG.md'), 'utf8');
-    assert.ok(changelog.includes(`[0.8.0] — ${REAL_RELEASE.released}`),
+    assert.ok(changelog.includes(`[${REAL_RELEASE.version}] — ${REAL_RELEASE.released}`),
       'a failed build must not rewrite the artifact');
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
