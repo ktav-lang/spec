@@ -8,11 +8,11 @@
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
 > **Version scope:** the feature overview and examples in this README follow
-> Ktav 0.8.0, the current stable specification. Implementations still
+> Ktav 0.8.1, the current stable specification. Implementations still
 > targeting 0.7.1 should read
 > [`versions/0.7/spec.md`](versions/0.7/spec.md), still carried in the
 > working tree; what changed between them is scoped in
-> [Appendix E of the 0.8.0 specification](versions/0.8/spec.md).
+> [Appendix E of the 0.8.1 specification](versions/0.8/spec.md).
 
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
@@ -37,11 +37,11 @@ the version they target.
 **Languages:** [English](README.md) · **Русский** · [简体中文](README.zh.md)
 
 > **Область версии:** обзор возможностей и примеры в этом README
-> следуют Ktav 0.8.0 — текущей стабильной спецификации. Реализациям,
+> следуют Ktav 0.8.1 — текущей стабильной спецификации. Реализациям,
 > всё ещё нацеленным на 0.7.1, следует читать
 > [`versions/0.7/spec.ru.md`](versions/0.7/spec.ru.md) — он всё ещё
 > лежит в рабочем дереве; что изменилось между ними —
-> описано в [Приложении E спецификации 0.8.0](versions/0.8/spec.ru.md).
+> описано в [Приложении E спецификации 0.8.1](versions/0.8/spec.ru.md).
 
 **Песочница:** конвертация JSON / YAML / TOML / INI ⇄ Ktav прямо в браузере — **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
@@ -67,10 +67,10 @@ the version they target.
 **Languages:** [English](README.md) · [Русский](README.ru.md) · **简体中文**
 
 > **版本范围:** 本 README 的功能概览与示例遵循当前稳定规范 Ktav
-> 0.8.0。仍以 0.7.1 为目标的实现请阅读
+> 0.8.1。仍以 0.7.1 为目标的实现请阅读
 > [`versions/0.7/spec.zh.md`](versions/0.7/spec.zh.md)——它仍保留在
 > 工作树中;两者之间的差异范围见
-> [0.8.0 规范附录 E](versions/0.8/spec.zh.md)。
+> [0.8.1 规范附录 E](versions/0.8/spec.zh.md)。
 
 **演练场：** 在浏览器中互转 JSON / YAML / TOML / INI ⇄ Ktav — **[ktav-lang.github.io](https://ktav-lang.github.io/)**。
 

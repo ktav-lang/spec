@@ -95,6 +95,7 @@ export default [
   "closing/rationale/sec-10.7",
   "closing/sec-11",
   "named/named-appendix-a",
+  "releases/sec-0.8.1",
   "releases/sec-0.8.0",
   "releases/sec-0.7.1",
   "releases/sec-0.7.0",

@@ -2,7 +2,7 @@
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.8/tests/). The 0.8.0 corpus
+[`versions/<v>/tests/`](versions/0.8/tests/). The 0.8.1 corpus
 has five fixture categories (`valid/`, `invalid/`, `unrepresentable/`,
 `parseable-unrepresentable/`, and `strict-lossy/`) plus one top-level
 metadata file. Older corpora carry fewer — the 0.7.1 suite has only the
@@ -16,7 +16,7 @@ fixtures for it at all.
 ## Набор тестов соответствия
 
 Каждая версия поставляется с языконезависимым набором тестов в
-[`versions/<v>/tests/`](versions/0.8/tests/). В корпусе 0.8.0
+[`versions/<v>/tests/`](versions/0.8/tests/). В корпусе 0.8.1
 есть пять фикстурных категорий (`valid/`, `invalid/`, `unrepresentable/`,
 `parseable-unrepresentable/` и `strict-lossy/`) плюс один
 верхнеуровневый файл метаданных. В более старых корпусах категорий
@@ -30,7 +30,7 @@ fixtures for it at all.
 ## 一致性测试套件
 
 每个版本都附带一份与语言无关的测试套件，位于
-[`versions/<v>/tests/`](versions/0.8/tests/)。0.8.0 语料库有五个
+[`versions/<v>/tests/`](versions/0.8/tests/)。0.8.1 语料库有五个
 fixture 类别(`valid/`、`invalid/`、`unrepresentable/`、
 `parseable-unrepresentable/` 和 `strict-lossy/`)外加一个顶层元数据
 文件。更早的语料库类别更少——0.7.1 套件只有前四个;位于 `v0.6.4`

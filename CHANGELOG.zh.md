@@ -18,6 +18,16 @@
 当前的 `stable` 与 `latest` 指针见仓库 [`README.md`](README.zh.md);
 机器可读索引见 [`versions.ktav`](versions.ktav)。
 
+## [0.8.1] —— 2026-10-21
+
+编辑勘误与回归覆盖。没有引入新的类型推断或规范输出规则。
+
+- § 5.1：首条内容行只消费一次。Inline 根就是整个 Value；单独的 `{` / `[` 开启根本身。到 EOF 仍未闭合的显式根产生 `UnclosedCompound`；隐式根不需要闭合符。
+- § 6.15：UTF-8 校验先于语法诊断，但可直接在原始字节中计数 LF、CR 和 CRLF。现有的源错误位置要求同样适用于 `InvalidUtf8`；未规定精确的 span 宽度。
+- 语料库：228 个 valid 和 90 个 invalid fixtures，覆盖大写前缀 String、未闭合的显式根及无效 UTF-8，并增加有效 U+FFFD 和 U+10FFFF 对照。Manifest schema 仍为 1；诊断坐标由实现测试检查，不新增 oracle 字段。
+
+仅允许小写数值前缀和显式闭合符的要求在 0.8.0 中已存在。新增用例揭示实现缺陷，并未重新定义语言。
+
 ## [0.8.0] —— 2026-09-22
 
 0.8.0 的规范性文本与一致性 fixture,位于 `versions/0.8/`。这是当前

@@ -18,7 +18,7 @@
 
 ## 当前清单
 
-共 107 个单元:1 个 `frontmatter/`、100 个带编号的 `sec-<number>/`
+共 108 个单元:1 个 `frontmatter/`、101 个带编号的 `sec-<number>/`
 (`sec-1`、`sec-3.1`、`sec-5.3.3`、`sec-10.7`),以及 6 个命名的
 `named-<slug>/`(`named-abstract`、`named-appendix-a` ..
 `named-appendix-d`)。另有:
@@ -223,7 +223,7 @@ N-1 个切割点**对整个单元只选一次**,并应用于所有语言。它�
 
 ## `manifest.js`
 
-按真实文档顺序排列的 107 个文件夹名的显式**有序**数组。它以
+按真实文档顺序排列的 108 个文件夹名的显式**有序**数组。它以
 `["frontmatter", "named-abstract", "sec-1", ...]` 开头,以
 `[..., "named-appendix-d"]` 结尾。它**绝不按字母序排序**:
 `"sec-10.7"` 必须排在 `"sec-2"` 之后,命名节也处于它们在文档中的

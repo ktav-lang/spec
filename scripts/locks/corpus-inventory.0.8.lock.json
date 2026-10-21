@@ -1,5 +1,5 @@
 {
-  "version": "0.8.0",
+  "version": "0.8.1",
   "files": {
     "boundary-fixtures.json": "b3fc712e0d78a968dae96701836e060a05c19367a3f627ed7adb0038caa98d88",
     "invalid/bad_escape/escape_t_not_recognised.json": "bb75a3c7191dcd12c95cbb42eb374451cd99564a2fea74df9f7b8c2dd8341f79",

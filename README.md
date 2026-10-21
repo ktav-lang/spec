@@ -7,11 +7,11 @@
 **Languages:** **English** · [Русский](README.ru.md) · [简体中文](README.zh.md)
 
 > **Version scope:** the feature overview and examples in this README follow
-> Ktav 0.8.0, the current stable specification. Implementations still
+> Ktav 0.8.1, the current stable specification. Implementations still
 > targeting 0.7.1 should read
 > [`versions/0.7/spec.md`](versions/0.7/spec.md), still carried in the
 > working tree; what changed between them is scoped in
-> [Appendix E of the 0.8.0 specification](versions/0.8/spec.md).
+> [Appendix E of the 0.8.1 specification](versions/0.8/spec.md).
 
 **Playground:** convert JSON / YAML / TOML / INI ⇄ Ktav in your browser at **[ktav-lang.github.io](https://ktav-lang.github.io/)**.
 
@@ -384,7 +384,7 @@ timeout: null
 
 ## Full specification
 
-- **Current stable:** [Ktav 0.8.0](versions/0.8/spec.md) — released 2026-09-22; this README's feature overview follows it.
+- **Current stable:** [Ktav 0.8.1](versions/0.8/spec.md) — released 2026-10-21; this README's feature overview follows it.
 - **Previous stable:** [Ktav 0.7.1](versions/0.7/spec.md) — released 2026-09-16.
 - **Machine-readable index** of released/stable versions: [`versions.ktav`](versions.ktav).
 - **History across versions:** [`CHANGELOG.md`](CHANGELOG.md).
@@ -392,7 +392,7 @@ timeout: null
 ## Conformance test suite
 
 Every version ships a language-agnostic test suite under
-[`versions/<v>/tests/`](versions/0.8/tests/). The 0.8.0 corpus
+[`versions/<v>/tests/`](versions/0.8/tests/). The 0.8.1 corpus
 has five fixture categories (`valid/`, `invalid/`, `unrepresentable/`,
 `parseable-unrepresentable/`, and `strict-lossy/`) plus one top-level
 metadata file. Older corpora carry fewer — the 0.7.1 suite has only the

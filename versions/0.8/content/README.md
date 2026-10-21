@@ -20,7 +20,7 @@ This directory is the **per-section source of truth** for
 
 ## Current inventory
 
-107 units: 1 `frontmatter/`, 100 numbered `sec-<number>/` (`sec-1`,
+108 units: 1 `frontmatter/`, 101 numbered `sec-<number>/` (`sec-1`,
 `sec-3.1`, `sec-5.3.3`, `sec-10.7`), and 6 named `named-<slug>/`
 (`named-abstract`, `named-appendix-a` .. `named-appendix-d`). Plus:
 
@@ -252,7 +252,7 @@ Getting this wrong is the #1 way to make `--check` fail.
 
 ## `manifest.js`
 
-An explicit **ordered** array of the 107 folder names in true document
+An explicit **ordered** array of the 108 folder names in true document
 order. It starts `["frontmatter", "named-abstract", "sec-1", ...]` and ends
 `[..., "named-appendix-d"]`. It is **never sorted alphabetically**:
 `"sec-10.7"` must come after `"sec-2"`, and named sections sit at their real

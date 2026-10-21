@@ -674,6 +674,13 @@
       "sep": null
     },
     {
+      "unit": "releases/sec-0.8.1",
+      "kind": "numbered",
+      "number": "0.8.1",
+      "level": 3,
+      "sep": " "
+    },
+    {
       "unit": "releases/sec-0.8.0",
       "kind": "numbered",
       "number": "0.8.0",
@@ -751,5 +758,5 @@
       "sep": null
     }
   ],
-  "version": "0.8.0"
+  "version": "0.8.1"
 }

@@ -21,6 +21,16 @@ See the repository [`README.md`](README.md) for current `stable` and
 `latest` pointers, or [`versions.ktav`](versions.ktav) for the
 machine-readable index.
 
+## [0.8.1] — 2026-10-21
+
+Editorial errata and regression coverage. No new value-inference or canonical-output rules are introduced.
+
+- § 5.1: consume the first content line exactly once. An inline root is the whole Value; a lone `{` / `[` opens the root itself. An explicit root left open at EOF is `UnclosedCompound`; implicit roots need no closer.
+- § 6.15: UTF-8 validation precedes grammar diagnostics, but LF, CR and CRLF can be counted in raw bytes. The existing source-error location requirement applies to `InvalidUtf8`; no exact span width is introduced.
+- Corpus: 228 valid and 90 invalid fixtures, including uppercase-prefix Strings, unclosed explicit roots and malformed UTF-8, plus valid U+FFFD and U+10FFFF controls. Manifest schema remains 1; diagnostic coordinates are checked by implementation tests, not new oracle fields.
+
+Lowercase-only numeric prefixes and explicit closing delimiters were already required by 0.8.0. The added witnesses expose implementation defects; they do not redefine the language.
+
 ## [0.8.0] — 2026-09-22
 
 Normative text and conformance fixtures for 0.8.0, under

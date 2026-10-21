@@ -5,18 +5,24 @@
 ## status.
 
 stable: {
-    version: 0.8.0
+    version: 0.8.1
     path: versions/0.8
-    released: 2026-09-22
+    released: 2026-10-21
 }
 
 latest: {
-    version: 0.8.0
+    version: 0.8.1
     path: versions/0.8
     stability: stable
 }
 
 all: [
+    {
+        version: 0.8.0
+        path: https://github.com/ktav-lang/spec/tree/v0.8.0/versions/0.8
+        stability: stable
+        released: 2026-09-22
+    }
     {
         version: 0.7.1
         path: versions/0.7
@@ -24,9 +30,9 @@ all: [
         released: 2026-09-16
     }
     {
-        version: 0.8.0
+        version: 0.8.1
         path: versions/0.8
         stability: stable
-        released: 2026-09-22
+        released: 2026-10-21
     }
 ]

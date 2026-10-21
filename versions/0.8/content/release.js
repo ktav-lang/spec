@@ -1,4 +1,4 @@
 export default {
-  "version": "0.8.0",
-  "released": "2026-09-22"
+  "version": "0.8.1",
+  "released": "2026-10-21"
 }
