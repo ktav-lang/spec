@@ -5,6 +5,36 @@ import validate_corpus
 
 
 class CategoriesAndUtf8Tests:
+    def test_diagnostic_location_schema_and_raw_line(self):
+        tests = self.build_minimal()
+        stem = "tests/invalid/diagnostics09/unclosed"
+        self.write(stem + ".ktav", "## comment\r\n{\r\n")
+        oracle = {"expected_error": "UnclosedCompound", "note": "opener line",
+                  "expected_location": {"line": 2, "start": 12, "end": 15}}
+        self.write(stem + ".json", json.dumps(oracle))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 0, out)
+        for location in ({"line": 1, "start": 12, "end": 15},
+                         {"line": 2, "start": 12, "end": 12},
+                         {"line": 2, "start": 12, "end": 16},
+                         {"line": True, "start": 12, "end": 15},
+                         {"line": 2, "start": 12, "minimum_end": 15, "end": 15}):
+            with self.subTest(location=location):
+                oracle["expected_location"] = location
+                self.write(stem + ".json", json.dumps(oracle))
+                code, out = self.run_main(tests)
+                self.assertEqual(code, 1, out)
+                self.assertIn("location", out)
+
+    def test_diagnostic_location_cannot_be_removed(self):
+        tests = self.build_minimal()
+        stem = "tests/invalid/diagnostics09/unclosed"
+        self.write(stem + ".ktav", "{\n")
+        self.write(stem + ".json", json.dumps({"expected_error": "UnclosedCompound", "note": "missing location"}))
+        code, out = self.run_main(tests)
+        self.assertEqual(code, 1, out)
+        self.assertIn("expected_location", out)
+
     def write_invalid_utf8_fixture(self, root, name="bad_utf8"):
         """A well-formed invalid/invalid_utf8/ fixture: genuinely invalid
         UTF-8 bytes paired with expected_error 'InvalidUtf8', satisfying the

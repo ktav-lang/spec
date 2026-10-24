@@ -1,0 +1,1 @@
+{"lax_value": {"bits": 10}, "expected_error": "LossyScalar", "body": "0b1010", "canonical": "10", "note": "A binary-prefixed integer literal canonicalizes to plain decimal."}

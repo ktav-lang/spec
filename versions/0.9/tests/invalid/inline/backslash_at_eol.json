@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "Backslash with no following byte before end-of-line is a BadEscapeSequence (3.7, 6.13). Triggers before UnterminatedInlineCompound."}

@@ -1,0 +1,1 @@
+{"expected_error":"InvalidUtf8","note":"Sec 3.1/6.15: a 3-byte sequence lead E1 80 interrupted by the ASCII byte 'A' at offset 5; the continuation never arrives."}

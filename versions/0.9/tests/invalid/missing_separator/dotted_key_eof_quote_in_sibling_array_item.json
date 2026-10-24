@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "Same missing-separator defect as dotted_key_eof_quote_in_sibling_value.ktav, triggered by a quote in a SIBLING ARRAY ITEM after the quote-free nested Object `{b. }`."}

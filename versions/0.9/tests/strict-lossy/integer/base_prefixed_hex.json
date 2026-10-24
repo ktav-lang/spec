@@ -1,0 +1,1 @@
+{"lax_value": {"sha": 6699}, "expected_error": "LossyScalar", "body": "0x1A2B", "canonical": "6699", "note": "A hex-prefixed integer literal canonicalizes to plain decimal."}

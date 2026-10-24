@@ -1,0 +1,1 @@
+{"expected_error": "UnterminatedQuotedKey", "note": "Root is already an Object (established by `anchor: ok`), so the second line MUST be a pair line. The opening `\"` never finds a matching unescaped closing `\"` before end-of-line, so this is the more specific UnterminatedQuotedKey (Sec 6.16), not the generic MissingSeparator."}

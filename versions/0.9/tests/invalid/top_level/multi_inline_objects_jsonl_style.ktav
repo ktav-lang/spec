@@ -1,0 +1,8 @@
+{
+    name: alice
+    port: 8080
+}
+{
+    name: bob
+    port: 9090
+}

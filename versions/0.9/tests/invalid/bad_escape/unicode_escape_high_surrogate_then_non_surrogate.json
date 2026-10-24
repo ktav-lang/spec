@@ -1,0 +1,1 @@
+{"expected_error": "BadEscapeSequence", "note": "A high surrogate followed by an escape that is not a valid low surrogate is a lone surrogate."}

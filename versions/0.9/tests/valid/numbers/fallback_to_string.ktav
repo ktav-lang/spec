@@ -1,0 +1,10 @@
+## All these should be Strings, not numbers — they don't match the
+## integer or float grammar (incomplete forms, multiple dots, etc.).
+a: 1.
+b: .5
+c: 1.2.3
+d: 1e
+e: 1e+
+f: 0xZZ
+g: 0o9
+h: 123abc

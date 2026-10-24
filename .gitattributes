@@ -37,3 +37,6 @@ versions/*/tests/valid/multiline/verbatim_whitespace_only_line_in_middle.canonic
 # condition; two of them contain CR bytes that `* text=auto` would
 # normalize away at check-in. `-text` keeps git from ever rewriting them.
 versions/*/tests/invalid/invalid_utf8/*.ktav -text
+
+# Exact diagnostic byte offsets require original BOM and line endings.
+versions/0.9/tests/invalid/diagnostics09/*.ktav -text

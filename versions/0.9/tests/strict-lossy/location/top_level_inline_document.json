@@ -1,0 +1,1 @@
+{"lax_value": {"version": 1.1}, "expected_error": "LossyScalar", "body": "1.10", "canonical": "1.1", "note": "The check applies even when the whole document is a single top-level inline Object (spec § 5.0.1)."}

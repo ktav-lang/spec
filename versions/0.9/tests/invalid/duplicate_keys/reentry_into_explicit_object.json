@@ -1,0 +1,1 @@
+{"expected_error": "DuplicateKey", "note": "`a` is an inline Object with key `x`; the dotted re-entry `a.x` on the next line collides with the explicit Object's own child path, not just with a top-level key."}

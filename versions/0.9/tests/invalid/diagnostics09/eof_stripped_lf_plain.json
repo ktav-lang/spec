@@ -1,0 +1,9 @@
+{
+    "expected_error": "UnclosedCompound",
+    "note": "0.9 source diagnostics: original byte offsets, BOM and LF/CR/CRLF preserved; direct API and envelope agree.",
+    "expected_location": {
+        "line": 2,
+        "start": 15,
+        "end": 25
+    }
+}

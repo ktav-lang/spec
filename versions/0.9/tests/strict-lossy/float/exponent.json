@@ -1,0 +1,1 @@
+{"lax_value": {"build": 5000.0}, "expected_error": "LossyScalar", "body": "5e3", "canonical": "5000.0", "note": "Scientific notation is not the canonical spelling for a magnitude below the § 5.9.8 scientific threshold."}

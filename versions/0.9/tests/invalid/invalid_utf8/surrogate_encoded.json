@@ -1,0 +1,1 @@
+{"expected_error":"InvalidUtf8","note":"Sec 3.1/6.15: ED A0 80 at offsets 3-5 would decode to the UTF-16 surrogate U+D800, which UTF-8 forbids encoding."}

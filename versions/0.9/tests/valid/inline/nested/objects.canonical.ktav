@@ -1,0 +1,7 @@
+cfg: {
+    outer: {
+        middle: {
+            inner: deep
+        }
+    }
+}

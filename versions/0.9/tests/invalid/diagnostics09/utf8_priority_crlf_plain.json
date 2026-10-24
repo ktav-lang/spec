@@ -1,0 +1,9 @@
+{
+    "expected_error": "InvalidUtf8",
+    "note": "0.9 source diagnostics: original byte offsets, BOM and LF/CR/CRLF preserved; direct API and envelope agree.",
+    "expected_location": {
+        "line": 3,
+        "start": 28,
+        "minimum_end": 29
+    }
+}

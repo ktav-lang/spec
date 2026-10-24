@@ -1,0 +1,1 @@
+{"lax_value": {"offset": 0}, "expected_error": "LossyScalar", "body": "-0", "canonical": "0", "note": "Signed-zero Integer literals normalise to unsigned 0 (distinct from Float -0.0, which is not lossy)."}

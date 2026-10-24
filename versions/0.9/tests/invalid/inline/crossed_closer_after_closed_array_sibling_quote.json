@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "Identical defect to crossed_closer_after_closed_array_no_quote.ktav, but with a quote in an unrelated sibling field `q`. The category MUST NOT change because of a quote elsewhere in the document — this is the sibling pin for that invariant."}
