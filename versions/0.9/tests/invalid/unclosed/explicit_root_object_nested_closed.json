@@ -1,0 +1,1 @@
+{"expected_error": "UnclosedCompound", "note": "Explicit root Object opened with a lone `{` whose nested inner Object is closed but the root itself is never closed."}

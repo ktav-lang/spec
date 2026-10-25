@@ -46,6 +46,9 @@ jobs:
           python scripts/validate_corpus.py versions/0.7/tests --require-unrepresentable --require-boundary --require-manifest --boundary-manifest-lock scripts/locks/boundary-fixtures.0.7.lock.json --corpus-inventory-lock scripts/locks/corpus-inventory.0.7.lock.json
           python scripts/validate_corpus.py versions/0.8/tests --require-unrepresentable --require-boundary --require-manifest --boundary-manifest-lock scripts/locks/boundary-fixtures.0.8.lock.json --corpus-inventory-lock scripts/locks/corpus-inventory.0.8.lock.json
 
+      - name: Validate draft 0.9 diagnostics corpus
+        run: python scripts/validate_corpus.py versions/0.9/tests --require-unrepresentable --require-boundary --require-manifest
+
       - name: Run validator unit tests
         run: python scripts/internal/corpus/test_validate_corpus.py
 

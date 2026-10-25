@@ -1,0 +1,1 @@
+{"lax_value": {"phone": 79991234567}, "expected_error": "LossyScalar", "body": "+79991234567", "canonical": "79991234567", "note": "An explicit leading '+' sign is dropped by canonicalization."}

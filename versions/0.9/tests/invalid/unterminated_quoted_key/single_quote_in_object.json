@@ -1,0 +1,1 @@
+{"expected_error": "UnterminatedQuotedKey", "note": "Same as in_established_object.ktav but with the single-quote delimiter. Together with in_established_object.json (double quote) and backtick_in_object.json (backtick), this confirms UnterminatedQuotedKey applies uniformly across all three quote characters in this context (Sec 5.3.3, Sec 6.16)."}

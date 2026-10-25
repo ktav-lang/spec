@@ -1,0 +1,20 @@
+## Uppercase base prefixes do not match the integer grammar: Sec 3.6
+## defines hex/oct/bin with the lowercase literal prefixes "0x"/"0o"/"0b",
+## and Sec 5.2 rule 13 matches numeric literals case-sensitively, so a
+## body like 0X1A falls through to rule 15 and is a String carrying the
+## body exactly as written. Lowercase-prefixed bodies in the same
+## document are Integers; uppercase hex DIGITS after a lowercase prefix
+## stay Integers too (hex_digit allows 0-9a-fA-F). A bare 0x with no
+## digit after the prefix is not an integer either (hex requires at
+## least one hex_digit), so it is a String as well.
+bare_hex: 0X1A
+bare_oct: 0O17
+bare_bin: 0B101
+neg_hex: -0XFF
+plus_hex: +0XFF
+bare_prefix_only: 0x
+lower_hex: 0x1A
+lower_oct: 0o17
+lower_bin: 0b101
+uppercase_digits_hex: 0xAB
+mixed_digits_hex: 0xDEADbeef

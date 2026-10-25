@@ -1,0 +1,1 @@
+{"expected_error": "KeyPathConflict", "note": "`a` was already established as a synthetic Object by the dotted key `a.b`; the plain pair `a: 2` tries to overwrite it with a leaf Integer -- the reverse direction of leaf_then_extend.json, same conflict class (§ 5.3.2)."}

@@ -169,6 +169,37 @@ def select_error_categories(tests_dir):
     return DEFAULT_ERROR_CATEGORIES
 
 
+def check_error_location(obj, input_path, rpath, results, category):
+    location = obj.get("expected_location")
+    required = "/diagnostics09/" in "/" + rpath.replace("\\", "/")
+    if location is None and not required:
+        return
+    if not isinstance(location, dict) or set(location) not in (
+            {"line", "start", "end"}, {"line", "start", "minimum_end"}):
+        results.fail(category, "%s: invalid expected_location schema" % rpath)
+        return
+    if any(type(value) is not int or value < 0 for value in location.values()):
+        results.fail(category, "%s: location fields must be nonnegative integers" % rpath)
+        return
+    try:
+        with open(input_path, "rb") as source:
+            raw = source.read()
+    except OSError as error:
+        results.fail(category, "%s: cannot read location input: %s" % (rpath, error))
+        return
+    start = location["start"]
+    end = location.get("end", location.get("minimum_end"))
+    if not (location["line"] > 0 and 0 <= start < end <= len(raw)):
+        results.fail(category, "%s: invalid location bounds" % rpath)
+        return
+    prefix = raw[:start].replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    line = 1 + prefix.count(b"\n")
+    if start and raw[start - 1:start + 1] == b"\r\n":
+        line -= 1
+    if location["line"] != line:
+        results.fail(category, "%s: location line disagrees with original bytes" % rpath)
+
+
 def check_invalid(tests_dir, results, parsed, error_categories):
     """Check 3: .ktav/.json pairs under invalid/ with expected_error strings."""
     category = "invalid/ pairs"
@@ -215,6 +246,8 @@ def check_invalid(tests_dir, results, parsed, error_categories):
                 results.fail(category, "%s: expected_error check skipped: "
                              "not a JSON object" % rpath)
                 continue
+            check_error_location(obj, os.path.join(root, name + ".ktav"),
+                                 rpath, results, category)
             err = obj.get("expected_error")
             if not isinstance(err, str) or err == "":
                 results.fail(category, "%s: 'expected_error' must be a "

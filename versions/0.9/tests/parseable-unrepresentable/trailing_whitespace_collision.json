@@ -1,0 +1,1 @@
+{"value": {"s": "))\nx "}, "unrepresentable_reason": "TrailingWhitespaceCollision", "note": "The parser-produced multi-line String has a segment trimmed to )) and preserves trailing whitespace through an escaped edge byte; stripped fallback would lose it."}

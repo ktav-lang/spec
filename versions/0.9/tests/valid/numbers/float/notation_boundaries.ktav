@@ -1,0 +1,6 @@
+small: 0.001
+decimal_boundary: 0.01
+mid_small: 0.0015
+negative_small: -0.001
+large_below: 9999999.0
+large_boundary: 10000000.0

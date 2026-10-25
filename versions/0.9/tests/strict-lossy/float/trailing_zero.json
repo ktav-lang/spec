@@ -1,0 +1,1 @@
+{"lax_value": {"version": 1.1}, "expected_error": "LossyScalar", "body": "1.10", "canonical": "1.1", "note": "A trailing zero after the decimal point is dropped by canonicalization."}

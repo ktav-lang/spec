@@ -50,6 +50,10 @@ export const DOCS_REGISTRY = {
     'versions/*/content/README.source.md',
     'docs/checkpoints/',
     'docs/reviews/',
+    // Draft diagnostic contracts, not generated release specifications.
+    'versions/0.9/README.md',
+    'versions/0.9/README.ru.md',
+    'versions/0.9/README.zh.md',
   ],
 };
 

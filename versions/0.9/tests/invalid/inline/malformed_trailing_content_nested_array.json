@@ -1,0 +1,1 @@
+{"expected_error": "MalformedInlineCompound", "note": "The nested Array's same-line matching `]` closes it; the trailing ` junk` before the Object's own `}` is non-whitespace content after an already-closed compound (§ 6.12), not an unterminated compound (§ 6.11) — the nested variant of the top-level `x: [1] junk` case."}

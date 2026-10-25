@@ -1,0 +1,1 @@
+{"expected_error": "InvalidKey", "note": "Raw (unescaped) `[` is forbidden in key segments per § 4 <key-char>, including at an inline-pair key position (§ 5.8.2 uses the same <key> production, § 5.3.1 rule). The `[` does not open a nested compound here: an inline pair begins with <key>, never <inline-value>."}

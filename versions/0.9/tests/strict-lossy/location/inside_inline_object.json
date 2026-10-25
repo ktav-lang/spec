@@ -1,0 +1,1 @@
+{"lax_value": {"cfg": {"version": 1.1, "port": 8080}}, "expected_error": "LossyScalar", "body": "1.10", "canonical": "1.1", "note": "The check applies to a scalar nested inside an inline Object, not just top-level pairs."}
