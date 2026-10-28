@@ -22,7 +22,8 @@ jobs:
         run: |
           node --input-type=module <<'NODE'
           import assert from "node:assert/strict";
-          import { readFileSync } from "node:fs";
+          import { readFileSync, readdirSync } from "node:fs";
+          import { join } from "node:path";
           const allowed = new Set(["MIT", "Apache-2.0", "MIT OR Apache-2.0", "Apache-2.0 OR MIT"]);
           function check(lock) {
             if (lock?.lockfileVersion !== 3 || !lock.packages || typeof lock.packages !== "object" || Array.isArray(lock.packages) || !lock.packages[""]) throw new Error("Invalid npm lockfile");
@@ -31,6 +32,27 @@ jobs:
           assert.equal(check({ lockfileVersion: 3, packages: { "": {}, x: { license: "MIT AND GPL-3.0-only" } } }).length, 1);
           assert.equal(check({ lockfileVersion: 3, packages: { "": {}, x: {} } }).length, 1);
           assert.equal(check({ lockfileVersion: 3, packages: { "": {}, x: { license: "MIT" } } }).length, 0);
+          const fields = ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies", "bundledDependencies", "bundleDependencies", "workspaces"];
+          function dependencyFree(pkg) {
+            return fields.every((field) => pkg[field] == null || (typeof pkg[field] === "object" && Object.keys(pkg[field]).length === 0));
+          }
+          assert.ok(dependencyFree({}));
+          assert.ok(!dependencyFree({ dependencies: { example: "1" } }));
+          const known = new Set(["package.json", "package-lock.json", "versions/0.7/content/package.json", "versions/0.8/content/package.json"]);
+          for (const file of ["versions/0.7/content/package.json", "versions/0.8/content/package.json"]) {
+            if (!dependencyFree(JSON.parse(readFileSync(file, "utf8")))) throw new Error(`Dependencies require review: ${file}`);
+          }
+          const manifest = /^(package(-lock)?\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.(toml|lock)|go\.(mod|sum)|pyproject\.toml|requirements[^/]*\.txt|composer\.(json|lock)|pom\.xml|[^/]+\.csproj|build\.gradle(\.kts)?|settings\.gradle(\.kts)?|Gemfile(\.lock)?)$/;
+          function inspect(dir) {
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+              if ((dir === "." && entry.name === ".git") || entry.name === "node_modules") continue;
+              const path = join(dir, entry.name);
+              if (entry.isSymbolicLink()) throw new Error(`Symlink requires license review: ${path}`);
+              if (entry.isDirectory()) inspect(path);
+              else if (manifest.test(entry.name) && !known.has(path)) throw new Error(`New manifest requires license review: ${path}`);
+            }
+          }
+          inspect(".");
           const failures = check(JSON.parse(readFileSync("package-lock.json", "utf8")));
           if (failures.length) { console.error(failures.join("\n")); process.exitCode = 1; }
           NODE
